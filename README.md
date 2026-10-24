@@ -17,6 +17,12 @@ npm install
 npm run tauri dev
 ```
 
+## 테스트
+
+```bash
+npm test
+```
+
 ## 앱 빌드
 
 ```bash
@@ -31,6 +37,7 @@ npm run tauri build
 | [React](https://github.com/facebook/react) | MIT |
 | [Vite](https://github.com/vitejs/vite) | MIT |
 | [CodeMirror 6](https://github.com/codemirror/dev) | MIT |
+| [Vitest](https://github.com/vitest-dev/vitest) | MIT |
 
 ## 라이선스
 

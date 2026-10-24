@@ -5,6 +5,11 @@
   --font-script: "Courier Prime", "D2Coding", "Nanum Gothic Coding", Menlo,
     "Apple SD Gothic Neo", monospace;
 
+  /* 시나리오 표준: 12pt 글꼴. 화면에서는 읽기 편하게 줄 간격을 조금 넓힌다. */
+  --script-size: 16px;
+  --script-line: 1.6;
+  --line: calc(var(--script-size) * var(--script-line));
+
   --desk: #e9e7e2;
   --paper: #ffffff;
   --paper-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.06);
@@ -13,9 +18,9 @@
   --ink: #1d1d1f;
   --muted: #8a8780;
   --caret: #d4472b;
-  --active-line: rgba(212, 71, 43, 0.05);
   --selection: rgba(212, 71, 43, 0.18);
   --match: rgba(212, 71, 43, 0.12);
+  --button-hover: rgba(0, 0, 0, 0.05);
 
   color-scheme: light dark;
 }
@@ -30,9 +35,9 @@
     --ink: #e8e6e1;
     --muted: #7d7b76;
     --caret: #ff7a5c;
-    --active-line: rgba(255, 122, 92, 0.06);
     --selection: rgba(255, 122, 92, 0.25);
     --match: rgba(255, 122, 92, 0.15);
+    --button-hover: rgba(255, 255, 255, 0.06);
   }
 }
 
@@ -60,6 +65,8 @@ body {
   height: 100%;
 }
 
+/* ---------- 제목 표시줄 ---------- */
+
 .titlebar {
   display: flex;
   align-items: center;
@@ -68,7 +75,6 @@ body {
   /* 왼쪽은 macOS 창 버튼(신호등) 자리 */
   padding: 0 16px 0 84px;
   background: var(--chrome);
-  border-bottom: 1px solid var(--border);
   font-size: 13px;
   user-select: none;
   flex-shrink: 0;
@@ -88,36 +94,162 @@ body {
   pointer-events: none;
 }
 
+/* ---------- 스타일 도구모음 ---------- */
+
+.stylebar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px 8px 78px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+.style-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.style-button:hover {
+  background: var(--button-hover);
+}
+
+.style-button.active {
+  background: var(--paper);
+  border-color: var(--border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  font-weight: 600;
+}
+
+.style-button kbd {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.stylebar-hint {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* ---------- 원고 용지 ---------- */
+
 .desk {
   flex: 1;
-  overflow-y: auto;
+  overflow: auto;
   padding: 40px 16px 80px;
 }
 
-/* US Letter 비율(8.5in 폭)에 맞춘 원고 용지 */
+/* US Letter 8.5in 폭. 왼쪽 여백 1.5in, 오른쪽 여백 1in (본문 폭 6in) */
 .paper {
-  max-width: 816px;
-  min-height: 1056px;
+  width: 8.5in;
+  min-height: 11in;
   margin: 0 auto;
-  padding: 96px 96px 96px 144px;
+  padding: 1in 1in 1in 1.5in;
   background: var(--paper);
   box-shadow: var(--paper-shadow);
   border-radius: 2px;
-}
-
-@media (max-width: 900px) {
-  .paper {
-    padding: 48px 32px;
-  }
 }
 
 .editor-host {
   min-height: 100%;
 }
 
+/*
+ * 문장 스타일별 배치 (할리우드 표준, 종이 왼쪽 끝 기준 위치)
+ * 본문은 종이 왼쪽 끝에서 1.5in에서 시작하므로, 들여쓰기는 거기서 뺀 값이다.
+ *
+ *   씬헤딩    1.5in ~ 7.5in
+ *   액션      1.5in ~ 7.5in
+ *   인물      3.7in ~
+ *   괄호지문  3.1in ~ 5.5in
+ *   대사      2.5in ~ 6.0in
+ *   전환      ~ 7.5in (오른쪽 정렬)
+ *
+ * 문단 사이 빈 줄은 실제 빈 줄 대신 위쪽 여백(--gap)으로 보여 준다.
+ */
+.paper .cm-line.sl {
+  position: relative;
+  --gap: 0px;
+  padding-top: var(--gap);
+}
+
+.paper .cm-line.sl-scene {
+  --gap: calc(var(--line) * 2);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.paper .cm-line.sl-action {
+  --gap: var(--line);
+}
+
+.paper .cm-line.sl-character {
+  --gap: var(--line);
+  padding-left: 2.2in;
+  text-transform: uppercase;
+}
+
+.paper .cm-line.sl-parenthetical {
+  padding-left: 1.6in;
+  padding-right: 2in;
+}
+
+.paper .cm-line.sl-dialogue {
+  padding-left: 1in;
+  padding-right: 1.5in;
+}
+
+.paper .cm-line.sl-transition {
+  --gap: var(--line);
+  text-align: right;
+  text-transform: uppercase;
+}
+
+/* 문서 첫 줄 위에는 여백을 두지 않는다. */
+.paper .cm-content > .cm-line.sl:first-child {
+  padding-top: 0;
+  --gap: 0px;
+}
+
+/* 커서가 있는 줄의 왼쪽 여백에 현재 스타일 이름을 보여 준다. */
+.paper .cm-line.sl-current::before {
+  content: attr(data-style);
+  position: absolute;
+  top: var(--gap);
+  left: -1.4in;
+  width: 1.15in;
+  text-align: right;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: var(--line);
+  color: var(--caret);
+  text-transform: none;
+  pointer-events: none;
+}
+
+/* ---------- 상태 표시줄 ---------- */
+
 .statusbar {
   display: flex;
-  justify-content: flex-end;
   gap: 20px;
   height: 28px;
   padding: 0 16px;
@@ -129,4 +261,13 @@ body {
   font-variant-numeric: tabular-nums;
   user-select: none;
   flex-shrink: 0;
+}
+
+.status-style {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.status-spacer {
+  flex: 1;
 }

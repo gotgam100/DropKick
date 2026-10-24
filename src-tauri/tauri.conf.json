@@ -15,7 +15,7 @@
         "title": "DropKick",
         "width": 1200,
         "height": 880,
-        "minWidth": 640,
+        "minWidth": 960,
         "minHeight": 480,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
