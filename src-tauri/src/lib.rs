@@ -160,6 +160,16 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
+    let view_menu = Submenu::with_items(
+        app,
+        "보기",
+        true,
+        &[
+            &item("toggle_scenes", "씬 목록 보기/숨기기", Some("CmdOrCtrl+Alt+1"))?,
+            &item("toggle_stats", "통계 보기/숨기기", Some("CmdOrCtrl+Alt+2"))?,
+        ],
+    )?;
+
     let window_menu = Submenu::with_items(
         app,
         "윈도우",
@@ -173,7 +183,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 
     Menu::with_items(
         app,
-        &[&app_menu, &file_menu, &edit_menu, &style_menu, &window_menu],
+        &[&app_menu, &file_menu, &edit_menu, &style_menu, &view_menu, &window_menu],
     )
 }
 

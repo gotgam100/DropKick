@@ -1,0 +1,404 @@
+/* ---------- 작업 영역: 씬 목록 | 원고 | 통계 ---------- */
+
+.workspace {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.workspace .desk {
+  flex: 1;
+  min-width: 0;
+}
+
+.stylebar-spacer {
+  flex: 1;
+}
+
+/*
+ * 그래프 색 (dataviz 검사 도구로 색약 구분, 대비 확인 완료)
+ * --chart: 대사·강조 (앱 강조색 계열), --chart-2: 지문 (파랑)
+ * 다크 모드는 어두운 배경에 맞춘 단계를 따로 쓴다.
+ */
+:root {
+  --chart: #d4472b;
+  --chart-2: #2a78d6;
+  --chart-muted: #c9c5bd;
+  --chart-track: rgba(0, 0, 0, 0.05);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chart: #e8603f;
+    --chart-2: #3987e5;
+    --chart-muted: #4f4d49;
+    --chart-track: rgba(255, 255, 255, 0.06);
+  }
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 0;
+  background: var(--chrome);
+  font-size: 13px;
+  user-select: none;
+}
+
+.scene-panel {
+  width: 260px;
+  border-right: 1px solid var(--border);
+}
+
+.stats-panel {
+  width: 300px;
+  border-left: 1px solid var(--border);
+}
+
+.panel-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 14px 16px 8px;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.panel-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.panel-search {
+  padding: 0 12px 8px;
+}
+
+.panel-search input {
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
+.panel-search input:focus {
+  border-color: var(--caret);
+}
+
+.panel-empty {
+  margin: 4px 16px 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ---------- 씬 목록 ---------- */
+
+.scene-list {
+  flex: 1;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0 8px 16px;
+  list-style: none;
+}
+
+.scene-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.scene-item:hover {
+  background: var(--button-hover);
+}
+
+.scene-item[aria-current="true"] {
+  background: var(--paper);
+  box-shadow: inset 3px 0 0 var(--caret);
+}
+
+.scene-number {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.scene-heading {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-meta {
+  grid-column: 2;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 통계 ---------- */
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 16px 24px;
+}
+
+.stat-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.stat-value small {
+  margin-left: 2px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.stat-section {
+  margin-bottom: 22px;
+}
+
+.stat-section h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.stat-section h4 {
+  margin: 16px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* 대사 : 지문 비율 (두 계열이라 범례와 숫자를 함께 보여 준다) */
+.ratio-bar {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+}
+
+.ratio-bar span {
+  display: block;
+  min-width: 4px;
+}
+
+.ratio-bar span:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.ratio-bar span:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.ratio-bar span:only-child {
+  border-radius: 4px;
+}
+
+.ratio-dialogue {
+  background: var(--chart);
+}
+
+.ratio-action {
+  background: var(--chart-2);
+}
+
+.ratio-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  color: var(--ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 2px;
+  vertical-align: 0;
+}
+
+/* 인물별 대사량: 가로 막대 */
+.bar-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  align-items: center;
+  column-gap: 8px;
+  width: 100%;
+  padding: 5px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.bar-row:hover {
+  background: var(--button-hover);
+}
+
+.bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.bar-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--chart-track);
+}
+
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+  background: var(--chart);
+}
+
+.bar-value {
+  color: var(--ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bar-sub {
+  grid-column: 2 / 4;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* 씬 길이: 씬마다 세로 막대 하나 */
+.scene-columns {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 72px;
+  padding-bottom: 1px;
+  border-bottom: 1px solid var(--border);
+}
+
+.scene-column {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  min-width: 1px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.scene-column span {
+  display: block;
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: var(--chart-muted);
+}
+
+.scene-column:hover span,
+.scene-column.current span {
+  background: var(--chart);
+}
+
+.scene-columns-caption {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.longest-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.longest-list button {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  column-gap: 8px;
+  width: 100%;
+  padding: 5px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.longest-list button:hover {
+  background: var(--button-hover);
+}
+
+/* 상태 표시줄의 현재 씬 */
+.status-scene {
+  max-width: 320px;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

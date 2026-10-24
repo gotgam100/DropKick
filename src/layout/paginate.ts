@@ -154,11 +154,14 @@ function contdName(name: string) {
   return /\(CONT'D\)\s*$/i.test(upper) ? upper : `${upper} (CONT'D)`;
 }
 
-export function paginate(lines: ScriptLine[]): Pagination {
+/** 할리우드 표준 줄 간격(12pt)일 때 한 페이지 줄 수. 예상 러닝타임 계산에 쓴다. */
+export const STANDARD_LINES_PER_PAGE = 54;
+
+export function paginate(lines: ScriptLine[], linesPerPage: number = PAGE.linesPerPage): Pagination {
   const blocks = buildBlocks(lines);
   const pages: Page[] = [];
   const pageOfLine = new Array<number>(lines.length).fill(1);
-  const max = PAGE.linesPerPage;
+  const max = linesPerPage;
 
   let page: Page = { number: 1, lines: [] };
   let row = 0;

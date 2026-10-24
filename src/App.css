@@ -334,10 +334,10 @@ body {
   white-space: pre;
 }
 
-/* 종이 사이 틈: 종이 바깥 그림자까지 덮도록 양옆으로 넓힌다. */
+/* 종이 사이 틈: 종이 바깥 그림자까지 덮도록 양옆으로 조금 넓힌다. (원고 영역 여백 16px 안쪽) */
 .paper .pb-gap {
   height: 32px;
-  margin: 0 calc(-1in - 32px) 0 calc(-1.5in - 32px);
+  margin: 0 calc(-1in - 12px) 0 calc(-1.5in - 12px);
   background: var(--desk);
   box-shadow:
     inset 0 10px 10px -10px rgba(0, 0, 0, 0.12),

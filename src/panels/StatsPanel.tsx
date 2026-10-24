@@ -1,0 +1,171 @@
+import { formatEighths, type ScriptAnalysis, type SceneSummary } from "../analysis/analyze";
+
+type Props = {
+  analysis: ScriptAnalysis;
+  currentSceneLine: number | null;
+  onSelectScene: (line: number) => void;
+  onSelectCharacter: (name: string) => void;
+};
+
+const fmt = new Intl.NumberFormat("ko-KR");
+
+function percent(part: number, total: number) {
+  return total > 0 ? Math.round((part / total) * 100) : 0;
+}
+
+/** 오른쪽 통계 화면 */
+export function StatsPanel({ analysis, currentSceneLine, onSelectScene, onSelectCharacter }: Props) {
+  const { scenes, characters } = analysis;
+  const textTotal = analysis.dialogueChars + analysis.actionChars;
+  const dialoguePct = percent(analysis.dialogueChars, textTotal);
+  const maxChars = Math.max(1, ...characters.map((c) => c.dialogueChars));
+  const maxEighths = Math.max(1, ...scenes.map((s) => s.eighths));
+  const longest = [...scenes].sort((a, b) => b.eighths - a.eighths).slice(0, 5);
+
+  return (
+    <aside className="panel stats-panel" aria-label="통계">
+      <header className="panel-header">
+        <h2>통계</h2>
+      </header>
+
+      <div className="panel-body">
+        <section className="stat-tiles">
+          <div className="stat-tile">
+            <span className="stat-label">페이지</span>
+            <span className="stat-value">{fmt.format(analysis.pages)}</span>
+          </div>
+          <div className="stat-tile" title="할리우드 표준 형식(1페이지 ≈ 1분)으로 계산한 값입니다.">
+            <span className="stat-label">예상 러닝타임</span>
+            <span className="stat-value">
+              {fmt.format(analysis.runtimeMinutes)}
+              <small>분</small>
+            </span>
+          </div>
+          <div className="stat-tile">
+            <span className="stat-label">씬</span>
+            <span className="stat-value">{fmt.format(scenes.length)}</span>
+          </div>
+          <div className="stat-tile">
+            <span className="stat-label">인물</span>
+            <span className="stat-value">{fmt.format(characters.length)}</span>
+          </div>
+        </section>
+
+        <section className="stat-section">
+          <h3>대사와 지문</h3>
+          {textTotal === 0 ? (
+            <p className="panel-empty">아직 글이 없습니다.</p>
+          ) : (
+            <>
+              <div
+                className="ratio-bar"
+                role="img"
+                aria-label={`대사 ${dialoguePct}%, 지문 ${100 - dialoguePct}%`}
+              >
+                {dialoguePct > 0 && (
+                  <span
+                    className="ratio-dialogue"
+                    style={{ flexGrow: analysis.dialogueChars }}
+                    title={`대사 ${fmt.format(analysis.dialogueChars)}자 (${dialoguePct}%)`}
+                  />
+                )}
+                {dialoguePct < 100 && (
+                  <span
+                    className="ratio-action"
+                    style={{ flexGrow: analysis.actionChars }}
+                    title={`지문 ${fmt.format(analysis.actionChars)}자 (${100 - dialoguePct}%)`}
+                  />
+                )}
+              </div>
+              <div className="ratio-legend">
+                <span>
+                  <i className="swatch ratio-dialogue" /> 대사 {dialoguePct}%
+                </span>
+                <span>
+                  <i className="swatch ratio-action" /> 지문 {100 - dialoguePct}%
+                </span>
+              </div>
+            </>
+          )}
+        </section>
+
+        <section className="stat-section">
+          <h3>인물별 대사량</h3>
+          {characters.length === 0 ? (
+            <p className="panel-empty">인물(⌘3)과 대사(⌘5)를 쓰면 나타납니다.</p>
+          ) : (
+            <ul className="bar-list">
+              {characters.map((c) => (
+                <li key={c.name}>
+                  <button
+                    type="button"
+                    className="bar-row"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => onSelectCharacter(c.name)}
+                    title={`${c.name}: 대사 ${fmt.format(c.speeches)}회, ${fmt.format(c.dialogueChars)}자, ${c.scenes}개 씬 (첫 등장 S#${c.firstScene}) — 누르면 씬 목록에서 찾기`}
+                  >
+                    <span className="bar-label">{c.name}</span>
+                    <span className="bar-track">
+                      <span
+                        className="bar-fill"
+                        style={{ width: `${Math.max(2, (c.dialogueChars / maxChars) * 100)}%` }}
+                      />
+                    </span>
+                    <span className="bar-value">{fmt.format(c.dialogueChars)}자</span>
+                    <span className="bar-sub">
+                      대사 {fmt.format(c.speeches)}회 · 씬 {c.scenes}개
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="stat-section">
+          <h3>씬 길이</h3>
+          {scenes.length === 0 ? (
+            <p className="panel-empty">씬헤딩(⌘1)을 쓰면 나타납니다.</p>
+          ) : (
+            <>
+              <div className="scene-columns" role="list" aria-label="씬별 길이 (1/8페이지 단위)">
+                {scenes.map((s: SceneSummary) => (
+                  <button
+                    key={s.line}
+                    type="button"
+                    role="listitem"
+                    className={s.line === currentSceneLine ? "scene-column current" : "scene-column"}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => onSelectScene(s.line)}
+                    title={`S#${s.number} · ${formatEighths(s.eighths)}페이지 · ${s.heading.replace(/^S#\d+\.\s*/, "")}`}
+                  >
+                    <span style={{ height: `${Math.max(4, (s.eighths / maxEighths) * 100)}%` }} />
+                  </button>
+                ))}
+              </div>
+              <p className="scene-columns-caption">
+                막대 하나가 씬 하나입니다. 누르면 그 씬으로 이동합니다.
+              </p>
+              <h4>가장 긴 씬</h4>
+              <ol className="longest-list">
+                {longest.map((s) => (
+                  <li key={s.line}>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => onSelectScene(s.line)}
+                    >
+                      <span className="scene-number">S#{s.number}</span>
+                      <span className="scene-heading">{s.heading.replace(/^S#\d+\.\s*/, "")}</span>
+                      <span className="bar-value">{formatEighths(s.eighths)}p</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+        </section>
+      </div>
+    </aside>
+  );
+}

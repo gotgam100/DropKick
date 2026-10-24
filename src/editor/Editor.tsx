@@ -16,6 +16,7 @@ import {
 } from "./lineStyles";
 import { scriptEditing } from "./scriptView";
 import { currentPage, pageBreaks, paginationField, totalPages } from "./pageBreaks";
+import { analyzeScript, type ScriptAnalysis } from "../analysis/analyze";
 import type { LineStyle } from "./styles";
 
 export type EditorInfo = {
@@ -26,6 +27,8 @@ export type EditorInfo = {
   scenes: number;
   page: number;
   pages: number;
+  /** 커서가 있는 줄 번호 */
+  line: number;
   style: LineStyle;
 };
 
@@ -40,12 +43,16 @@ export type EditorHandle = {
   redo: () => void;
   find: () => void;
   focus: () => void;
+  /** 그 줄로 커서를 옮기고 화면 위쪽에 보이게 한다. */
+  goToLine: (line: number) => void;
 };
 
 type Props = {
   initialLines: ScriptLine[];
   onInfo: (info: EditorInfo) => void;
   onDirtyChange: (dirty: boolean) => void;
+  /** 페이지를 다시 계산할 때마다 (입력이 멈췄을 때) 분석 결과를 알린다. */
+  onAnalysis: (analysis: ScriptAnalysis) => void;
 };
 
 type Snapshot = { doc: Text; styles: readonly LineStyle[] };
@@ -54,7 +61,8 @@ function readInfo(state: EditorState, withCounts: EditorInfo | null): EditorInfo
   const style = currentStyle(state);
   const page = currentPage(state);
   const pages = totalPages(state);
-  if (withCounts) return { ...withCounts, style, page, pages };
+  const line = state.doc.lineAt(state.selection.main.head).number;
+  if (withCounts) return { ...withCounts, style, page, pages, line };
   const text = state.doc.toString();
   return {
     lines: state.doc.lines,
@@ -64,6 +72,7 @@ function readInfo(state: EditorState, withCounts: EditorInfo | null): EditorInfo
     scenes: state.field(sceneNumbersField).size,
     page,
     pages,
+    line,
     style,
   };
 }
@@ -82,7 +91,7 @@ function sameAs(state: EditorState, saved: Snapshot): boolean {
 }
 
 export const Editor = forwardRef<EditorHandle, Props>(function Editor(
-  { initialLines, onInfo, onDirtyChange },
+  { initialLines, onInfo, onDirtyChange, onAnalysis },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -93,8 +102,15 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
   const lastInfoRef = useRef<EditorInfo | null>(null);
   const onInfoRef = useRef(onInfo);
   const onDirtyRef = useRef(onDirtyChange);
+  const onAnalysisRef = useRef(onAnalysis);
   onInfoRef.current = onInfo;
   onDirtyRef.current = onDirtyChange;
+  onAnalysisRef.current = onAnalysis;
+
+  function publishAnalysis(state: EditorState) {
+    const { pagination } = state.field(paginationField);
+    onAnalysisRef.current(analyzeScript(scriptLines(state), pagination));
+  }
 
   function setDirty(dirty: boolean) {
     if (dirtyRef.current === dirty) return;
@@ -122,6 +138,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
       savedRef.current = snapshot(state);
       setDirty(false);
       publishInfo(state, true);
+      publishAnalysis(state);
       view.focus();
     },
     getLines() {
@@ -146,6 +163,17 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
     focus() {
       viewRef.current?.focus();
     },
+    goToLine(lineNumber) {
+      const view = viewRef.current;
+      if (!view) return;
+      const n = Math.max(1, Math.min(lineNumber, view.state.doc.lines));
+      const line = view.state.doc.line(n);
+      view.dispatch({
+        selection: { anchor: line.from },
+        effects: EditorView.scrollIntoView(line.from, { y: "start", yMargin: 120 }),
+      });
+      view.focus();
+    },
   }));
 
   useEffect(() => {
@@ -169,6 +197,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
         const repaginated =
           update.startState.field(paginationField) !== update.state.field(paginationField);
         if (changed && savedRef.current) setDirty(!sameAs(update.state, savedRef.current));
+        if (repaginated) publishAnalysis(update.state);
         if (!changed && !update.selectionSet && !repaginated) return;
         // 글이나 스타일이 바뀌었을 때만 전체 개수를 다시 센다.
         publishInfo(update.state, changed);
@@ -183,6 +212,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
     if (import.meta.env.DEV) (window as unknown as { __dropkick: EditorView }).__dropkick = view;
     savedRef.current = snapshot(state);
     publishInfo(state, true);
+    publishAnalysis(state);
     view.focus();
 
     return () => {

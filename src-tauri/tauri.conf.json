@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "DropKick",
-        "width": 1200,
-        "height": 880,
+        "width": 1440,
+        "height": 920,
         "minWidth": 960,
         "minHeight": 480,
         "titleBarStyle": "Overlay",

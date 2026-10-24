@@ -16,10 +16,12 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
-import { paginate, type PageBreak } from "../layout/paginate";
+import { paginate, type PageBreak, type Pagination } from "../layout/paginate";
 import { lineStylesField, scriptLines } from "./lineStyles";
 
 type PageInfo = {
+  /** 페이지 계산 전체 결과 (분석 화면에서 다시 쓴다) */
+  pagination: Pagination;
   pageOfLine: number[];
   total: number;
   breaks: PageBreak[];
@@ -103,8 +105,9 @@ class PageEndWidget extends WidgetType {
 const pageTopLine = Decoration.line({ class: "sl-page-top" });
 
 function compute(state: EditorState): PageInfo {
-  const { pages, pageOfLine, breaks, lastPageRows } = paginate(scriptLines(state));
-  return { pageOfLine, total: pages.length, breaks, lastPageRows };
+  const pagination = paginate(scriptLines(state));
+  const { pages, pageOfLine, breaks, lastPageRows } = pagination;
+  return { pagination, pageOfLine, total: pages.length, breaks, lastPageRows };
 }
 
 function buildDecorations(state: EditorState, info: PageInfo): DecorationSet {
