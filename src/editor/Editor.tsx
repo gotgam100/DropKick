@@ -8,6 +8,7 @@ import {
   characterNames,
   createScriptState,
   currentStyle,
+  sceneNumbersField,
   setStyle,
   type ScriptLine,
 } from "./lineStyles";
@@ -19,6 +20,7 @@ export type EditorInfo = {
   chars: number;
   charsNoSpace: number;
   characters: number;
+  scenes: number;
   style: LineStyle;
 };
 
@@ -40,6 +42,7 @@ function readInfo(state: EditorState, withCounts: EditorInfo | null): EditorInfo
     chars: text.replace(/\n/g, "").length,
     charsNoSpace: text.replace(/\s/g, "").length,
     characters: characterNames(state).length,
+    scenes: state.field(sceneNumbersField).size,
     style,
   };
 }

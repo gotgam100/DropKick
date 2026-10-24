@@ -1,8 +1,9 @@
-import { Prec, type Extension } from "@codemirror/state";
+import { Prec, type Extension, type Range } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
   ViewPlugin,
+  WidgetType,
   keymap,
   type DecorationSet,
   type ViewUpdate,
@@ -13,28 +14,52 @@ import {
   cycleLineStyle,
   insertScriptNewline,
   lineStylesField,
+  sceneNumbersField,
   setStyle,
   styleAtLine,
 } from "./lineStyles";
 import { LINE_STYLES, STYLE_LABELS, type LineStyle } from "./styles";
 
-// 스타일마다 줄 장식을 하나씩 미리 만들어 둔다.
-const lineDecorations = Object.fromEntries(
-  LINE_STYLES.map((style) => [
-    style,
-    Decoration.line({ class: `sl sl-${style}` }),
-  ]),
-) as Record<LineStyle, Decoration>;
+// 줄 장식은 (스타일, 앞 줄과 이어지는지, 현재 줄인지) 조합마다 한 번만 만든다.
+const lineDecorationCache = new Map<string, Decoration>();
 
-const currentLineDecorations = Object.fromEntries(
-  LINE_STYLES.map((style) => [
-    style,
-    Decoration.line({
-      class: `sl sl-${style} sl-current`,
-      attributes: { "data-style": STYLE_LABELS[style] },
-    }),
-  ]),
-) as Record<LineStyle, Decoration>;
+function lineDecoration(style: LineStyle, continued: boolean, current: boolean): Decoration {
+  const key = `${style}|${continued}|${current}`;
+  let deco = lineDecorationCache.get(key);
+  if (!deco) {
+    let cls = `sl sl-${style}`;
+    if (continued) cls += " sl-continued";
+    if (current) cls += " sl-current";
+    deco = Decoration.line({
+      class: cls,
+      attributes: current ? { "data-style": STYLE_LABELS[style] } : undefined,
+    });
+    lineDecorationCache.set(key, deco);
+  }
+  return deco;
+}
+
+// 앞 줄과 같은 스타일이 이어질 때 문단 사이 빈 줄 없이 붙여 쓰는 스타일
+const CONTINUOUS_STYLES = new Set<LineStyle>(["action"]);
+
+// 씬헤딩 앞에 붙는 자동 씬 번호 (글자가 아니라 화면 표시)
+class SceneNumberWidget extends WidgetType {
+  constructor(readonly number: number) {
+    super();
+  }
+  eq(other: SceneNumberWidget) {
+    return other.number === this.number;
+  }
+  toDOM() {
+    const span = document.createElement("span");
+    span.className = "cm-scene-number";
+    span.textContent = `S#${this.number}. `;
+    return span;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
 
 // 화면에 보이는 줄에만 스타일 장식을 붙인다. (100페이지 원고에서도 가볍게)
 const styleDecorations = ViewPlugin.fromClass(
@@ -51,7 +76,8 @@ const styleDecorations = ViewPlugin.fromClass(
         update.viewportChanged ||
         update.selectionSet ||
         update.focusChanged ||
-        update.startState.field(lineStylesField) !== update.state.field(lineStylesField)
+        update.startState.field(lineStylesField) !== update.state.field(lineStylesField) ||
+        update.startState.field(sceneNumbersField) !== update.state.field(sceneNumbersField)
       ) {
         this.decorations = this.build(update.view);
       }
@@ -60,8 +86,9 @@ const styleDecorations = ViewPlugin.fromClass(
     build(view: EditorView): DecorationSet {
       const { state } = view;
       const styles = state.field(lineStylesField);
+      const scenes = state.field(sceneNumbersField);
       const currentLine = state.doc.lineAt(state.selection.main.head).number;
-      const ranges = [];
+      const ranges: Range<Decoration>[] = [];
       let lastLine = 0;
       for (const { from, to } of view.visibleRanges) {
         let pos = from;
@@ -69,17 +96,25 @@ const styleDecorations = ViewPlugin.fromClass(
           const line = state.doc.lineAt(pos);
           if (line.number > lastLine) {
             const style = styles[line.number - 1];
-            const deco =
-              line.number === currentLine && view.hasFocus
-                ? currentLineDecorations[style]
-                : lineDecorations[style];
-            ranges.push(deco.range(line.from));
+            const continued =
+              CONTINUOUS_STYLES.has(style) && styles[line.number - 2] === style;
+            const current = line.number === currentLine && view.hasFocus;
+            ranges.push(lineDecoration(style, continued, current).range(line.from));
+
+            const scene = scenes.get(line.number);
+            if (scene && !scene.manual) {
+              ranges.push(
+                Decoration.widget({ widget: new SceneNumberWidget(scene.number), side: -1 }).range(
+                  line.from,
+                ),
+              );
+            }
             lastLine = line.number;
           }
           pos = line.to + 1;
         }
       }
-      return Decoration.set(ranges);
+      return Decoration.set(ranges, true);
     }
   },
   { decorations: (plugin) => plugin.decorations },

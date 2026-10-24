@@ -115,6 +115,45 @@ function mapStyles(old: readonly LineStyle[], tr: Transaction): LineStyle[] {
   return out;
 }
 
+// ---------- 씬 번호 ----------
+
+export type SceneNumber = { line: number; number: number; manual: boolean };
+
+// 씬헤딩을 "S#12. 내부..."처럼 직접 번호를 써서 시작한 경우
+const MANUAL_SCENE_NUMBER = /^\s*S\s*#\s*(\d+)/i;
+
+/**
+ * 씬헤딩마다 번호를 매긴다. 앞 씬 번호 + 1이 기본이고,
+ * 직접 "S#10." 처럼 번호를 쓴 씬이 있으면 그 번호부터 이어서 센다.
+ * 결과는 줄 번호 → 씬 번호.
+ */
+export function computeSceneNumbers(
+  state: EditorState,
+  styles: readonly LineStyle[],
+): Map<number, SceneNumber> {
+  const result = new Map<number, SceneNumber>();
+  let previous = 0;
+  for (let n = 1; n <= styles.length; n++) {
+    if (styles[n - 1] !== "scene") continue;
+    const match = MANUAL_SCENE_NUMBER.exec(state.doc.line(n).text);
+    const number = match ? Number(match[1]) : previous + 1;
+    result.set(n, { line: n, number, manual: Boolean(match) });
+    previous = number;
+  }
+  return result;
+}
+
+export const sceneNumbersField = StateField.define<Map<number, SceneNumber>>({
+  create(state) {
+    return computeSceneNumbers(state, state.field(lineStylesField));
+  },
+  update(value, tr) {
+    const styles = tr.state.field(lineStylesField);
+    if (!tr.docChanged && tr.startState.field(lineStylesField) === styles) return value;
+    return computeSceneNumbers(tr.state, styles);
+  },
+});
+
 // ---------- 읽기 ----------
 
 export function styleAtLine(state: EditorState, lineNumber: number): LineStyle {
@@ -157,7 +196,7 @@ export function createScriptState(
   const styles = source.map((l) => l.style);
   return EditorState.create({
     doc: source.map((l) => l.text).join("\n"),
-    extensions: [lineStylesField.init(() => styles), styleHistory, extensions],
+    extensions: [lineStylesField.init(() => styles), sceneNumbersField, styleHistory, extensions],
   });
 }
 

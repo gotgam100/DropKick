@@ -201,6 +201,16 @@ body {
   --gap: var(--line);
 }
 
+/* 액션 다음 줄이 또 액션이면 인물-대사처럼 빈 줄 없이 붙인다. */
+.paper .cm-line.sl-action.sl-continued {
+  --gap: 0px;
+}
+
+/* 씬헤딩 앞 자동 씬 번호 */
+.paper .cm-scene-number {
+  user-select: none;
+}
+
 .paper .cm-line.sl-character {
   --gap: var(--line);
   padding-left: 2.2in;

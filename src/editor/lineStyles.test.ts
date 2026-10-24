@@ -6,6 +6,7 @@ import {
   createScriptState,
   cycleLineStyle,
   insertScriptNewline,
+  sceneNumbersField,
   scriptLines,
   setStyle,
   type ScriptLine,
@@ -146,6 +147,40 @@ describe("되돌리기", () => {
     expect(scriptLines(s)).toEqual(sample);
     s = run(s, redo);
     expect(styles(s)).toEqual(["scene", "action", "character", "dialogue", "dialogue"]);
+  });
+});
+
+describe("씬 번호", () => {
+  const numbers = (s: EditorState) =>
+    [...s.field(sceneNumbersField).values()].map((v) => `${v.number}${v.manual ? "*" : ""}`);
+
+  it("씬헤딩마다 1, 2, 3 자동 번호", () => {
+    const s = createScriptState([
+      { style: "scene", text: "내부. 체육관 - 밤" },
+      { style: "action", text: "..." },
+      { style: "scene", text: "외부. 골목 - 밤" },
+      { style: "scene", text: "내부. 집 - 낮" },
+    ]);
+    expect(numbers(s)).toEqual(["1", "2", "3"]);
+  });
+
+  it("직접 쓴 번호가 있으면 그 다음부터 이어서", () => {
+    const s = createScriptState([
+      { style: "scene", text: "내부. 체육관 - 밤" },
+      { style: "scene", text: "S#10. 외부. 골목 - 밤" },
+      { style: "scene", text: "내부. 집 - 낮" },
+    ]);
+    expect(numbers(s)).toEqual(["1", "10*", "11"]);
+  });
+
+  it("중간에 씬을 넣으면 뒤 번호가 다시 매겨진다", () => {
+    let s = createScriptState([
+      { style: "scene", text: "내부. 체육관 - 밤" },
+      { style: "action", text: "민재가 서 있다." },
+      { style: "scene", text: "외부. 골목 - 밤" },
+    ]);
+    s = run(at(s, s.doc.line(2).from), setStyle("scene"));
+    expect(numbers(s)).toEqual(["1", "2", "3"]);
   });
 });
 

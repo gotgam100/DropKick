@@ -13,6 +13,7 @@ function App() {
     chars: 0,
     charsNoSpace: 0,
     characters: 0,
+    scenes: 0,
     style: "action",
   });
 
@@ -51,6 +52,7 @@ function App() {
       <footer className="statusbar">
         <span className="status-style">{STYLE_LABELS[info.style]}</span>
         <span className="status-spacer" />
+        <span>씬 {numberFormat.format(info.scenes)}개</span>
         <span>인물 {numberFormat.format(info.characters)}명</span>
         <span>{numberFormat.format(info.lines)}줄</span>
         <span>글자 {numberFormat.format(info.chars)}</span>
