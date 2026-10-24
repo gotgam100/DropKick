@@ -132,6 +132,31 @@ describe("페이지 나누기", () => {
     expect(pageOfLine[N]).toBe(2);
   });
 
+  it("여러 줄짜리 액션 문단은 중간에서 나누지 않고 통째로 넘긴다", () => {
+    const long = action("긴 액션 문단. ".repeat(20)); // 여러 줄로 감기는 한 문단
+    const { pages, breaks } = paginate([...fill(N - 3), long]);
+    expect(pages[0].lines).toHaveLength(N - 3);
+    expect(pages[1].lines.every((l) => l.source === N - 2)).toBe(true);
+    expect(breaks[0]).toMatchObject({ page: 2, beforeLine: N - 2, usedRows: N - 3, more: false });
+  });
+
+  it("대사는 대사 줄과 줄 사이에서만 나누고, 경계 정보에 (MORE)/(CONT'D)를 담는다", () => {
+    const longLine = "아주 긴 대사가 이어집니다. ".repeat(4); // 한 대사 줄이 여러 줄로 감긴다
+    const speech: ScriptLine[] = [
+      { style: "character", text: "민재" },
+      { style: "dialogue", text: longLine },
+      { style: "dialogue", text: longLine },
+      { style: "dialogue", text: longLine },
+    ];
+    const { pages, breaks } = paginate([...fill(N - 9), ...speech]);
+    const p1 = pages[0].lines;
+    // 앞 페이지의 마지막 대사 줄은 통째로 들어가 있어야 한다.
+    const lastSource = p1[p1.length - 2].source;
+    expect(pages[1].lines.some((l) => l.source === lastSource)).toBe(false);
+    expect(p1.at(-1)?.text).toBe("(MORE)");
+    expect(breaks[0]).toMatchObject({ page: 2, more: true, contd: "민재 (CONT'D)", usedRows: p1.at(-1)!.row + 1 });
+  });
+
   it("줄 간격 1.3배: 한 페이지 41줄", () => {
     expect(N).toBe(41);
   });

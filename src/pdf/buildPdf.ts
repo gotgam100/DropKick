@@ -98,12 +98,10 @@ export async function buildPdf(doc: ScriptDocument, files: FontFiles): Promise<U
   const { pages } = paginate(doc.lines);
   for (const p of pages) {
     const page = pdf.addPage([WIDTH, HEIGHT]);
-    // 페이지 번호: 2페이지부터, 위에서 0.5인치, 오른쪽 여백(7.5인치)에 맞춤
-    if (p.number > 1) {
-      const label = `${p.number}.`;
-      const x = 7.5 * PT - textColumns(label) * COLUMN;
-      page.drawText(label, { x, y: HEIGHT - 0.5 * PT - 9.5, size: SIZE, font: courier });
-    }
+    // 페이지 번호: 1페이지부터, 위에서 0.5인치, 오른쪽 여백(7.5인치)에 맞춤
+    const label = `${p.number}.`;
+    const x = 7.5 * PT - textColumns(label) * COLUMN;
+    page.drawText(label, { x, y: HEIGHT - 0.5 * PT - 9.5, size: SIZE, font: courier });
     for (const line of p.lines) drawLine(page, fonts, line.text, line.column, line.row, line.bold);
   }
 

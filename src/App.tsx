@@ -65,6 +65,9 @@ function App() {
 
       <main className="desk">
         <article className="paper">
+          <span className="page-number" aria-hidden="true">
+            1.
+          </span>
           <Editor
             ref={editorRef}
             initialLines={SAMPLE_SCRIPT}

@@ -11,7 +11,7 @@ export const paperTheme = EditorView.theme({
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": {
     fontFamily: "var(--font-script)",
-    lineHeight: "var(--script-line)",
+    lineHeight: "var(--line)",
     overflow: "visible",
   },
   ".cm-content": {

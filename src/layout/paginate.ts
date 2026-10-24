@@ -2,7 +2,7 @@
  * 할리우드 표준 페이지 계산
  *
  * US Letter(8.5 x 11in), 글자 12pt. 줄 간격은 표준(1/6in)보다 넓은 1.3배라서 본문 41줄.
- * 화면(App.css --script-line)과 PDF가 같은 줄 간격을 쓴다.
+ * 화면(App.css --line)과 PDF가 같은 줄 간격을 쓴다.
  * 위치는 종이 왼쪽 여백(1.5in) 기준 칸 수 (1칸 = 0.1in).
  *
  *   스타일     들여쓰기  폭    앞 빈 줄
@@ -16,8 +16,9 @@
  * 페이지 나누기 규칙
  * - 페이지 맨 위의 빈 줄은 없앤다.
  * - 씬헤딩은 페이지 맨 아래에 혼자 남지 않게 다음 페이지로 넘긴다.
- * - 액션은 줄 단위로 나눌 수 있지만, 앞뒤 페이지에 2줄 이상씩 남긴다.
- * - 대사는 문장이 끝나는 줄에서 나누고, 아래에 (MORE), 다음 페이지에 이름 (CONT'D)를 붙인다.
+ * - 페이지는 문단(원고의 줄) 사이에서만 나눈다. 화면에서 한 문단을 두 장에 나눠 그릴 수
+ *   없어서, 화면과 PDF가 똑같도록 정한 규칙이다. 한 페이지보다 긴 문단만 예외.
+ * - 대사는 대사 줄과 줄 사이(문장 끝 우선)에서 나누고, 아래에 (MORE), 다음 페이지에 이름 (CONT'D)를 붙인다.
  *   앞뒤 페이지에 대사가 2줄 이상씩 남지 않으면 나누지 않고 통째로 넘긴다.
  * - 인물 이름은 대사 없이 혼자 페이지 끝에 남지 않는다.
  */
@@ -28,7 +29,7 @@ import { numberScenes, sceneHeadingText } from "./sceneNumbers";
 
 /**
  * 줄 간격 배수. 할리우드 표준은 1.0(12pt, 1인치 6줄)이지만 읽기 편하도록 넓혔다.
- * 바꾸면 App.css의 --script-line도 같은 값으로 바꾼다.
+ * 바꾸면 App.css의 --line(16px × 배수, 1/64px 단위로 맞춤)도 같이 바꾼다.
  */
 export const LINE_SPACING = 1.3;
 
@@ -73,10 +74,27 @@ export type PageLine = {
 
 export type Page = { number: number; lines: PageLine[] };
 
+/** 화면에 페이지 경계를 그릴 때 필요한 정보 */
+export type PageBreak = {
+  /** 새 페이지 번호 */
+  page: number;
+  /** 새 페이지가 시작하는 원고 줄 번호 (1부터). 이 줄 바로 앞에 경계를 그린다. */
+  beforeLine: number;
+  /** 앞 페이지에 쓰인 줄 수 ((MORE) 포함) */
+  usedRows: number;
+  /** 앞 페이지 맨 아래에 (MORE)가 붙었는지 */
+  more: boolean;
+  /** 새 페이지 맨 위에 붙는 "이름 (CONT'D)" */
+  contd?: string;
+};
+
 export type Pagination = {
   pages: Page[];
   /** 원고 줄마다 그 줄이 시작하는 페이지 번호 (index = 줄 번호 - 1) */
   pageOfLine: number[];
+  breaks: PageBreak[];
+  /** 마지막 페이지에 쓰인 줄 수 */
+  lastPageRows: number;
 };
 
 type Row = { text: string; style: LineStyle | "more"; source: number };
@@ -196,22 +214,18 @@ export function paginate(lines: ScriptLine[]): Pagination {
     }
 
     if (block.kind === "single" && rows[0].style === "action") {
-      // 액션: 앞뒤로 2줄 이상 남기면서 나눈다. 페이지보다 긴 문단도 처리.
-      while (row + (row === 0 ? 0 : before) + rows.length > max) {
-        const avail = max - row - (row === 0 ? 0 : before);
-        let take = Math.min(avail, rows.length - 2);
-        if (row === 0) take = Math.min(avail, rows.length);
-        if (take < 2) {
-          newPage();
-          continue;
-        }
-        space(before);
-        rows.slice(0, take).forEach(put);
-        rows = rows.slice(take);
+      // 액션: 문단 중간에서 나누지 않고 다음 페이지로 넘긴다.
+      // (화면에서 한 문단을 두 장에 나눠 그릴 수 없으므로)
+      if (row > 0) {
         newPage();
         before = 0;
       }
-      space(before);
+      // 한 페이지보다 긴 문단만 어쩔 수 없이 나눈다.
+      while (rows.length > max) {
+        rows.slice(0, max).forEach(put);
+        rows = rows.slice(max);
+        newPage();
+      }
       rows.forEach(put);
       continue;
     }
@@ -229,6 +243,8 @@ export function paginate(lines: ScriptLine[]): Pagination {
           if (k + 1 > avail) continue;
           const last = rows[k - 1];
           if (last.style !== "dialogue") continue;
+          // 대사 한 줄(문단) 중간이 아니라 줄과 줄 사이에서만 나눈다.
+          if (rows[k].source === last.source) continue;
           if (rows.slice(1, k).filter((r) => r.style === "dialogue").length < 2) continue;
           if (rows.slice(k).filter((r) => r.style === "dialogue").length < 2) continue;
           if (fallback < 0) fallback = k;
@@ -267,5 +283,22 @@ export function paginate(lines: ScriptLine[]): Pagination {
   }
 
   if (page.lines.length > 0 || pages.length === 0) pages.push(page);
-  return { pages, pageOfLine };
+
+  const usedRows = (p: Page) => (p.lines.length ? p.lines[p.lines.length - 1].row + 1 : 0);
+  const breaks: PageBreak[] = [];
+  for (let i = 1; i < pages.length; i++) {
+    const prev = pages[i - 1];
+    const current = pages[i];
+    const first = current.lines.find((l) => l.source > 0 && pageOfLine[l.source - 1] === current.number);
+    if (!first) continue;
+    const top = current.lines[0];
+    breaks.push({
+      page: current.number,
+      beforeLine: first.source,
+      usedRows: usedRows(prev),
+      more: prev.lines[prev.lines.length - 1]?.style === "more",
+      contd: top.source === 0 && top.style === "character" ? top.text : undefined,
+    });
+  }
+  return { pages, pageOfLine, breaks, lastPageRows: usedRows(pages[pages.length - 1]) };
 }
