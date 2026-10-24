@@ -1,0 +1,132 @@
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+    "Pretendard", sans-serif;
+  /* 영문은 Courier 계열, 한글은 고정폭 한글 글꼴로 이어진다. */
+  --font-script: "Courier Prime", "D2Coding", "Nanum Gothic Coding", Menlo,
+    "Apple SD Gothic Neo", monospace;
+
+  --desk: #e9e7e2;
+  --paper: #ffffff;
+  --paper-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --chrome: #f6f5f2;
+  --border: #dcd9d2;
+  --ink: #1d1d1f;
+  --muted: #8a8780;
+  --caret: #d4472b;
+  --active-line: rgba(212, 71, 43, 0.05);
+  --selection: rgba(212, 71, 43, 0.18);
+  --match: rgba(212, 71, 43, 0.12);
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --desk: #1b1b1d;
+    --paper: #262628;
+    --paper-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+    --chrome: #222224;
+    --border: #38383b;
+    --ink: #e8e6e1;
+    --muted: #7d7b76;
+    --caret: #ff7a5c;
+    --active-line: rgba(255, 122, 92, 0.06);
+    --selection: rgba(255, 122, 92, 0.25);
+    --match: rgba(255, 122, 92, 0.15);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--desk);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  /* 왼쪽은 macOS 창 버튼(신호등) 자리 */
+  padding: 0 16px 0 84px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.app-name {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.doc-name {
+  color: var(--muted);
+}
+
+.app-name,
+.doc-name {
+  pointer-events: none;
+}
+
+.desk {
+  flex: 1;
+  overflow-y: auto;
+  padding: 40px 16px 80px;
+}
+
+/* US Letter 비율(8.5in 폭)에 맞춘 원고 용지 */
+.paper {
+  max-width: 816px;
+  min-height: 1056px;
+  margin: 0 auto;
+  padding: 96px 96px 96px 144px;
+  background: var(--paper);
+  box-shadow: var(--paper-shadow);
+  border-radius: 2px;
+}
+
+@media (max-width: 900px) {
+  .paper {
+    padding: 48px 32px;
+  }
+}
+
+.editor-host {
+  min-height: 100%;
+}
+
+.statusbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 20px;
+  height: 28px;
+  padding: 0 16px;
+  align-items: center;
+  background: var(--chrome);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  flex-shrink: 0;
+}
