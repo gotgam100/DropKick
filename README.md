@@ -25,6 +25,12 @@ npm run tauri dev
 npm test
 ```
 
+## 테스트용 원고
+
+- `samples/short-5p.fountain`: 단편 (표지 + 본문 4페이지)
+- `samples/long-100p.fountain`: 100페이지 (`node scripts/make-long-sample.mjs`로 다시 만들 수 있음)
+- 개발 서버에서 `http://localhost:1420/?sample=long` 처럼 열면 바로 불러온다.
+
 ## 앱 빌드
 
 ```bash
@@ -39,6 +45,9 @@ npm run tauri build
 | [React](https://github.com/facebook/react) | MIT |
 | [Vite](https://github.com/vitejs/vite) | MIT |
 | [CodeMirror 6](https://github.com/codemirror/dev) | MIT |
+| [pdf-lib](https://github.com/Hopding/pdf-lib), [@pdf-lib/fontkit](https://github.com/Hopding/fontkit) | MIT |
+| [Courier Prime](https://github.com/quoteunquoteapps/CourierPrime) 글꼴 | OFL-1.1 (`public/fonts/OFL-CourierPrime.txt`) |
+| [나눔고딕코딩](https://github.com/google/fonts/tree/main/ofl/nanumgothiccoding) 글꼴 | OFL-1.1 (`public/fonts/OFL-NanumGothicCoding.txt`) |
 | [Tauri Dialog 플러그인](https://github.com/tauri-apps/plugins-workspace) | Apache-2.0 / MIT |
 | [Vitest](https://github.com/vitest-dev/vitest) | MIT |
 

@@ -15,6 +15,7 @@ import {
   type ScriptLine,
 } from "./lineStyles";
 import { scriptEditing } from "./scriptView";
+import { currentPage, pageBreaks, paginationField, totalPages } from "./pageBreaks";
 import type { LineStyle } from "./styles";
 
 export type EditorInfo = {
@@ -23,6 +24,8 @@ export type EditorInfo = {
   charsNoSpace: number;
   characters: number;
   scenes: number;
+  page: number;
+  pages: number;
   style: LineStyle;
 };
 
@@ -49,7 +52,9 @@ type Snapshot = { doc: Text; styles: readonly LineStyle[] };
 
 function readInfo(state: EditorState, withCounts: EditorInfo | null): EditorInfo {
   const style = currentStyle(state);
-  if (withCounts) return { ...withCounts, style };
+  const page = currentPage(state);
+  const pages = totalPages(state);
+  if (withCounts) return { ...withCounts, style, page, pages };
   const text = state.doc.toString();
   return {
     lines: state.doc.lines,
@@ -57,6 +62,8 @@ function readInfo(state: EditorState, withCounts: EditorInfo | null): EditorInfo
     charsNoSpace: text.replace(/\s/g, "").length,
     characters: characterNames(state).length,
     scenes: state.field(sceneNumbersField).size,
+    page,
+    pages,
     style,
   };
 }
@@ -152,14 +159,17 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
       EditorView.contentAttributes.of({ spellcheck: "false", lang: "ko" }),
       placeholder("여기에 시나리오를 쓰세요…"),
       scriptEditing(),
+      pageBreaks(),
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
       paperTheme,
       EditorView.updateListener.of((update) => {
         const changed =
           update.docChanged ||
           update.startState.field(lineStylesField) !== update.state.field(lineStylesField);
+        const repaginated =
+          update.startState.field(paginationField) !== update.state.field(paginationField);
         if (changed && savedRef.current) setDirty(!sameAs(update.state, savedRef.current));
-        if (!changed && !update.selectionSet) return;
+        if (!changed && !update.selectionSet && !repaginated) return;
         // 글이나 스타일이 바뀌었을 때만 전체 개수를 다시 센다.
         publishInfo(update.state, changed);
       }),
@@ -169,6 +179,8 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
     const state = createScriptState(initialLines, extensions);
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
+    // 개발용: 브라우저 콘솔에서 에디터를 살펴볼 수 있게 한다.
+    if (import.meta.env.DEV) (window as unknown as { __dropkick: EditorView }).__dropkick = view;
     savedRef.current = snapshot(state);
     publishInfo(state, true);
     view.focus();

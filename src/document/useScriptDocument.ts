@@ -7,6 +7,7 @@ import type { EditorHandle } from "../editor/Editor";
 import type { ScriptLine } from "../editor/lineStyles";
 import { isLineStyle } from "../editor/styles";
 import { fromFountain, toFountain } from "../fountain/fountain";
+import { FONT_PATHS, type FontFiles } from "../pdf/fonts";
 
 const FILE_FILTERS = [{ name: "Fountain 시나리오", extensions: ["fountain", "spmd", "txt"] }];
 const LAST_FILE_KEY = "dropkick.lastFile";
@@ -33,6 +34,17 @@ function readLastFile(): string | null {
   } catch {
     return null;
   }
+}
+
+async function loadFonts(): Promise<FontFiles> {
+  const entries = await Promise.all(
+    Object.entries(FONT_PATHS).map(async ([key, path]) => {
+      const response = await fetch(`/${path}`);
+      if (!response.ok) throw new Error(`글꼴을 불러오지 못했습니다: ${path}`);
+      return [key, new Uint8Array(await response.arrayBuffer())] as const;
+    }),
+  );
+  return Object.fromEntries(entries) as FontFiles;
 }
 
 async function showError(text: string, error: unknown) {
@@ -141,6 +153,28 @@ export function useScriptDocument(editorRef: RefObject<EditorHandle | null>) {
     setPath(null);
   }, [confirmDiscard, editorRef, setPath]);
 
+  const exportPdf = useCallback(async () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const chosen = await save({
+      defaultPath: `${fileTitle(pathRef.current)}.pdf`,
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (!chosen) return;
+    const path = /\.pdf$/i.test(chosen) ? chosen : `${chosen}.pdf`;
+    try {
+      // PDF 만드는 코드는 필요할 때만 불러온다. (앱 시작을 가볍게)
+      const { buildPdf } = await import("../pdf/buildPdf");
+      const bytes = await buildPdf(
+        { titlePage: titlePageRef.current, lines: editor.getLines() },
+        await loadFonts(),
+      );
+      await invoke("write_binary", bytes, { headers: { path: encodeURIComponent(path) } });
+    } catch (error) {
+      await showError("PDF를 만들지 못했습니다.", error);
+    }
+  }, [editorRef]);
+
   // 한 번에 하나의 파일 작업만 (대화상자가 겹치지 않게)
   const runExclusive = useCallback(async (task: () => Promise<unknown>) => {
     if (busyRef.current) return;
@@ -176,6 +210,8 @@ export function useScriptDocument(editorRef: RefObject<EditorHandle | null>) {
           return runExclusive(saveCurrent);
         case "save_as":
           return runExclusive(saveAs);
+        case "export_pdf":
+          return runExclusive(exportPdf);
         case "close":
           return win.close();
         case "quit":
@@ -219,7 +255,7 @@ export function useScriptDocument(editorRef: RefObject<EditorHandle | null>) {
       disposed = true;
       cleanups.forEach((fn) => fn());
     };
-  }, [confirmDiscard, editorRef, newFile, openFile, runExclusive, saveAs, saveCurrent]);
+  }, [confirmDiscard, editorRef, exportPdf, newFile, openFile, runExclusive, saveAs, saveCurrent]);
 
   useEffect(() => {
     if (!isTauri()) return;

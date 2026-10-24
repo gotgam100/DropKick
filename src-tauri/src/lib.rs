@@ -36,6 +36,54 @@ fn write_script(path: String, contents: String) -> Result<(), String> {
     result.map_err(|e| format!("파일을 저장할 수 없습니다: {e}"))
 }
 
+/// PDF 같은 바이너리 파일을 저장한다. 내용은 요청 본문(raw), 경로는 "path" 헤더로 받는다.
+#[tauri::command]
+fn write_binary(request: tauri::ipc::Request) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
+        return Err("잘못된 요청입니다.".into());
+    };
+    let path = request
+        .headers()
+        .get("path")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| percent_decode(v))
+        .ok_or("저장할 위치가 없습니다.")?;
+    let target = PathBuf::from(&path);
+    let dir = target.parent().unwrap_or(Path::new("."));
+    let temp = dir.join(".dropkick-export.tmp");
+    let result = (|| -> std::io::Result<()> {
+        let mut file = fs::File::create(&temp)?;
+        file.write_all(data)?;
+        file.sync_all()?;
+        fs::rename(&temp, &target)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result.map_err(|e| format!("파일을 저장할 수 없습니다: {e}"))
+}
+
+/// encodeURIComponent로 인코딩된 경로를 되돌린다. (한글 경로를 헤더로 보내기 위해)
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                out.push((hi * 16 + lo) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
@@ -73,6 +121,8 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::separator(app)?,
             &item("save", "저장", Some("CmdOrCtrl+S"))?,
             &item("save_as", "다른 이름으로 저장…", Some("CmdOrCtrl+Shift+S"))?,
+            &PredefinedMenuItem::separator(app)?,
+            &item("export_pdf", "PDF로 내보내기…", Some("CmdOrCtrl+P"))?,
             &PredefinedMenuItem::separator(app)?,
             &item("close", "창 닫기", Some("CmdOrCtrl+W"))?,
         ],
@@ -137,7 +187,7 @@ pub fn run() {
         .on_menu_event(|app, event| {
             let _ = app.emit("menu", event.id().0.clone());
         })
-        .invoke_handler(tauri::generate_handler![read_script, write_script, quit_app])
+        .invoke_handler(tauri::generate_handler![read_script, write_script, write_binary, quit_app])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -164,6 +214,15 @@ mod tests {
         assert_eq!(leftovers.len(), 1);
 
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn decodes_korean_path() {
+        assert_eq!(
+            percent_decode("%2FUsers%2F%EB%A7%A5%2F%EB%93%9C%EB%A1%AD%ED%82%A5.pdf"),
+            "/Users/맥/드롭킥.pdf"
+        );
+        assert_eq!(percent_decode("a%20b%"), "a b%");
     }
 
     #[test]

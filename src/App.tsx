@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { fromFountain } from "./fountain/fountain";
 import { Editor, type EditorHandle, type EditorInfo } from "./editor/Editor";
 import { LINE_STYLES, STYLE_LABELS, shortcutFor } from "./editor/styles";
 import { SAMPLE_SCRIPT } from "./sample";
@@ -15,9 +16,23 @@ function App() {
     charsNoSpace: 0,
     characters: 0,
     scenes: 0,
+    page: 1,
+    pages: 1,
     style: "action",
   });
   const { title, filePath, dirty, setDirty } = useScriptDocument(editorRef);
+
+  // 개발용: 주소에 ?sample=short 또는 ?sample=long 을 붙이면 테스트 원고를 연다.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const sample = new URLSearchParams(window.location.search).get("sample");
+    const files: Record<string, () => Promise<{ default: string }>> = {
+      short: () => import("../samples/short-5p.fountain?raw"),
+      long: () => import("../samples/long-100p.fountain?raw"),
+    };
+    if (!sample || !files[sample]) return;
+    files[sample]().then((m) => editorRef.current?.load(fromFountain(m.default).lines));
+  }, []);
 
   return (
     <div className="app">
@@ -62,6 +77,9 @@ function App() {
       <footer className="statusbar">
         <span className="status-style">{STYLE_LABELS[info.style]}</span>
         <span className="status-spacer" />
+        <span className="status-page">
+          {numberFormat.format(info.page)} / {numberFormat.format(info.pages)}페이지
+        </span>
         <span>씬 {numberFormat.format(info.scenes)}개</span>
         <span>인물 {numberFormat.format(info.characters)}명</span>
         <span>{numberFormat.format(info.lines)}줄</span>

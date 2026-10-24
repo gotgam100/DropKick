@@ -15,6 +15,7 @@
  */
 import type { ScriptLine } from "../editor/lineStyles";
 import type { LineStyle } from "../editor/styles";
+import { numberScenes } from "../layout/sceneNumbers";
 
 export type ScriptDocument = {
   /** Fountain 표지 정보 (Title:, Author: 등). 그대로 보관했다가 다시 쓴다. */
@@ -95,17 +96,16 @@ export function toFountain(doc: ScriptDocument): string {
     out.push(doc.titlePage.trim(), "");
   }
 
-  let sceneNumber = 0;
+  const scenes = numberScenes(
+    doc.lines.map((l) => l.style),
+    (n) => doc.lines[n - 1].text,
+  );
   let prev: ScriptLine | undefined;
-  for (const line of doc.lines) {
-    if (line.style === "scene") {
-      const manual = /^\s*S\s*#\s*(\d+)/i.exec(line.text);
-      sceneNumber = manual ? Number(manual[1]) : sceneNumber + 1;
-    }
+  doc.lines.forEach((line, i) => {
     if (prev && !joinsPrevious(prev, line)) out.push("");
-    out.push(serializeLine(line, sceneNumber));
+    out.push(serializeLine(line, scenes.get(i + 1)?.number ?? 0));
     prev = line;
-  }
+  });
   return out.join("\n") + "\n";
 }
 
@@ -130,8 +130,10 @@ export function fromFountain(source: string): ScriptDocument {
   let inDialogue = false;
   for (let i = 0; i < body.length; i++) {
     const rawLine = body[i];
-    const prevBlank = i === 0 || body[i - 1].trim() === "";
-    const nextBlank = i === body.length - 1 || body[i + 1].trim() === "";
+    // "  "(빈 줄 표시)는 문단 구분이 아니라 내용이므로 빈 줄로 치지 않는다.
+    const isBlank = (s: string) => s.trim() === "" && s !== INTENTIONAL_BLANK;
+    const prevBlank = i === 0 || isBlank(body[i - 1]);
+    const nextBlank = i === body.length - 1 || isBlank(body[i + 1]);
 
     if (rawLine === INTENTIONAL_BLANK) {
       lines.push({ style: "action", text: "" });
@@ -212,6 +214,10 @@ export function fromFountain(source: string): ScriptDocument {
       continue;
     }
 
+    // 빈 줄로 나뉜 액션 문단 사이는 빈 액션 줄로 남겨 문단 구분을 지킨다.
+    if (prevBlank && lines.length > 0 && lines[lines.length - 1].style === "action") {
+      lines.push({ style: "action", text: "" });
+    }
     lines.push({ style: "action", text: text.replace(/^ {4}|\t/, "") });
   }
 

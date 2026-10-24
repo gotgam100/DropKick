@@ -114,6 +114,17 @@ describe("Fountain 열기", () => {
     ]);
   });
 
+  it("빈 줄로 나뉜 액션 문단은 빈 액션 줄로 구분을 지킨다", () => {
+    const result = fromFountain("첫 문단.\n이어지는 줄.\n\n둘째 문단.\n");
+    expect(result.lines).toEqual([
+      { style: "action", text: "첫 문단." },
+      { style: "action", text: "이어지는 줄." },
+      { style: "action", text: "" },
+      { style: "action", text: "둘째 문단." },
+    ]);
+    expect(fromFountain(toFountain(result))).toEqual(result);
+  });
+
   it("빈 파일은 빈 액션 한 줄", () => {
     expect(fromFountain("").lines).toEqual([{ style: "action", text: "" }]);
   });
