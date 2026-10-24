@@ -125,6 +125,18 @@ describe("Fountain 열기", () => {
     expect(fromFountain(toFountain(result))).toEqual(result);
   });
 
+  it("빈 씬헤딩과 빈 전환도 스타일이 유지된다", () => {
+    const doc = {
+      titlePage: null,
+      lines: [
+        { style: "scene" as const, text: "" },
+        { style: "action" as const, text: "액션" },
+        { style: "transition" as const, text: "" },
+      ],
+    };
+    expect(fromFountain(toFountain(doc))).toEqual(doc);
+  });
+
   it("빈 파일은 빈 액션 한 줄", () => {
     expect(fromFountain("").lines).toEqual([{ style: "action", text: "" }]);
   });

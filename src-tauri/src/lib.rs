@@ -84,6 +84,62 @@ fn percent_decode(input: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// 폴더를 만든다. (이미 있으면 그대로)
+#[tauri::command]
+fn ensure_dir(path: String) -> Result<(), String> {
+    fs::create_dir_all(&path).map_err(|e| format!("폴더를 만들 수 없습니다: {e}"))
+}
+
+/// 경로가 파일인지, 폴더인지, 없는지
+#[tauri::command]
+fn path_kind(path: String) -> &'static str {
+    match fs::metadata(&path) {
+        Ok(meta) if meta.is_dir() => "dir",
+        Ok(_) => "file",
+        Err(_) => "none",
+    }
+}
+
+const MAX_LISTED_FILES: usize = 5000;
+const MAX_DEPTH: usize = 6;
+
+/// 폴더 안 모든 파일의 상대 경로 ("인물/민재.md"). 숨김 파일과 심볼릭 링크는 건너뛴다.
+#[tauri::command]
+fn list_files(root: String) -> Result<Vec<String>, String> {
+    fn walk(base: &Path, dir: &Path, depth: usize, out: &mut Vec<String>) -> std::io::Result<()> {
+        if depth > MAX_DEPTH || out.len() >= MAX_LISTED_FILES {
+            return Ok(());
+        }
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            let file_type = entry.file_type()?;
+            let path = entry.path();
+            if file_type.is_dir() {
+                walk(base, &path, depth + 1, out)?;
+            } else if file_type.is_file() {
+                if let Ok(rel) = path.strip_prefix(base) {
+                    let parts: Vec<String> =
+                        rel.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
+                    out.push(parts.join("/"));
+                }
+            }
+            if out.len() >= MAX_LISTED_FILES {
+                break;
+            }
+        }
+        Ok(())
+    }
+    let base = PathBuf::from(&root);
+    let mut out = Vec::new();
+    walk(&base, &base, 0, &mut out).map_err(|e| format!("폴더를 읽을 수 없습니다: {e}"))?;
+    out.sort();
+    Ok(out)
+}
+
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
@@ -116,11 +172,13 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "파일",
         true,
         &[
-            &item("new", "새 문서", Some("CmdOrCtrl+N"))?,
+            &item("new_project", "새 프로젝트", Some("CmdOrCtrl+N"))?,
             &item("open", "열기…", Some("CmdOrCtrl+O"))?,
+            &item("open_project", "프로젝트 폴더 열기…", Some("CmdOrCtrl+Shift+O"))?,
             &PredefinedMenuItem::separator(app)?,
             &item("save", "저장", Some("CmdOrCtrl+S"))?,
             &item("save_as", "다른 이름으로 저장…", Some("CmdOrCtrl+Shift+S"))?,
+            &item("make_project", "프로젝트로 만들기…", None)?,
             &PredefinedMenuItem::separator(app)?,
             &item("export_pdf", "PDF로 내보내기…", Some("CmdOrCtrl+P"))?,
             &PredefinedMenuItem::separator(app)?,
@@ -197,7 +255,15 @@ pub fn run() {
         .on_menu_event(|app, event| {
             let _ = app.emit("menu", event.id().0.clone());
         })
-        .invoke_handler(tauri::generate_handler![read_script, write_script, write_binary, quit_app])
+        .invoke_handler(tauri::generate_handler![
+            read_script,
+            write_script,
+            write_binary,
+            ensure_dir,
+            path_kind,
+            list_files,
+            quit_app
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -233,6 +299,28 @@ mod tests {
             "/Users/맥/드롭킥.pdf"
         );
         assert_eq!(percent_decode("a%20b%"), "a b%");
+    }
+
+    #[test]
+    fn creates_and_lists_project_folder() {
+        let root = std::env::temp_dir().join(format!("dropkick-project-{}", std::process::id()));
+        let root_str = root.to_string_lossy().to_string();
+        let _ = fs::remove_dir_all(&root);
+
+        assert_eq!(path_kind(root_str.clone()), "none");
+        ensure_dir(root.join("인물").to_string_lossy().to_string()).unwrap();
+        ensure_dir(root.join("메모").to_string_lossy().to_string()).unwrap();
+        assert_eq!(path_kind(root_str.clone()), "dir");
+
+        write_script(root.join("시나리오.fountain").to_string_lossy().to_string(), "원고".into()).unwrap();
+        write_script(root.join("인물/민재.md").to_string_lossy().to_string(), "# 민재".into()).unwrap();
+        fs::write(root.join(".DS_Store"), "x").unwrap();
+        assert_eq!(path_kind(root.join("시나리오.fountain").to_string_lossy().to_string()), "file");
+
+        let files = list_files(root_str).unwrap();
+        assert_eq!(files, vec!["시나리오.fountain".to_string(), "인물/민재.md".to_string()]);
+
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

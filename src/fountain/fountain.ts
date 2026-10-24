@@ -58,7 +58,12 @@ function actionNeedsForce(text: string) {
 
 function serializeLine(line: ScriptLine, sceneNumber: number): string {
   const text = line.text;
-  if (text.trim() === "") return INTENTIONAL_BLANK;
+  if (text.trim() === "") {
+    // 빈 씬헤딩/전환도 스타일이 남도록 표시만 쓴다. 나머지 빈 줄은 빈 줄 표시로.
+    if (line.style === "scene") return ".";
+    if (line.style === "transition") return ">";
+    return INTENTIONAL_BLANK;
+  }
   switch (line.style) {
     case "scene":
       return `.${text} #${sceneNumber}#`;

@@ -5,7 +5,7 @@ import { fromFountain } from "./fountain/fountain";
 import { Editor, type EditorHandle, type EditorInfo } from "./editor/Editor";
 import { LINE_STYLES, STYLE_LABELS, shortcutFor } from "./editor/styles";
 import { SAMPLE_SCRIPT } from "./sample";
-import { useScriptDocument } from "./document/useScriptDocument";
+import { useProject } from "./project/useProject";
 import { sceneAtLine, type ScriptAnalysis } from "./analysis/analyze";
 import { ScenePanel } from "./panels/ScenePanel";
 import { StatsPanel } from "./panels/StatsPanel";
@@ -63,7 +63,7 @@ function App() {
   const [sceneFilter, setSceneFilter] = useState("");
   const [showScenes, toggleScenes, setShowScenes] = usePanelSetting("dropkick.panel.scenes", true);
   const [showStats, toggleStats] = usePanelSetting("dropkick.panel.stats", false);
-  const { title, filePath, dirty, setDirty } = useScriptDocument(editorRef);
+  const { title, kind, path, dirty, setDirty } = useProject(editorRef, SAMPLE_SCRIPT);
 
   const currentScene = useMemo(() => sceneAtLine(analysis.scenes, info.line), [analysis.scenes, info.line]);
 
@@ -111,9 +111,10 @@ function App() {
     <div className="app">
       <header className="titlebar" data-tauri-drag-region>
         <span className="app-name">DropKick</span>
-        <span className="doc-name" title={filePath ?? undefined}>
+        <span className="doc-name" title={path ?? "아직 저장하지 않았습니다"}>
           {title}
         </span>
+        <span className="doc-kind">{kind === "project" ? "프로젝트" : "Fountain 파일"}</span>
         {dirty && <span className="doc-dirty">수정됨</span>}
       </header>
 
