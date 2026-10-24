@@ -4,7 +4,7 @@
 
 import { writeFileSync } from "node:fs";
 
-const SCENES = Number(process.argv[2] ?? 142);
+const SCENES = Number(process.argv[2] ?? 107);
 
 // 같은 결과가 나오도록 고정된 난수
 let seed = 20261024;

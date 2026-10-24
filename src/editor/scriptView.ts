@@ -19,6 +19,8 @@ import {
   styleAtLine,
 } from "./lineStyles";
 import { LINE_STYLES, STYLE_LABELS, type LineStyle } from "./styles";
+import { ELEMENTS } from "../layout/paginate";
+import { textColumns } from "../layout/metrics";
 
 // 줄 장식은 (스타일, 앞 줄과 이어지는지, 현재 줄인지) 조합마다 한 번만 만든다.
 const lineDecorationCache = new Map<string, Decoration>();
@@ -38,6 +40,12 @@ function lineDecoration(style: LineStyle, continued: boolean, current: boolean):
   }
   return deco;
 }
+
+// 단어 중간에서 줄이 바뀌지 않게 하는 표시. 브라우저는 "7,800"이나 따옴표 뒤에서도
+// 줄을 끊는데, 페이지 계산은 띄어쓰기에서만 끊으므로 화면도 그렇게 맞춘다.
+// (줄보다 긴 단어는 표시하지 않아 글자 단위로 끊긴다. 페이지 계산도 같다.)
+const noWrapMark = Decoration.mark({ class: "cm-nowrap" });
+const WORD = /\S+/g;
 
 // 앞 줄과 같은 스타일이 이어질 때 문단 사이 빈 줄 없이 붙여 쓰는 스타일
 const CONTINUOUS_STYLES = new Set<LineStyle>(["action"]);
@@ -100,6 +108,14 @@ const styleDecorations = ViewPlugin.fromClass(
               CONTINUOUS_STYLES.has(style) && styles[line.number - 2] === style;
             const current = line.number === currentLine && view.hasFocus;
             ranges.push(lineDecoration(style, continued, current).range(line.from));
+
+            const width = ELEMENTS[style].width;
+            for (const match of line.text.matchAll(WORD)) {
+              if (match[0].length > 1 && textColumns(match[0]) <= width) {
+                const from = line.from + (match.index ?? 0);
+                ranges.push(noWrapMark.range(from, from + match[0].length));
+              }
+            }
 
             const scene = scenes.get(line.number);
             if (scene && !scene.manual) {

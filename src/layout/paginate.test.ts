@@ -16,6 +16,13 @@ describe("글자 폭", () => {
     expect(wrapText(text, 35)).toEqual(["가".repeat(10) + " " + "나".repeat(11), "다".repeat(10)]);
   });
 
+  it("단어 뒤 띄어쓰기 한 칸까지 들어가야 그 줄에 둔다 (화면과 같은 규칙)", () => {
+    // "AAAAA BBBB"는 딱 10칸이지만 뒤에 띄어쓰기가 오므로 BBBB는 다음 줄로
+    expect(wrapText("AAAAA BBBB C", 10)).toEqual(["AAAAA", "BBBB C"]);
+    // 문단 마지막 단어는 뒤에 띄어쓰기가 없으니 딱 맞으면 들어간다
+    expect(wrapText("AAAAA BBBB", 10)).toEqual(["AAAAA BBBB"]);
+  });
+
   it("너무 긴 어절은 글자 단위로 자른다", () => {
     expect(wrapText("가".repeat(30), 35)).toEqual(["가".repeat(22), "가".repeat(8)]);
   });
@@ -51,18 +58,25 @@ describe("페이지 나누기", () => {
 
   // 이어지는 액션 n줄 = 페이지의 0 ~ n-1번째 줄을 정확히 채운다.
   const fill = (n: number) => repeat(n, (i) => [action(`채움 ${i}`)]);
+  // 한 페이지 줄 수 (줄 간격 설정에 따라 바뀐다)
+  const N = PAGE.linesPerPage;
 
-  it("54줄이 넘으면 다음 페이지, 페이지 맨 위 빈 줄은 없앤다", () => {
-    const { pages } = paginate([...fill(54), { style: "transition", text: "CUT TO:" }]);
+  it("한 페이지 줄 수를 넘으면 다음 페이지, 페이지 맨 위 빈 줄은 없앤다", () => {
+    const { pages } = paginate([...fill(N), { style: "transition", text: "CUT TO:" }]);
     expect(pages.length).toBe(2);
-    expect(pages[0].lines.at(-1)?.row).toBe(PAGE.linesPerPage - 1);
+    expect(pages[0].lines.at(-1)?.row).toBe(N - 1);
     expect(pages[1].lines[0]).toMatchObject({ row: 0, style: "transition" });
   });
 
   it("씬헤딩은 페이지 끝에 혼자 남지 않는다", () => {
-    // 씬헤딩은 52번째 줄에 들어가지만, 다음 액션(54번째 줄)이 넘친다.
-    const { pages } = paginate([...fill(51), { style: "scene", text: "외부. 골목 - 밤" }, { style: "character", text: "수아" }, { style: "dialogue", text: "비." }]);
-    expect(pages[0].lines.at(-1)?.text).toBe("채움 50");
+    // 씬헤딩은 끝에서 두 번째 줄에 들어가지만, 다음 인물 이름이 넘친다.
+    const { pages } = paginate([
+      ...fill(N - 3),
+      { style: "scene", text: "외부. 골목 - 밤" },
+      { style: "character", text: "수아" },
+      { style: "dialogue", text: "비." },
+    ]);
+    expect(pages[0].lines.at(-1)?.text).toBe(`채움 ${N - 4}`);
     expect(pages[1].lines[0]).toMatchObject({ row: 0, style: "scene" });
   });
 
@@ -72,15 +86,15 @@ describe("페이지 나누기", () => {
       { style: "character", text: "민재" },
       ...repeat(8, () => [{ style: "dialogue" as const, text: sentence }]),
     ];
-    const { pages } = paginate([...fill(48), ...speech]);
+    const { pages } = paginate([...fill(N - 6), ...speech]);
     const p1 = pages[0].lines;
     const p2 = pages[1].lines;
     expect(p1.slice(-5).map((l) => `${l.row}:${l.style}`)).toEqual([
-      "49:character",
-      "50:dialogue",
-      "51:dialogue",
-      "52:dialogue",
-      "53:more",
+      `${N - 5}:character`,
+      `${N - 4}:dialogue`,
+      `${N - 3}:dialogue`,
+      `${N - 2}:dialogue`,
+      `${N - 1}:more`,
     ]);
     expect(p1.at(-1)?.text).toBe("(MORE)");
     expect(p2[0]).toMatchObject({ row: 0, style: "character", text: "민재 (CONT'D)" });
@@ -93,28 +107,32 @@ describe("페이지 나누기", () => {
       { style: "character", text: "은비" },
       ...repeat(4, () => [{ style: "dialogue" as const, text: sentence }]),
     ];
-    // 이름(51번째 줄) + 대사 1줄 + (MORE)까지만 들어가는 자리
-    const { pages } = paginate([...fill(50), ...speech]);
-    expect(pages[0].lines).toHaveLength(50);
+    // 이름 + 대사 1줄 + (MORE)까지만 들어가는 자리
+    const { pages } = paginate([...fill(N - 4), ...speech]);
+    expect(pages[0].lines).toHaveLength(N - 4);
     expect(pages[1].lines[0]).toMatchObject({ row: 0, style: "character", text: "은비" });
   });
 
   it("인물 이름만 페이지 끝에 남지 않는다", () => {
     const { pages } = paginate([
-      ...fill(52),
+      ...fill(N - 2),
       { style: "character", text: "수아" },
       { style: "dialogue", text: "짧은 대사." },
     ]);
-    expect(pages[0].lines).toHaveLength(52);
+    expect(pages[0].lines).toHaveLength(N - 2);
     expect(pages[1].lines[0]).toMatchObject({ row: 0, style: "character", text: "수아" });
   });
 
   it("원고 줄마다 시작 페이지를 알려 준다", () => {
-    const lines = repeat(60, (i) => [action(`액션 ${i}`)]);
+    const lines = repeat(N + 6, (i) => [action(`액션 ${i}`)]);
     const { pageOfLine, pages } = paginate(lines);
     expect(pages.length).toBe(2);
     expect(pageOfLine[0]).toBe(1);
-    expect(pageOfLine[53]).toBe(1);
-    expect(pageOfLine[54]).toBe(2);
+    expect(pageOfLine[N - 1]).toBe(1);
+    expect(pageOfLine[N]).toBe(2);
+  });
+
+  it("줄 간격 1.3배: 한 페이지 41줄", () => {
+    expect(N).toBe(41);
   });
 });

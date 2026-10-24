@@ -1,7 +1,8 @@
 /**
  * 할리우드 표준 페이지 계산
  *
- * US Letter(8.5 x 11in), 글자 12pt, 1줄 = 1/6in, 본문 54줄.
+ * US Letter(8.5 x 11in), 글자 12pt. 줄 간격은 표준(1/6in)보다 넓은 1.3배라서 본문 41줄.
+ * 화면(App.css --script-line)과 PDF가 같은 줄 간격을 쓴다.
  * 위치는 종이 왼쪽 여백(1.5in) 기준 칸 수 (1칸 = 0.1in).
  *
  *   스타일     들여쓰기  폭    앞 빈 줄
@@ -25,14 +26,24 @@ import type { LineStyle } from "../editor/styles";
 import { textColumns, toUpperLatin, wrapText } from "./metrics";
 import { numberScenes, sceneHeadingText } from "./sceneNumbers";
 
+/**
+ * 줄 간격 배수. 할리우드 표준은 1.0(12pt, 1인치 6줄)이지만 읽기 편하도록 넓혔다.
+ * 바꾸면 App.css의 --script-line도 같은 값으로 바꾼다.
+ */
+export const LINE_SPACING = 1.3;
+
+const FONT_SIZE_PT = 12;
+const LINE_HEIGHT_PT = FONT_SIZE_PT * LINE_SPACING;
+const BODY_HEIGHT_PT = (11 - 1 - 1) * 72; // 위아래 여백 1인치씩
+
 export const PAGE = {
   widthIn: 8.5,
   heightIn: 11,
   leftMarginIn: 1.5,
   topMarginIn: 1,
-  linesPerPage: 54,
-  lineHeightPt: 12,
-  fontSizePt: 12,
+  linesPerPage: Math.floor(BODY_HEIGHT_PT / LINE_HEIGHT_PT + 1e-9),
+  lineHeightPt: LINE_HEIGHT_PT,
+  fontSizePt: FONT_SIZE_PT,
   columnIn: 0.1,
   bodyColumns: 60,
 } as const;

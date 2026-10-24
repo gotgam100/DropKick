@@ -22,8 +22,8 @@ const LEFT = PAGE.leftMarginIn * PT;
 const COLUMN = PAGE.columnIn * PT; // 7.2pt
 const SIZE = PAGE.fontSizePt;
 const LINE = PAGE.lineHeightPt;
-// 줄 칸(12pt) 위쪽에서 글자 기준선까지 거리
-const BASELINE = 9.5;
+// 줄 칸 위쪽에서 글자 기준선까지 거리 (12pt 글자를 줄 칸 가운데에 놓는다)
+const BASELINE = (LINE - SIZE) / 2 + 9.5;
 
 type Fonts = { regular: [PDFFont, PDFFont]; bold: [PDFFont, PDFFont] };
 
@@ -65,7 +65,7 @@ function drawTitlePage(pdf: PDFDocument, fonts: Fonts, titlePage: string) {
   const centered = (text: string, row: number, bold = false) =>
     drawLine(page, fonts, text, centerColumn - textColumns(text) / 2, row, bold);
 
-  let row = 18;
+  let row = Math.round(PAGE.linesPerPage / 3);
   for (const line of fields.get("title") ?? []) centered(line.replace(/[*_]/g, ""), row++, true);
   row += 3;
   for (const key of ["credit", "author", "authors", "source"]) {
@@ -102,7 +102,7 @@ export async function buildPdf(doc: ScriptDocument, files: FontFiles): Promise<U
     if (p.number > 1) {
       const label = `${p.number}.`;
       const x = 7.5 * PT - textColumns(label) * COLUMN;
-      page.drawText(label, { x, y: HEIGHT - 0.5 * PT - BASELINE, size: SIZE, font: courier });
+      page.drawText(label, { x, y: HEIGHT - 0.5 * PT - 9.5, size: SIZE, font: courier });
     }
     for (const line of p.lines) drawLine(page, fonts, line.text, line.column, line.row, line.bold);
   }

@@ -26,3 +26,6 @@ dist-ssr
 # Tauri / Rust
 src-tauri/target
 src-tauri/gen/schemas
+
+# 테스트 원고로 내보낸 PDF
+samples/*.pdf

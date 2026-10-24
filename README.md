@@ -27,7 +27,7 @@ npm test
 
 ## 테스트용 원고
 
-- `samples/short-5p.fountain`: 단편 (표지 + 본문 4페이지)
+- `samples/short-5p.fountain`: 단편 (표지 + 본문 6페이지)
 - `samples/long-100p.fountain`: 100페이지 (`node scripts/make-long-sample.mjs`로 다시 만들 수 있음)
 - 개발 서버에서 `http://localhost:1420/?sample=long` 처럼 열면 바로 불러온다.
 

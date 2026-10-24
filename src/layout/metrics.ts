@@ -86,7 +86,8 @@ export function wrapText(text: string, width: number): string[] {
     lineWidth = 0;
   };
 
-  for (const word of words) {
+  for (let index = 0; index < words.length; index++) {
+    const word = words[index];
     const isSpace = /^\s+$/.test(word);
     if (isSpace) {
       if (line === "") continue; // 줄 맨 앞 공백은 버린다.
@@ -95,7 +96,11 @@ export function wrapText(text: string, width: number): string[] {
       continue;
     }
     const wordWidth = textColumns(word);
-    if (lineWidth + wordWidth <= width + EPSILON) {
+    // 화면(브라우저)은 단어 뒤에 띄어쓰기가 오면 그 칸까지 들어가야 단어를 그 줄에 둔다.
+    // 같은 규칙을 써야 화면과 PDF의 줄바꿈이 같아진다.
+    const next = words[index + 1];
+    const trailing = next && /^\s+$/.test(next) ? textColumns(next) : 0;
+    if (lineWidth + wordWidth + trailing <= width + EPSILON) {
       line += word;
       lineWidth += wordWidth;
       continue;
