@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use std::sync::Mutex;
 
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 /// Finder에서 더블클릭해 연 프로젝트 경로. 화면이 준비되기 전에 들어오면 여기 모아 둔다.
@@ -241,6 +241,20 @@ fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
+/// 'DropKick 정보' 창에 보일 내용. 개발 중(번들 없이 실행)에도 앱 아이콘이 보이도록 직접 넣는다.
+fn about_metadata<R: Runtime>(app: &AppHandle<R>) -> AboutMetadata<'static> {
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))
+        .ok()
+        .map(|image| image.to_owned());
+    AboutMetadata {
+        name: Some("DropKick".into()),
+        version: Some(app.package_info().version.to_string()),
+        copyright: app.config().bundle.copyright.clone(),
+        icon,
+        ..Default::default()
+    }
+}
+
 fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let item =
         |id: &str, label: &str, accel: Option<&str>| MenuItem::with_id(app, id, label, true, accel);
@@ -250,7 +264,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "DropKick",
         true,
         &[
-            &PredefinedMenuItem::about(app, Some("DropKick 정보"), None)?,
+            &PredefinedMenuItem::about(app, Some("DropKick 정보"), Some(about_metadata(app)))?,
             &item("check_update", "업데이트 확인…", None)?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::services(app, Some("서비스"))?,
