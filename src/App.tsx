@@ -3,11 +3,13 @@ import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { fromFountain } from "./fountain/fountain";
 import { Editor, type EditorHandle, type EditorInfo } from "./editor/Editor";
+import { TextEditor, type TextEditorHandle } from "./editor/TextEditor";
 import { LINE_STYLES, STYLE_LABELS, shortcutFor } from "./editor/styles";
 import { SAMPLE_SCRIPT } from "./sample";
 import { useProject } from "./project/useProject";
+import { DOC_TYPE_LABELS } from "./project/model";
 import { sceneAtLine, type ScriptAnalysis } from "./analysis/analyze";
-import { ScenePanel } from "./panels/ScenePanel";
+import { ProjectTree } from "./panels/ProjectTree";
 import { StatsPanel } from "./panels/StatsPanel";
 import "./App.css";
 import "./panels/panels.css";
@@ -48,6 +50,7 @@ function usePanelSetting(key: string, initial: boolean) {
 
 function App() {
   const editorRef = useRef<EditorHandle>(null);
+  const textEditorRef = useRef<TextEditorHandle>(null);
   const [info, setInfo] = useState<EditorInfo>({
     lines: 0,
     chars: 0,
@@ -60,30 +63,45 @@ function App() {
     style: "action",
   });
   const [analysis, setAnalysis] = useState<ScriptAnalysis>(EMPTY_ANALYSIS);
-  const [sceneFilter, setSceneFilter] = useState("");
-  const [showScenes, toggleScenes, setShowScenes] = usePanelSetting("dropkick.panel.scenes", true);
+  const [treeFilter, setTreeFilter] = useState("");
+  const [showSidebar, toggleSidebar, setShowSidebar] = usePanelSetting("dropkick.panel.scenes", true);
   const [showStats, toggleStats] = usePanelSetting("dropkick.panel.stats", false);
-  const { title, kind, path, dirty, setDirty } = useProject(editorRef, SAMPLE_SCRIPT);
+  const project = useProject(editorRef, textEditorRef, SAMPLE_SCRIPT);
+  const isScript = project.activeDoc.id === project.mainScriptId;
 
   const currentScene = useMemo(() => sceneAtLine(analysis.scenes, info.line), [analysis.scenes, info.line]);
 
-  const goToLine = useCallback((line: number) => editorRef.current?.goToLine(line), []);
+  // 씬을 누르면: 원고를 열고 그 씬으로 이동
+  const { openDoc, mainScriptId } = project;
+  const pendingLineRef = useRef<number | null>(null);
+  const goToLine = useCallback(
+    (line: number) => {
+      if (isScript) {
+        editorRef.current?.goToLine(line);
+        return;
+      }
+      // 원고 화면이 보인 다음 이동한다. (아래 useEffect)
+      pendingLineRef.current = line;
+      openDoc(mainScriptId);
+    },
+    [isScript, mainScriptId, openDoc],
+  );
 
   const findCharacter = useCallback(
     (name: string) => {
-      setSceneFilter(name);
-      setShowScenes(true);
+      setTreeFilter(name);
+      setShowSidebar(true);
     },
-    [setShowScenes],
+    [setShowSidebar],
   );
 
-  // 보기 메뉴 (씬 목록 ⌥⌘1, 통계 ⌥⌘2)
+  // 보기 메뉴 (사이드바 ⌥⌘1, 통계 ⌥⌘2)
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
     let disposed = false;
     listen<string>("menu", (event) => {
-      if (event.payload === "toggle_scenes") toggleScenes();
+      if (event.payload === "toggle_scenes") toggleSidebar();
       if (event.payload === "toggle_stats") toggleStats();
     }).then((fn) => {
       if (disposed) fn();
@@ -93,7 +111,18 @@ function App() {
       disposed = true;
       unlisten?.();
     };
-  }, [toggleScenes, toggleStats]);
+  }, [toggleSidebar, toggleStats]);
+
+  // 원고로 돌아오면 원고에 커서를 두고, 누른 씬이 있으면 그리로 이동한다.
+  useEffect(() => {
+    if (!isScript) return;
+    const line = pendingLineRef.current;
+    pendingLineRef.current = null;
+    const go = () => (line !== null ? editorRef.current?.goToLine(line) : editorRef.current?.focus());
+    // 숨겨져 있던 원고가 다시 보이면 높이 계산이 한 박자 늦으므로, 조금 뒤에 한 번 더 맞춘다.
+    const timers = [setTimeout(go, 0), setTimeout(go, 120)];
+    return () => timers.forEach(clearTimeout);
+  }, [isScript]);
 
   // 개발용: 주소에 ?sample=short 또는 ?sample=long 을 붙이면 테스트 원고를 연다.
   useEffect(() => {
@@ -107,45 +136,57 @@ function App() {
     files[sample]().then((m) => editorRef.current?.load(fromFountain(m.default).lines));
   }, []);
 
+  const docChars = useMemo(() => project.activeText.replace(/\s/g, "").length, [project.activeText]);
+
   return (
     <div className="app">
       <header className="titlebar" data-tauri-drag-region>
         <span className="app-name">DropKick</span>
-        <span className="doc-name" title={path ?? "아직 저장하지 않았습니다"}>
-          {title}
+        <span className="doc-name" title={project.path ?? "아직 저장하지 않았습니다"}>
+          {project.title}
         </span>
-        <span className="doc-kind">{kind === "project" ? "프로젝트" : "Fountain 파일"}</span>
-        {dirty && <span className="doc-dirty">수정됨</span>}
+        <span className="doc-kind">{project.kind === "project" ? "프로젝트" : "Fountain 파일"}</span>
+        {project.dirty && <span className="doc-dirty">수정됨</span>}
       </header>
 
       <nav className="stylebar" aria-label="문장 스타일">
-        {LINE_STYLES.map((style) => (
-          <button
-            key={style}
-            type="button"
-            className={style === info.style ? "style-button active" : "style-button"}
-            aria-pressed={style === info.style}
-            title={`${STYLE_LABELS[style]} (${shortcutFor(style)})`}
-            // 버튼을 눌러도 에디터 커서가 그대로 있도록 포커스를 뺏지 않는다.
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => editorRef.current?.setStyle(style)}
-          >
-            <span className="style-name">{STYLE_LABELS[style]}</span>
-            <kbd>{shortcutFor(style)}</kbd>
-          </button>
-        ))}
-        <span className="stylebar-spacer" />
         <button
           type="button"
-          className={showScenes ? "style-button active" : "style-button"}
-          aria-pressed={showScenes}
-          title="씬 목록 보기/숨기기 (⌥⌘1)"
+          className={showSidebar ? "style-button active" : "style-button"}
+          aria-pressed={showSidebar}
+          title="사이드바 보기/숨기기 (⌥⌘1)"
           onMouseDown={(e) => e.preventDefault()}
-          onClick={toggleScenes}
+          onClick={toggleSidebar}
         >
-          <span className="style-name">씬 목록</span>
+          <span className="style-name">사이드바</span>
           <kbd>⌥⌘1</kbd>
         </button>
+        <span className="stylebar-divider" />
+        {isScript ? (
+          LINE_STYLES.map((style) => (
+            <button
+              key={style}
+              type="button"
+              className={style === info.style ? "style-button active" : "style-button"}
+              aria-pressed={style === info.style}
+              title={`${STYLE_LABELS[style]} (${shortcutFor(style)})`}
+              // 버튼을 눌러도 에디터 커서가 그대로 있도록 포커스를 뺏지 않는다.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => editorRef.current?.setStyle(style)}
+            >
+              <span className="style-name">{STYLE_LABELS[style]}</span>
+              <kbd>{shortcutFor(style)}</kbd>
+            </button>
+          ))
+        ) : (
+          <span className="stylebar-doc">
+            {DOC_TYPE_LABELS[project.activeDoc.type]} · {project.activeDoc.name}
+            <button type="button" className="style-button" onClick={() => openDoc(mainScriptId)}>
+              ← 시나리오로
+            </button>
+          </span>
+        )}
+        <span className="stylebar-spacer" />
         <button
           type="button"
           className={showStats ? "style-button active" : "style-button"}
@@ -160,17 +201,30 @@ function App() {
       </nav>
 
       <div className="workspace">
-        {showScenes && (
-          <ScenePanel
+        {showSidebar && (
+          <ProjectTree
+            title={project.title}
+            kind={project.kind}
+            tree={project.tree}
+            mainScriptId={project.mainScriptId}
+            activeDocId={project.activeDoc.id}
+            dirtyDocIds={project.dirtyDocIds}
             scenes={analysis.scenes}
-            currentLine={info.line}
-            filter={sceneFilter}
-            onFilterChange={setSceneFilter}
-            onSelect={goToLine}
+            currentSceneLine={currentScene?.line ?? null}
+            filter={treeFilter}
+            onFilterChange={setTreeFilter}
+            onOpenDoc={project.openDoc}
+            onSelectScene={goToLine}
+            onAdd={(kind, parentId) => (kind === "folder" ? project.addFolder(parentId ?? null) : project.addDoc(kind, parentId))}
+            onRename={project.rename}
+            onRemove={project.remove}
+            onMove={project.move}
+            onMakeProject={project.makeProject}
           />
         )}
 
-        <main className="desk">
+        {/* 원고 에디터는 항상 살려 두고(되돌리기 기록, 분석 유지) 다른 문서를 볼 때만 숨긴다. */}
+        <main className="desk" hidden={!isScript}>
           <article className="paper">
             <span className="page-number" aria-hidden="true">
               1.
@@ -179,11 +233,24 @@ function App() {
               ref={editorRef}
               initialLines={SAMPLE_SCRIPT}
               onInfo={setInfo}
-              onDirtyChange={setDirty}
+              onDirtyChange={project.setScriptDirty}
               onAnalysis={setAnalysis}
             />
           </article>
         </main>
+
+        {!isScript && (
+          <main className="text-desk">
+            <article className="text-page">
+              <TextEditor
+                ref={textEditorRef}
+                docId={project.activeDoc.id}
+                text={project.activeText}
+                onChange={project.setDocText}
+              />
+            </article>
+          </main>
+        )}
 
         {showStats && (
           <StatsPanel
@@ -196,20 +263,31 @@ function App() {
       </div>
 
       <footer className="statusbar">
-        <span className="status-style">{STYLE_LABELS[info.style]}</span>
-        {currentScene && (
-          <span className="status-scene" title={currentScene.heading}>
-            {currentScene.heading}
-          </span>
+        {isScript ? (
+          <>
+            <span className="status-style">{STYLE_LABELS[info.style]}</span>
+            {currentScene && (
+              <span className="status-scene" title={currentScene.heading}>
+                {currentScene.heading}
+              </span>
+            )}
+            <span className="status-spacer" />
+            <span className="status-page">
+              {numberFormat.format(info.page)} / {numberFormat.format(info.pages)}페이지
+            </span>
+            <span>씬 {numberFormat.format(info.scenes)}개</span>
+            <span>인물 {numberFormat.format(info.characters)}명</span>
+            <span>글자 {numberFormat.format(info.chars)}</span>
+            <span>공백 제외 {numberFormat.format(info.charsNoSpace)}</span>
+          </>
+        ) : (
+          <>
+            <span className="status-style">{DOC_TYPE_LABELS[project.activeDoc.type]}</span>
+            <span className="status-scene">{project.activeDoc.name}</span>
+            <span className="status-spacer" />
+            <span>공백 제외 {numberFormat.format(docChars)}자</span>
+          </>
         )}
-        <span className="status-spacer" />
-        <span className="status-page">
-          {numberFormat.format(info.page)} / {numberFormat.format(info.pages)}페이지
-        </span>
-        <span>씬 {numberFormat.format(info.scenes)}개</span>
-        <span>인물 {numberFormat.format(info.characters)}명</span>
-        <span>글자 {numberFormat.format(info.chars)}</span>
-        <span>공백 제외 {numberFormat.format(info.charsNoSpace)}</span>
       </footer>
     </div>
   );

@@ -11,6 +11,7 @@ import {
   walkDocs,
 } from "./model";
 import { joinPath, loadProject, saveProject, type ProjectFs } from "./projectIO";
+import { defaultParentFor, insertNode, makeDoc, moveNode, removeNode, renameNode } from "./tree";
 import { fromFountain } from "../fountain/fountain";
 
 /** 메모리 속 가짜 파일 시스템 */
@@ -40,8 +41,23 @@ function memoryFs() {
       if (dirs.has(path) || [...files.keys()].some((p) => p.startsWith(`${path}/`))) return "dir";
       return "none";
     },
+    async rename(from, to) {
+      if (files.has(to)) throw new Error(`이미 있음: ${to}`);
+      const text = files.get(from);
+      if (text === undefined) throw new Error(`없음: ${from}`);
+      files.delete(from);
+      files.set(to, text);
+    },
+    async trash(path) {
+      if (files.delete(path)) trashed.push(path);
+    },
+    async removeDirIfEmpty(path) {
+      if ([...files.keys()].some((p) => p.startsWith(`${path}/`))) return false;
+      return dirs.delete(path);
+    },
   };
-  return { fs, files, dirs, writes };
+  const trashed: string[] = [];
+  return { fs, files, dirs, writes, trashed };
 }
 
 const ROOT = "/Users/me/드롭킥.dropkick";
@@ -102,7 +118,10 @@ describe("저장하고 다시 열기", () => {
     await saveProject(fs, ROOT, project.manifest, project.texts);
     writes.length = 0;
     project.texts.set(project.manifest.mainScript, "바뀐 원고");
-    await saveProject(fs, ROOT, project.manifest, project.texts, new Set([project.manifest.mainScript]));
+    await saveProject(fs, ROOT, project.manifest, project.texts, {
+      only: new Set([project.manifest.mainScript]),
+      previous: project.manifest,
+    });
     expect(writes).toEqual([joinPath(ROOT, "시나리오.fountain"), joinPath(ROOT, MANIFEST_FILE)]);
   });
 
@@ -113,6 +132,78 @@ describe("저장하고 다시 열기", () => {
     files.delete(joinPath(ROOT, "시놉시스.md"));
     const loaded = await loadProject(fs, ROOT);
     expect(loaded.missing).toEqual(["시놉시스.md"]);
+  });
+});
+
+describe("트리 변경을 저장", () => {
+  async function savedProject() {
+    const mem = memoryFs();
+    const project = createProject("드롭킥");
+    let tree = project.manifest.tree;
+    const memos = defaultParentFor(tree, "memo")!;
+    const people = defaultParentFor(tree, "character")!;
+    const memo = { ...makeDoc(tree, "memo", memos), name: "아이디어" };
+    tree = insertNode(tree, memo, memos);
+    const minjae = { ...makeDoc(tree, "character", people), name: "민재" };
+    tree = insertNode(tree, minjae, people);
+    project.texts.set(memo.id, "메모 내용");
+    project.texts.set(minjae.id, "# 민재");
+    const saved = await saveProject(mem.fs, ROOT, { ...project.manifest, tree }, project.texts);
+    return { ...mem, saved, texts: project.texts, ids: { memo: memo.id, minjae: minjae.id, memos, people } };
+  }
+
+  it("새 문서는 트리 위치와 이름대로 파일이 생긴다", async () => {
+    const { files, saved } = await savedProject();
+    expect(files.get(joinPath(ROOT, "메모/아이디어.md"))).toBe("메모 내용");
+    expect(files.get(joinPath(ROOT, "인물/민재.md"))).toBe("# 민재");
+    expect(walkDocs(saved.tree).map((d) => d.file)).toContain("인물/민재.md");
+  });
+
+  it("이름을 바꾸거나 다른 폴더로 옮기면 파일도 옮겨진다 (내용은 그대로)", async () => {
+    const { fs, files, saved, texts, ids } = await savedProject();
+    let tree = renameNode(saved.tree, ids.memo, "첫 아이디어");
+    tree = moveNode(tree, ids.memo, ids.people, "inside");
+    await saveProject(fs, ROOT, { ...saved, tree }, texts, { only: new Set(), previous: saved });
+    expect(files.has(joinPath(ROOT, "메모/아이디어.md"))).toBe(false);
+    expect(files.get(joinPath(ROOT, "인물/첫 아이디어.md"))).toBe("메모 내용");
+  });
+
+  it("두 문서가 이름을 맞바꿔도 내용이 섞이지 않는다", async () => {
+    const { fs, files, saved, texts, ids } = await savedProject();
+    let tree = moveNode(saved.tree, ids.memo, ids.people, "inside");
+    tree = renameNode(tree, ids.minjae, "임시");
+    tree = renameNode(tree, ids.memo, "민재");
+    tree = renameNode(tree, ids.minjae, "아이디어");
+    await saveProject(fs, ROOT, { ...saved, tree }, texts, { only: new Set(), previous: saved });
+    expect(files.get(joinPath(ROOT, "인물/민재.md"))).toBe("메모 내용");
+    expect(files.get(joinPath(ROOT, "인물/아이디어.md"))).toBe("# 민재");
+  });
+
+  it("지운 문서는 휴지통으로, 지운 폴더는 비면 정리된다", async () => {
+    const { fs, files, dirs, trashed, saved, texts, ids } = await savedProject();
+    const result = removeNode(saved.tree, ids.people);
+    await saveProject(fs, ROOT, { ...saved, tree: result.tree }, texts, {
+      only: new Set(),
+      previous: saved,
+      deleted: result.removed,
+    });
+    expect(trashed).toEqual([joinPath(ROOT, "인물/민재.md")]);
+    expect(files.has(joinPath(ROOT, "인물/민재.md"))).toBe(false);
+    expect(dirs.has(joinPath(ROOT, "인물"))).toBe(false);
+  });
+
+  it("지운 문서와 같은 이름으로 새 문서를 만들어도 새 문서가 남는다", async () => {
+    const { fs, files, saved, texts, ids } = await savedProject();
+    const result = removeNode(saved.tree, ids.memo);
+    const again = { ...makeDoc(result.tree, "memo", ids.memos), name: "아이디어" };
+    const tree = insertNode(result.tree, again, ids.memos);
+    texts.set(again.id, "새로 쓴 메모");
+    await saveProject(fs, ROOT, { ...saved, tree }, texts, {
+      only: new Set([again.id]),
+      previous: saved,
+      deleted: result.removed,
+    });
+    expect(files.get(joinPath(ROOT, "메모/아이디어.md"))).toBe("새로 쓴 메모");
   });
 });
 

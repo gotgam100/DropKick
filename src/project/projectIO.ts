@@ -11,8 +11,10 @@ import {
   recoverManifest,
   serializeManifest,
   walkDocs,
+  type DocNode,
   type ProjectManifest,
 } from "./model";
+import { planFiles } from "./tree";
 
 export interface ProjectFs {
   readText(path: string): Promise<string>;
@@ -21,6 +23,12 @@ export interface ProjectFs {
   /** 폴더 안 모든 파일의 상대 경로 (숨김 파일 제외) */
   listFiles(root: string): Promise<string[]>;
   kind(path: string): Promise<"file" | "dir" | "none">;
+  /** 이름 바꾸기/옮기기. 받는 쪽에 이미 있으면 실패한다. */
+  rename(from: string, to: string): Promise<void>;
+  /** 휴지통으로 옮기기 (없으면 아무 일도 하지 않는다) */
+  trash(path: string): Promise<void>;
+  /** 빈 폴더만 지운다 */
+  removeDirIfEmpty(path: string): Promise<boolean>;
 }
 
 export function joinPath(base: string, relative: string): string {
@@ -71,25 +79,75 @@ export async function loadProject(fs: ProjectFs, path: string): Promise<LoadedPr
   return { manifest, texts, recovered, missing };
 }
 
+export type SaveOptions = {
+  /** 이 문서들만 내용을 쓴다. 없으면 모든 문서를 쓴다. */
+  only?: Set<string>;
+  /** 디스크에 마지막으로 저장된 프로젝트 (이름 바뀐 파일 옮기기, 빈 폴더 정리에 쓴다) */
+  previous?: ProjectManifest;
+  /** 트리에서 지운 문서들 (파일을 휴지통으로 옮긴다) */
+  deleted?: DocNode[];
+};
+
 /**
- * 프로젝트를 저장한다.
- * - only가 있으면 그 문서들만, 없으면 모든 문서를 쓴다.
- * - project.json은 문서를 다 쓴 뒤 마지막에 쓴다.
+ * 프로젝트를 저장하고, 실제로 저장된 project.json 내용을 돌려준다.
+ * 1. 트리 모양대로 파일 경로를 정한다 (이름/폴더가 바뀐 문서는 경로가 바뀐다)
+ * 2. 지운 문서 파일을 휴지통으로 옮긴다 (같은 이름의 새 문서와 부딪히지 않게 먼저)
+ * 3. 경로가 바뀐 문서 파일을 옮긴다 (서로 이름을 맞바꿔도 되도록 임시 이름을 거친다)
+ * 4. 문서 내용을 쓴다
+ * 5. project.json을 마지막에 쓴다
+ * 6. 비게 된 옛 폴더를 정리한다
  */
 export async function saveProject(
   fs: ProjectFs,
   path: string,
   manifest: ProjectManifest,
   texts: Map<string, string>,
-  only?: Set<string>,
-): Promise<void> {
+  options: SaveOptions = {},
+): Promise<ProjectManifest> {
+  const { only, previous, deleted = [] } = options;
+  const planned: ProjectManifest = { ...manifest, tree: planFiles(manifest.tree) };
+  const docs = walkDocs(planned.tree);
+  const before = new Map(previous ? walkDocs(previous.tree).map((d) => [d.id, d.file]) : []);
+
   await fs.ensureDir(path);
-  for (const folder of folderPaths(manifest.tree)) await fs.ensureDir(joinPath(path, folder));
-  for (const doc of walkDocs(manifest.tree)) {
-    if (only && !only.has(doc.id)) continue;
-    const dir = doc.file.split("/").slice(0, -1).join("/");
-    if (dir) await fs.ensureDir(joinPath(path, dir));
+  for (const folder of folderPaths(planned.tree)) await fs.ensureDir(joinPath(path, folder));
+
+  // 2. 지운 문서는 휴지통으로
+  for (const doc of deleted) {
+    const file = before.get(doc.id);
+    if (file) await fs.trash(joinPath(path, file));
+  }
+
+  // 3. 옮길 파일: 먼저 모두 임시 이름으로, 그다음 새 이름으로
+  const moves = docs.filter((d) => before.has(d.id) && before.get(d.id) !== d.file);
+  const staged: { doc: DocNode; temp: string }[] = [];
+  for (const doc of moves) {
+    const from = joinPath(path, before.get(doc.id)!);
+    if ((await fs.kind(from)) !== "file") continue;
+    const temp = joinPath(path, `.dropkick-move-${doc.id}`);
+    await fs.rename(from, temp);
+    staged.push({ doc, temp });
+  }
+  for (const { doc, temp } of staged) await fs.rename(temp, joinPath(path, doc.file));
+
+  // 4. 내용 쓰기: 고친 문서 + 새 문서 (디스크에 없던 문서)
+  for (const doc of docs) {
+    const isNew = !before.has(doc.id);
+    if (only && !only.has(doc.id) && !isNew) continue;
     await fs.writeText(joinPath(path, doc.file), texts.get(doc.id) ?? "");
   }
-  await fs.writeText(joinPath(path, MANIFEST_FILE), serializeManifest(manifest));
+
+  // 5. project.json
+  await fs.writeText(joinPath(path, MANIFEST_FILE), serializeManifest(planned));
+
+  // 6. 비게 된 옛 폴더 정리 (깊은 폴더부터)
+  if (previous) {
+    const keep = new Set(folderPaths(planned.tree));
+    const old = folderPaths(previous.tree)
+      .filter((f) => !keep.has(f))
+      .sort((a, b) => b.split("/").length - a.split("/").length);
+    for (const folder of old) await fs.removeDirIfEmpty(joinPath(path, folder));
+  }
+
+  return planned;
 }

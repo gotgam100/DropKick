@@ -140,6 +140,46 @@ fn list_files(root: String) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// 파일이나 폴더의 이름을 바꾸거나 옮긴다. 받는 쪽에 이미 무언가 있으면 바꾸지 않는다.
+#[tauri::command]
+fn rename_path(from: String, to: String) -> Result<(), String> {
+    let target = PathBuf::from(&to);
+    if target.exists() {
+        return Err(format!("이미 같은 이름이 있습니다: {to}"));
+    }
+    if let Some(dir) = target.parent() {
+        fs::create_dir_all(dir).map_err(|e| format!("폴더를 만들 수 없습니다: {e}"))?;
+    }
+    fs::rename(&from, &target).map_err(|e| format!("이름을 바꿀 수 없습니다: {e}"))
+}
+
+/// 파일이나 폴더를 맥 휴지통으로 옮긴다. (Finder에서 되살릴 수 있다)
+#[tauri::command]
+fn trash_path(path: String) -> Result<(), String> {
+    if !Path::new(&path).exists() {
+        return Ok(());
+    }
+    trash::delete(&path).map_err(|e| format!("휴지통으로 옮길 수 없습니다: {e}"))
+}
+
+/// 비어 있는 폴더만 지운다. 안에 무언가 있으면 그대로 둔다. (.DS_Store만 있으면 빈 폴더로 본다)
+#[tauri::command]
+fn remove_dir_if_empty(path: String) -> Result<bool, String> {
+    let dir = Path::new(&path);
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Ok(false);
+    };
+    let mut names = Vec::new();
+    for entry in entries.flatten() {
+        names.push(entry.file_name().to_string_lossy().to_string());
+    }
+    if names.iter().any(|n| n != ".DS_Store") {
+        return Ok(false);
+    }
+    let _ = fs::remove_file(dir.join(".DS_Store"));
+    fs::remove_dir(dir).map(|_| true).map_err(|e| format!("폴더를 정리할 수 없습니다: {e}"))
+}
+
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
@@ -223,7 +263,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "보기",
         true,
         &[
-            &item("toggle_scenes", "씬 목록 보기/숨기기", Some("CmdOrCtrl+Alt+1"))?,
+            &item("toggle_scenes", "사이드바 보기/숨기기", Some("CmdOrCtrl+Alt+1"))?,
             &item("toggle_stats", "통계 보기/숨기기", Some("CmdOrCtrl+Alt+2"))?,
         ],
     )?;
@@ -262,6 +302,9 @@ pub fn run() {
             ensure_dir,
             path_kind,
             list_files,
+            rename_path,
+            trash_path,
+            remove_dir_if_empty,
             quit_app
         ])
         .run(tauri::generate_context!())
@@ -319,6 +362,32 @@ mod tests {
 
         let files = list_files(root_str).unwrap();
         assert_eq!(files, vec!["시나리오.fountain".to_string(), "인물/민재.md".to_string()]);
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn renames_and_cleans_up() {
+        let root = std::env::temp_dir().join(format!("dropkick-rename-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("메모")).unwrap();
+        fs::write(root.join("메모/새 메모.md"), "x").unwrap();
+        fs::write(root.join("다른.md"), "y").unwrap();
+        let p = |s: &str| root.join(s).to_string_lossy().to_string();
+
+        rename_path(p("메모/새 메모.md"), p("아이디어/첫 메모.md")).unwrap();
+        assert_eq!(fs::read_to_string(root.join("아이디어/첫 메모.md")).unwrap(), "x");
+        // 받는 쪽에 이미 파일이 있으면 바꾸지 않는다
+        assert!(rename_path(p("다른.md"), p("아이디어/첫 메모.md")).is_err());
+
+        // 빈 폴더만 지운다
+        fs::write(root.join("메모/.DS_Store"), "").unwrap();
+        assert!(remove_dir_if_empty(p("메모")).unwrap());
+        assert!(!remove_dir_if_empty(p("아이디어")).unwrap());
+        assert!(root.join("아이디어").exists());
+
+        // 없는 파일을 휴지통으로 보내는 건 문제 없다
+        trash_path(p("없는 파일.md")).unwrap();
 
         fs::remove_dir_all(&root).unwrap();
     }

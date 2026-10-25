@@ -8,4 +8,7 @@ export const tauriFs: ProjectFs = {
   ensureDir: (path) => invoke("ensure_dir", { path }),
   listFiles: (root) => invoke<string[]>("list_files", { root }),
   kind: (path) => invoke<"file" | "dir" | "none">("path_kind", { path }),
+  rename: (from, to) => invoke("rename_path", { from, to }),
+  trash: (path) => invoke("trash_path", { path }),
+  removeDirIfEmpty: (path) => invoke<boolean>("remove_dir_if_empty", { path }),
 };
