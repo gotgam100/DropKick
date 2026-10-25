@@ -11,10 +11,6 @@
   min-width: 0;
 }
 
-.stylebar-spacer {
-  flex: 1;
-}
-
 /*
  * 그래프 색 (dataviz 검사 도구로 색약 구분, 대비 확인 완료)
  * --chart: 대사·강조 (앱 강조색 계열), --chart-2: 지문 (파랑)
@@ -47,7 +43,7 @@
 }
 
 .stats-panel {
-  width: 300px;
+  width: var(--stats-width);
   border-left: 1px solid var(--border);
 }
 
@@ -361,13 +357,6 @@
 
 /* ---------- 도구모음 ---------- */
 
-.stylebar-divider {
-  width: 1px;
-  height: 18px;
-  margin: 0 6px;
-  background: var(--border);
-}
-
 .stylebar-doc {
   display: inline-flex;
   align-items: center;
@@ -380,7 +369,7 @@
 /* ---------- 프로젝트 트리 (ProjectTree.tsx) ---------- */
 
 .project-tree {
-  width: 270px;
+  width: var(--sidebar-width);
   border-right: 1px solid var(--border);
   position: relative;
 }

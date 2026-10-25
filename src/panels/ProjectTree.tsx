@@ -124,7 +124,10 @@ export function ProjectTree(props: Props) {
     onMove,
   } = props;
 
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // 폴더는 처음에 닫혀 있고, 펼친 폴더만 기억한다. 스크립트는 처음에 펼쳐 둔다.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [scriptClosed, setScriptClosed] = useState(false);
+  const expand = (id: string) => setExpanded((set) => (set.has(id) ? set : new Set(set).add(id)));
   const [renaming, setRenaming] = useState<string | null>(null);
   // 오른쪽 클릭 메뉴. node가 null이면 빈 곳을 누른 것
   const [menu, setMenu] = useState<{ x: number; y: number; node: ProjectNode | null } | null>(null);
@@ -161,20 +164,26 @@ export function ProjectTree(props: Props) {
     };
   }, [menu]);
 
-  const toggle = (id: string) =>
-    setCollapsed((set) => {
+  const toggle = (id: string) => {
+    if (id === mainScriptId) {
+      setScriptClosed((v) => !v);
+      return;
+    }
+    setExpanded((set) => {
       const next = new Set(set);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+  };
 
-  const isOpen = (id: string) => query !== "" || !collapsed.has(id);
+  const isOpen = (id: string) => query !== "" || (id === mainScriptId ? !scriptClosed : expanded.has(id));
 
   const add = (kindToAdd: NewKind, parentId: string | null) => {
     const id = onAdd(kindToAdd, parentId);
     if (id) {
-      if (parentId) setCollapsed((set) => new Set([...set].filter((x) => x !== parentId)));
+      // 새 항목이 보이도록 들어간 폴더를 펼친다.
+      if (parentId) expand(parentId);
       setRenaming(id);
     }
   };
@@ -238,7 +247,7 @@ export function ProjectTree(props: Props) {
         onMove(drag.id, drag.over, drag.position);
         if (drag.position === "inside") {
           const target = drag.over;
-          setCollapsed((set) => new Set([...set].filter((x) => x !== target)));
+          expand(target);
         }
       }
       // 끌기를 마친 마우스 떼기는 "누르기"로 치지 않는다.

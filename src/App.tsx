@@ -150,55 +150,65 @@ function App() {
         {project.dirty && <span className="doc-dirty">수정됨</span>}
       </header>
 
-      <nav className="stylebar" aria-label="문장 스타일">
-        <button
-          type="button"
-          className={showSidebar ? "style-button active" : "style-button"}
-          aria-pressed={showSidebar}
-          title="사이드바 보기/숨기기 (⌥⌘1)"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={toggleSidebar}
-        >
-          <span className="style-name">사이드바</span>
-          <kbd>⌥⌘1</kbd>
-        </button>
-        <span className="stylebar-divider" />
-        {isScript ? (
-          LINE_STYLES.map((style) => (
-            <button
-              key={style}
-              type="button"
-              className={style === info.style ? "style-button active" : "style-button"}
-              aria-pressed={style === info.style}
-              title={`${STYLE_LABELS[style]} (${shortcutFor(style)})`}
-              // 버튼을 눌러도 에디터 커서가 그대로 있도록 포커스를 뺏지 않는다.
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => editorRef.current?.setStyle(style)}
-            >
-              <span className="style-name">{STYLE_LABELS[style]}</span>
-              <kbd>{shortcutFor(style)}</kbd>
-            </button>
-          ))
-        ) : (
-          <span className="stylebar-doc">
-            {DOC_TYPE_LABELS[project.activeDoc.type]} · {project.activeDoc.name}
-            <button type="button" className="style-button" onClick={() => openDoc(mainScriptId)}>
-              ← {scriptName}
-            </button>
-          </span>
-        )}
-        <span className="stylebar-spacer" />
-        <button
-          type="button"
-          className={showStats ? "style-button active" : "style-button"}
-          aria-pressed={showStats}
-          title="통계 보기/숨기기 (⌥⌘2)"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={toggleStats}
-        >
-          <span className="style-name">통계</span>
-          <kbd>⌥⌘2</kbd>
-        </button>
+      {/* 도구모음: 아래 사이드바 / 원고 / 통계와 같은 세 칸으로 나눈다. */}
+      <nav
+        className={`toolbar${showSidebar ? " with-sidebar" : ""}${showStats ? " with-stats" : ""}`}
+        aria-label="도구모음"
+      >
+        <div className="toolbar-left">
+          <button
+            type="button"
+            className={showSidebar ? "style-button active" : "style-button"}
+            aria-pressed={showSidebar}
+            title="사이드바 보기/숨기기 (⌥⌘1)"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={toggleSidebar}
+          >
+            <span className="style-name">사이드바</span>
+            <kbd>⌥⌘1</kbd>
+          </button>
+        </div>
+
+        <div className="toolbar-center" aria-label="문장 스타일">
+          {isScript ? (
+            LINE_STYLES.map((style) => (
+              <button
+                key={style}
+                type="button"
+                className={style === info.style ? "style-button active" : "style-button"}
+                aria-pressed={style === info.style}
+                title={`${STYLE_LABELS[style]} (${shortcutFor(style)})`}
+                // 버튼을 눌러도 에디터 커서가 그대로 있도록 포커스를 뺏지 않는다.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => editorRef.current?.setStyle(style)}
+              >
+                <span className="style-name">{STYLE_LABELS[style]}</span>
+                <kbd>{shortcutFor(style)}</kbd>
+              </button>
+            ))
+          ) : (
+            <span className="stylebar-doc">
+              {DOC_TYPE_LABELS[project.activeDoc.type]} · {project.activeDoc.name}
+              <button type="button" className="style-button" onClick={() => openDoc(mainScriptId)}>
+                ← {scriptName}
+              </button>
+            </span>
+          )}
+        </div>
+
+        <div className="toolbar-right">
+          <button
+            type="button"
+            className={showStats ? "style-button active" : "style-button"}
+            aria-pressed={showStats}
+            title="통계 보기/숨기기 (⌥⌘2)"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={toggleStats}
+          >
+            <span className="style-name">통계</span>
+            <kbd>⌥⌘2</kbd>
+          </button>
+        </div>
       </nav>
 
       <div className="workspace">
