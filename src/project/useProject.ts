@@ -1001,6 +1001,8 @@ export function useProject(
     undoTree,
     dismissTreeUndo,
     dirtyDocIds,
+    /** 앱을 끝내거나 다시 시작하기 전: 저장 안 한 내용이 있으면 저장하거나 묻는다 */
+    prepareToClose: confirmDiscard,
     revisions: session.manifest.revisions ?? [],
     exportRevisionPdf: (name: string, script: string) => runExclusive(() => exportPdf({ name, script })),
     createRevision,

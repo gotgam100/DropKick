@@ -15,6 +15,7 @@ import { RenameCharacterDialog } from "./panels/RenameCharacterDialog";
 import { RevisionView, type Snapshot } from "./revisions/RevisionView";
 import { NewRevisionDialog } from "./revisions/NewRevisionDialog";
 import { nextRevisionName, settingsDocs } from "./revisions/revisions";
+import { useUpdater } from "./update/useUpdater";
 import { StatsPanel } from "./panels/StatsPanel";
 import "./App.css";
 import "./panels/panels.css";
@@ -149,6 +150,12 @@ function App() {
     if (!sample || !files[sample]) return;
     files[sample]().then((m) => editorRef.current?.load(fromFountain(m.default).lines));
   }, []);
+
+  // 자동 업데이트: 설치 전에 작업을 저장한다.
+  useUpdater({
+    prepare: project.prepareToClose,
+    notify: (text) => setNotice(text ? { text, key: Date.now() } : null),
+  });
 
   // 인물 설정 문서 ↔ 원고 속 인물 (문서 이름으로 연결)
   const characterDocs = useMemo(() => {

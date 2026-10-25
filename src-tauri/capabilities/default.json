@@ -12,6 +12,7 @@
     "core:window:allow-destroy",
     "core:window:allow-set-title",
     "opener:default",
-    "dialog:default"
+    "dialog:default",
+    "process:allow-restart"
   ]
 }

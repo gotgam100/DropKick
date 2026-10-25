@@ -134,8 +134,10 @@ fn list_files(root: String) -> Result<Vec<String>, String> {
                 walk(base, &path, depth + 1, out)?;
             } else if file_type.is_file() {
                 if let Ok(rel) = path.strip_prefix(base) {
-                    let parts: Vec<String> =
-                        rel.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
+                    let parts: Vec<String> = rel
+                        .components()
+                        .map(|c| c.as_os_str().to_string_lossy().to_string())
+                        .collect();
                     out.push(parts.join("/"));
                 }
             }
@@ -189,7 +191,9 @@ fn remove_dir_if_empty(path: String) -> Result<bool, String> {
         return Ok(false);
     }
     let _ = fs::remove_file(dir.join(".DS_Store"));
-    fs::remove_dir(dir).map(|_| true).map_err(|e| format!("폴더를 정리할 수 없습니다: {e}"))
+    fs::remove_dir(dir)
+        .map(|_| true)
+        .map_err(|e| format!("폴더를 정리할 수 없습니다: {e}"))
 }
 
 const BACKUP_ROOT: &str = ".dropkick-backups";
@@ -212,7 +216,8 @@ fn prune_backups(project: String, keep: usize) -> Result<usize, String> {
     let remove = snapshots.len().saturating_sub(keep);
     for dir in snapshots.iter().take(remove) {
         if dir.parent() == Some(root.as_path()) {
-            fs::remove_dir_all(dir).map_err(|e| format!("오래된 백업을 정리할 수 없습니다: {e}"))?;
+            fs::remove_dir_all(dir)
+                .map_err(|e| format!("오래된 백업을 정리할 수 없습니다: {e}"))?;
         }
     }
     Ok(remove)
@@ -237,9 +242,8 @@ fn quit_app(app: AppHandle) {
 }
 
 fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    let item = |id: &str, label: &str, accel: Option<&str>| {
-        MenuItem::with_id(app, id, label, true, accel)
-    };
+    let item =
+        |id: &str, label: &str, accel: Option<&str>| MenuItem::with_id(app, id, label, true, accel);
 
     let app_menu = Submenu::with_items(
         app,
@@ -247,6 +251,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         true,
         &[
             &PredefinedMenuItem::about(app, Some("DropKick 정보"), None)?,
+            &item("check_update", "업데이트 확인…", None)?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::services(app, Some("서비스"))?,
             &PredefinedMenuItem::separator(app)?,
@@ -315,7 +320,11 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "보기",
         true,
         &[
-            &item("toggle_scenes", "사이드바 보기/숨기기", Some("CmdOrCtrl+Alt+1"))?,
+            &item(
+                "toggle_scenes",
+                "사이드바 보기/숨기기",
+                Some("CmdOrCtrl+Alt+1"),
+            )?,
             &item("toggle_stats", "통계 보기/숨기기", Some("CmdOrCtrl+Alt+2"))?,
         ],
     )?;
@@ -333,13 +342,22 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 
     Menu::with_items(
         app,
-        &[&app_menu, &file_menu, &edit_menu, &style_menu, &view_menu, &window_menu],
+        &[
+            &app_menu,
+            &file_menu,
+            &edit_menu,
+            &style_menu,
+            &view_menu,
+            &window_menu,
+        ],
     )
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PendingOpens::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -377,7 +395,11 @@ pub fn run() {
                 if paths.is_empty() {
                     return;
                 }
-                app.state::<PendingOpens>().0.lock().unwrap().extend(paths.clone());
+                app.state::<PendingOpens>()
+                    .0
+                    .lock()
+                    .unwrap()
+                    .extend(paths.clone());
                 let _ = app.emit("open-paths", paths);
             }
             #[cfg(not(target_os = "macos"))]
@@ -429,13 +451,27 @@ mod tests {
         ensure_dir(root.join("메모").to_string_lossy().to_string()).unwrap();
         assert_eq!(path_kind(root_str.clone()), "dir");
 
-        write_script(root.join("시나리오.fountain").to_string_lossy().to_string(), "원고".into()).unwrap();
-        write_script(root.join("인물/민재.md").to_string_lossy().to_string(), "# 민재".into()).unwrap();
+        write_script(
+            root.join("시나리오.fountain").to_string_lossy().to_string(),
+            "원고".into(),
+        )
+        .unwrap();
+        write_script(
+            root.join("인물/민재.md").to_string_lossy().to_string(),
+            "# 민재".into(),
+        )
+        .unwrap();
         fs::write(root.join(".DS_Store"), "x").unwrap();
-        assert_eq!(path_kind(root.join("시나리오.fountain").to_string_lossy().to_string()), "file");
+        assert_eq!(
+            path_kind(root.join("시나리오.fountain").to_string_lossy().to_string()),
+            "file"
+        );
 
         let files = list_files(root_str).unwrap();
-        assert_eq!(files, vec!["시나리오.fountain".to_string(), "인물/민재.md".to_string()]);
+        assert_eq!(
+            files,
+            vec!["시나리오.fountain".to_string(), "인물/민재.md".to_string()]
+        );
 
         fs::remove_dir_all(&root).unwrap();
     }
@@ -450,7 +486,10 @@ mod tests {
         let p = |s: &str| root.join(s).to_string_lossy().to_string();
 
         rename_path(p("메모/새 메모.md"), p("아이디어/첫 메모.md")).unwrap();
-        assert_eq!(fs::read_to_string(root.join("아이디어/첫 메모.md")).unwrap(), "x");
+        assert_eq!(
+            fs::read_to_string(root.join("아이디어/첫 메모.md")).unwrap(),
+            "x"
+        );
         // 받는 쪽에 이미 파일이 있으면 바꾸지 않는다
         assert!(rename_path(p("다른.md"), p("아이디어/첫 메모.md")).is_err());
 
@@ -471,18 +510,28 @@ mod tests {
         let root = std::env::temp_dir().join(format!("dropkick-backup-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let backups = root.join(BACKUP_ROOT);
-        for name in ["2026-10-25 10-00-00", "2026-10-25 11-00-00", "2026-10-25 12-00-00"] {
+        for name in [
+            "2026-10-25 10-00-00",
+            "2026-10-25 11-00-00",
+            "2026-10-25 12-00-00",
+        ] {
             fs::create_dir_all(backups.join(name)).unwrap();
             fs::write(backups.join(name).join("a.md"), "x").unwrap();
         }
         fs::write(root.join("원고.fountain"), "keep").unwrap();
 
-        assert_eq!(prune_backups(root.to_string_lossy().to_string(), 2).unwrap(), 1);
+        assert_eq!(
+            prune_backups(root.to_string_lossy().to_string(), 2).unwrap(),
+            1
+        );
         assert!(!backups.join("2026-10-25 10-00-00").exists());
         assert!(backups.join("2026-10-25 12-00-00").exists());
         assert!(root.join("원고.fountain").exists());
         // 백업 폴더가 없어도 문제없다
-        assert_eq!(prune_backups(backups.join("없음").to_string_lossy().to_string(), 2).unwrap(), 0);
+        assert_eq!(
+            prune_backups(backups.join("없음").to_string_lossy().to_string(), 2).unwrap(),
+            0
+        );
 
         fs::remove_dir_all(&root).unwrap();
     }

@@ -33,22 +33,46 @@ security find-identity -v -p codesigning
 xcrun notarytool store-credentials "dropkick-notary" --apple-id "Apple ID 이메일" --team-id "팀ID"
 ```
 
+### 4. 자동 업데이트 서명 열쇠 만들기
+
+앱은 업데이트 파일이 **이 열쇠로 서명된 정품일 때만** 설치합니다. 터미널에서 아래를 실행하고, 묻는 대로 **열쇠 암호를 두 번** 입력한 뒤, 같은 암호를 키체인에 한 번 더(두 번) 입력합니다.
+
+```bash
+npx tauri signer generate -w ~/.tauri/dropkick-updater.key && security add-generic-password -a "$USER" -s dropkick-updater-key -w
+```
+
+- `~/.tauri/dropkick-updater.key`(비밀 열쇠)는 **꼭 백업**해 두세요 (USB, 암호 관리자 등). 잃어버리면 이미 설치한 사람들에게 업데이트를 보낼 수 없습니다.
+- `~/.tauri/dropkick-updater.key.pub`(공개 열쇠)는 앱 설정(`tauri.conf.json`의 `plugins.updater.pubkey`)에 들어갑니다.
+- 열쇠 암호는 키체인(`dropkick-updater-key`)에 저장되어 배포 스크립트가 꺼내 씁니다.
+
 ## 배포용 앱 만들기
 
 ```bash
 APPLE_SIGNING_IDENTITY="Developer ID Application: 이름 (팀ID)" ./scripts/release.sh
 ```
 
-- 테스트 → 서명된 앱과 `.dmg` 만들기 → 애플 공증(몇 분) → 공증 결과 붙이기 순서로 진행됩니다.
+- 테스트 → 서명된 앱과 `.dmg` 만들기 → 애플 공증(몇 분) → 공증 결과 붙이기 → 자동 업데이트 파일 서명 → **[gotgam100/DropKick_releases](https://github.com/gotgam100/DropKick_releases) Release에 올리기** 순서로 진행됩니다.
+- 새 버전을 낼 때는 먼저 `package.json`과 `src-tauri/tauri.conf.json`의 `version`을 올리고, `release-notes/<버전>.md`에 바뀐 점을 씁니다. 이 내용이 앱의 업데이트 안내 창에 나옵니다.
+- 올리지 않고 파일만 만들려면 `./scripts/release.sh --no-publish`
 - 처음 서명할 때 키체인 접근을 허용할지 묻는 창이 뜨면 **항상 허용**을 누르세요.
 - 결과: `src-tauri/target/universal-apple-darwin/release/bundle/dmg/DropKick_0.1.0_universal.dmg`
 - **유니버설 앱**이라 Apple Silicon(M1 이후)과 인텔 맥 모두에서 돌아갑니다. 각 맥은 자기에게 맞는 실행 파일을 골라 쓰므로 속도 차이는 없고, 앱 크기만 두 배 정도입니다.
 
 ## 받는 사람
 
+[github.com/gotgam100/DropKick_releases](https://github.com/gotgam100/DropKick_releases) 링크를 알려 주면 됩니다. "최신 버전 받기"에서 `.dmg`를 받습니다.
+
+
 1. `.dmg`를 열고 DropKick을 응용 프로그램 폴더로 끌어 놓습니다.
 2. 처음 열 때 "인터넷에서 다운로드한 앱" 확인 창이 한 번 나옵니다. 열기를 누르면 됩니다.
 3. `.dropkick` 프로젝트는 Finder에서 파일 하나로 보이고, 더블클릭하면 DropKick에서 열립니다.
+4. 이후 새 버전은 앱을 켤 때 알려 주고, 앱 안에서 바로 설치됩니다. (메뉴 DropKick → 업데이트 확인…)
+
+## 자동 업데이트 동작
+
+- 앱은 켜고 5초 뒤 `https://github.com/gotgam100/DropKick_releases/releases/latest/download/latest.json`을 확인합니다.
+- 새 버전이면 바뀐 점과 함께 "지금 설치 / 나중에"를 묻고, 설치 전에 작업 중인 프로젝트를 저장합니다.
+- 업데이트 파일 서명과 버전을 확인한 뒤에만 설치하고, 앱을 다시 시작합니다.
 
 ## 참고
 

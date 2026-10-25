@@ -32,3 +32,6 @@ samples/*.pdf
 
 # 테스트·작업용 DropKick 프로젝트 (내 맥에만 둔다)
 *.dropkick/
+
+# 배포 스크립트가 만드는 파일
+dist-release/
