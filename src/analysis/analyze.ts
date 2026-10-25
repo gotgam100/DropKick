@@ -21,6 +21,8 @@ export type SceneSummary = {
   /** 등장 인물 (대사 순서대로) */
   characters: string[];
   speeches: number;
+  /** 씬 안의 글 전체 (찾기용, 씬헤딩 다음 줄부터 다음 씬헤딩 전까지) */
+  text: string;
 };
 
 export type CharacterSummary = {
@@ -84,6 +86,11 @@ export function analyzeScript(lines: ScriptLine[], pagination: Pagination = pagi
   const sceneLines = [...sceneNumbers.keys()];
 
   const scenes: SceneSummary[] = sceneLines.map((line, i) => {
+    const nextLine = i + 1 < sceneLines.length ? sceneLines[i + 1] : lines.length + 1;
+    const text = lines
+      .slice(line, nextLine - 1)
+      .map((l) => l.text)
+      .join("\n");
     const start = absoluteRow(line);
     const end = i + 1 < sceneLines.length ? absoluteRow(sceneLines[i + 1]) : totalRows;
     const rows = Math.max(1, end - start);
@@ -95,6 +102,7 @@ export function analyzeScript(lines: ScriptLine[], pagination: Pagination = pagi
       eighths: Math.max(1, Math.ceil((rows / linesPerPage) * 8)),
       characters: [],
       speeches: 0,
+      text,
     };
   });
 

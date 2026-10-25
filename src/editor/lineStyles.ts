@@ -1,5 +1,6 @@
 import {
   EditorSelection,
+  type ChangeSpec,
   type Extension,
   EditorState,
   StateEffect,
@@ -8,6 +9,7 @@ import {
   type Transaction,
 } from "@codemirror/state";
 import { invertedEffects } from "@codemirror/commands";
+import { toUpperLatin } from "../layout/metrics";
 import { numberScenes, type SceneNumber } from "../layout/sceneNumbers";
 import {
   DEFAULT_STYLE,
@@ -250,4 +252,68 @@ export function cycleLineStyle(direction: 1 | -1): StateCommand {
     );
     return true;
   };
+}
+
+// ---------- 인물 이름 일괄 바꾸기 ----------
+
+export type CharacterRename = {
+  changes: ChangeSpec[];
+  /** 바뀐 인물 이름 줄 수 */
+  characterLines: number;
+  /** 바뀐 지문/대사 속 이름 수 */
+  textHits: number;
+};
+
+function escapeRegExp(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * 인물 이름 바꾸기.
+ * - 인물 스타일 줄: 이름 부분만 바꾸고 (V.O.) 같은 표시는 그대로 둔다.
+ * - everywhere면 액션·괄호지문·대사 속의 이름도 바꾼다. ("민재가" → "준호가")
+ * oldKey는 인물 묶음 키 (괄호 표시를 뗀 이름, 영문은 대문자).
+ */
+export function renameCharacter(
+  state: EditorState,
+  oldKey: string,
+  newName: string,
+  everywhere: boolean,
+  /** 이 이름을 품은 다른 인물 이름 (예: "민재"를 바꿀 때 "민재석") — 그 자리는 바꾸지 않는다 */
+  otherNames: string[] = [],
+): CharacterRename {
+  const name = newName.trim();
+  const styles = state.field(lineStylesField);
+  const changes: ChangeSpec[] = [];
+  let characterLines = 0;
+  let textHits = 0;
+  if (!name || !oldKey) return { changes, characterLines, textHits };
+
+  const pattern = new RegExp(escapeRegExp(oldKey), "gi");
+  const longer = otherNames.map((n) => toUpperLatin(n)).filter((n) => n !== oldKey && n.includes(oldKey));
+  for (let n = 1; n <= state.doc.lines; n++) {
+    const line = state.doc.line(n);
+    const style = styles[n - 1];
+    if (style === "character") {
+      const current = characterName(line.text);
+      if (toUpperLatin(current) !== oldKey) continue;
+      const at = line.text.indexOf(current);
+      changes.push({ from: line.from + at, to: line.from + at + current.length, insert: name });
+      characterLines++;
+    } else if (everywhere && (style === "action" || style === "dialogue" || style === "parenthetical")) {
+      const upper = toUpperLatin(line.text);
+      for (const match of line.text.matchAll(pattern)) {
+        const index = match.index ?? 0;
+        // "민재석" 같은 다른 인물 이름의 일부면 건너뛴다.
+        if (longer.some((other) => {
+          const offset = other.indexOf(oldKey);
+          return upper.startsWith(other, index - offset);
+        })) continue;
+        const from = line.from + index;
+        changes.push({ from, to: from + match[0].length, insert: name });
+        textHits++;
+      }
+    }
+  }
+  return { changes, characterLines, textHits };
 }

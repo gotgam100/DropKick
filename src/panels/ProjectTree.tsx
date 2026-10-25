@@ -6,8 +6,9 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { formatEighths, type SceneSummary } from "../analysis/analyze";
 import type { ProjectNode } from "../project/model";
 import { findParent, type DropPosition } from "../project/tree";
+import { searchProject, type Snippet } from "./search";
 
-type NewKind = "doc" | "folder";
+type NewKind = "doc" | "character" | "folder";
 
 type Props = {
   title: string;
@@ -15,6 +16,8 @@ type Props = {
   mainScriptId: string;
   activeDocId: string;
   dirtyDocIds: Set<string>;
+  /** 문서 id → 본문 (본문 찾기용) */
+  docTexts: Map<string, string>;
   scenes: SceneSummary[];
   currentSceneLine: number | null;
   filter: string;
@@ -80,27 +83,14 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-// ---------- 찾기 ----------
-
-function matches(text: string, query: string) {
-  return text.toUpperCase().includes(query);
-}
-
-type Filtered = { tree: ProjectNode[]; scenes: SceneSummary[] };
-
-function filterTree(tree: ProjectNode[], scenes: SceneSummary[], mainScriptId: string, query: string): Filtered {
-  if (!query) return { tree, scenes };
-  const sceneHits = scenes.filter((s) => matches(s.heading, query) || s.characters.some((c) => matches(c, query)));
-  const visit = (nodes: ProjectNode[]): ProjectNode[] =>
-    nodes.flatMap((node): ProjectNode[] => {
-      if (node.type === "folder") {
-        const children = visit(node.children);
-        return children.length > 0 || matches(node.name, query) ? [{ ...node, children }] : [];
-      }
-      if (node.id === mainScriptId && sceneHits.length > 0) return [node];
-      return matches(node.name, query) ? [node] : [];
-    });
-  return { tree: visit(tree), scenes: sceneHits };
+function SnippetLine({ snippet, indent }: { snippet: Snippet; indent: number }) {
+  return (
+    <div className="tree-snippet" style={{ paddingLeft: indent }}>
+      {snippet.before}
+      <mark>{snippet.match}</mark>
+      {snippet.after}
+    </div>
+  );
 }
 
 // ---------- 트리 ----------
@@ -112,6 +102,7 @@ export function ProjectTree(props: Props) {
     mainScriptId,
     activeDocId,
     dirtyDocIds,
+    docTexts,
     scenes,
     currentSceneLine,
     filter,
@@ -144,8 +135,24 @@ export function ProjectTree(props: Props) {
   const suppressClickRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const query = filter.trim().toUpperCase();
-  const shown = useMemo(() => filterTree(tree, scenes, mainScriptId, query), [tree, scenes, mainScriptId, query]);
+  const query = filter.trim();
+  const shown = useMemo(
+    () => searchProject(tree, scenes, mainScriptId, docTexts, query),
+    [tree, scenes, mainScriptId, docTexts, query],
+  );
+
+  // 지금 열린 문서가 보이도록, 그 문서가 들어 있는 폴더들을 펼친다.
+  useEffect(() => {
+    const ancestors: string[] = [];
+    let parent = findParent(tree, activeDocId);
+    while (parent) {
+      ancestors.push(parent.id);
+      parent = findParent(tree, parent.id);
+    }
+    if (ancestors.length === 0) return;
+    setExpanded((set) => (ancestors.every((id) => set.has(id)) ? set : new Set([...set, ...ancestors])));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDocId]);
 
   // 지금 쓰는 씬이 보이도록
   useEffect(() => {
@@ -327,7 +334,10 @@ export function ProjectTree(props: Props) {
           <span className="tree-name">{scene.heading.replace(/^S#\d+\.\s*/, "")}</span>
           <span className="tree-meta">{scene.page}p</span>
         </button>
-      ))
+      )).flatMap((button, i) => {
+        const snip = shown.sceneSnippets.get(shown.scenes[i].line);
+        return snip ? [button, <SnippetLine key={`snip-${shown.scenes[i].line}`} snippet={snip} indent={12 + depth * 14 + 4} />] : [button];
+      })
     );
 
   const renderNodes = (nodes: ProjectNode[], depth: number): ReactNode =>
@@ -397,6 +407,9 @@ export function ProjectTree(props: Props) {
               </button>
             )}
           </div>
+          {shown.docSnippets.has(node.id) && (
+            <SnippetLine snippet={shown.docSnippets.get(node.id)!} indent={4 + depth * 14 + 40} />
+          )}
           {open && isScript && renderScenes(depth + 1)}
           {open && isFolder && (
             node.children.length > 0 ? (
@@ -431,6 +444,7 @@ export function ProjectTree(props: Props) {
           onChange={(e) => onFilterChange(e.target.value)}
           spellCheck={false}
         />
+        {query && <div className="search-count">{shown.count > 0 ? `${shown.count}곳에서 찾음` : "찾는 내용이 없습니다"}</div>}
       </div>
 
       <div
@@ -443,7 +457,7 @@ export function ProjectTree(props: Props) {
         }}
       >
         {shown.tree.length === 0 ? (
-          <p className="panel-empty">"{filter}"이(가) 들어간 항목이 없습니다.</p>
+          <p className="panel-empty">"{query}"이(가) 들어간 문서나 씬이 없습니다.</p>
         ) : (
           renderNodes(shown.tree, 0)
         )}
@@ -472,6 +486,16 @@ export function ProjectTree(props: Props) {
             }}
           >
             새 문서{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              add("character", menuParent(menu.node));
+              setMenu(null);
+            }}
+          >
+            새 인물 설정{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}
           </button>
           <button
             type="button"

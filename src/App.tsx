@@ -6,11 +6,12 @@ import { Editor, type EditorHandle, type EditorInfo } from "./editor/Editor";
 import { TextEditor, type TextEditorHandle } from "./editor/TextEditor";
 import { LINE_STYLES, STYLE_LABELS, shortcutFor } from "./editor/styles";
 import { useProject } from "./project/useProject";
-import { findNode } from "./project/tree";
-import { BLANK_SCRIPT_LINES, DOC_TYPE_LABELS } from "./project/model";
-import { sceneAtLine, type ScriptAnalysis } from "./analysis/analyze";
+import { findNode, folderNamed } from "./project/tree";
+import { BLANK_SCRIPT_LINES, DOC_TYPE_LABELS, walkDocs, type DocNode } from "./project/model";
+import { characterKey, sceneAtLine, type ScriptAnalysis } from "./analysis/analyze";
 import { ProjectTree } from "./panels/ProjectTree";
 import { TitlePageDialog } from "./titlepage/TitlePageDialog";
+import { RenameCharacterDialog } from "./panels/RenameCharacterDialog";
 import { StatsPanel } from "./panels/StatsPanel";
 import "./App.css";
 import "./panels/panels.css";
@@ -66,6 +67,8 @@ function App() {
   const [analysis, setAnalysis] = useState<ScriptAnalysis>(EMPTY_ANALYSIS);
   const [treeFilter, setTreeFilter] = useState("");
   const [editingTitlePage, setEditingTitlePage] = useState(false);
+  const [renamingCharacter, setRenamingCharacter] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; key: number } | null>(null);
   const [showSidebar, toggleSidebar, setShowSidebar] = usePanelSetting("dropkick.panel.scenes", true);
   const [showStats, toggleStats] = usePanelSetting("dropkick.panel.stats", false);
   const project = useProject(editorRef, textEditorRef, BLANK_SCRIPT_LINES);
@@ -138,6 +141,50 @@ function App() {
     if (!sample || !files[sample]) return;
     files[sample]().then((m) => editorRef.current?.load(fromFountain(m.default).lines));
   }, []);
+
+  // 인물 설정 문서 ↔ 원고 속 인물 (문서 이름으로 연결)
+  const characterDocs = useMemo(() => {
+    const map = new Map<string, DocNode>();
+    for (const doc of walkDocs(project.tree)) {
+      if (doc.type === "character" && !map.has(characterKey(doc.name))) map.set(characterKey(doc.name), doc);
+    }
+    return map;
+  }, [project.tree]);
+
+  const { addDoc } = project;
+  const openProfile = useCallback(
+    (name: string) => {
+      const doc = characterDocs.get(characterKey(name));
+      if (doc) openDoc(doc.id);
+      else addDoc(folderNamed(project.tree, "인물 설정"), "character", name);
+    },
+    [addDoc, characterDocs, openDoc, project.tree],
+  );
+
+  const applyCharacterRename = (oldName: string, newName: string, everywhere: boolean) => {
+    const others = analysis.characters.map((c) => c.name);
+    const result = editorRef.current?.renameCharacter(characterKey(oldName), newName, everywhere, others, true);
+    const profile = characterDocs.get(characterKey(oldName));
+    if (profile) project.rename(profile.id, newName);
+    if (result) {
+      setNotice({
+        text: `"${oldName}" → "${newName}": 인물 줄 ${result.characterLines}곳${everywhere ? `, 지문·대사 ${result.textHits}곳` : ""} 바꿈 (⌘Z로 되돌리기)`,
+        key: Date.now(),
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  // 지금 열린 인물 설정 문서의 원고 속 정보
+  const activeCharacter =
+    project.activeDoc.type === "character"
+      ? analysis.characters.find((c) => c.name === characterKey(project.activeDoc.name)) ?? null
+      : undefined;
 
   // 트리 작업 알림은 8초 뒤 사라진다.
   const { treeUndo, dismissTreeUndo } = project;
@@ -251,13 +298,18 @@ function App() {
             mainScriptId={project.mainScriptId}
             activeDocId={project.activeDoc.id}
             dirtyDocIds={project.dirtyDocIds}
+            docTexts={project.docTexts}
             scenes={analysis.scenes}
             currentSceneLine={currentScene?.line ?? null}
             filter={treeFilter}
             onFilterChange={setTreeFilter}
             onOpenDoc={project.openDoc}
             onSelectScene={goToLine}
-            onAdd={(kind, parentId) => (kind === "folder" ? project.addFolder(parentId) : project.addDoc(parentId))}
+            onAdd={(kind, parentId) =>
+              kind === "folder"
+                ? project.addFolder(parentId)
+                : project.addDoc(parentId, kind === "character" ? "character" : "memo")
+            }
             onRename={project.rename}
             onRemove={project.remove}
             onMove={project.move}
@@ -282,6 +334,34 @@ function App() {
 
         {!isScript && (
           <main className="text-desk">
+            {activeCharacter !== undefined && (
+              <div className="character-info">
+                {activeCharacter ? (
+                  <>
+                    <span className="muted">원고에서</span>
+                    <span>
+                      대사 <strong>{numberFormat.format(activeCharacter.speeches)}</strong>회
+                    </span>
+                    <span>
+                      <strong>{numberFormat.format(activeCharacter.dialogueChars)}</strong>자
+                    </span>
+                    <span>
+                      씬 <strong>{activeCharacter.scenes}</strong>개
+                    </span>
+                    <span>
+                      첫 등장 <strong>S#{activeCharacter.firstScene}</strong>
+                    </span>
+                    <button type="button" onClick={() => findCharacter(activeCharacter.name)}>
+                      등장 씬 찾기
+                    </button>
+                  </>
+                ) : (
+                  <span className="muted">
+                    원고에 "{project.activeDoc.name}"(이)라는 인물 이름이 아직 없습니다. 문서 이름을 원고의 인물 이름과 같게 하면 연결됩니다.
+                  </span>
+                )}
+              </div>
+            )}
             <article className="text-page">
               <TextEditor
                 ref={textEditorRef}
@@ -299,6 +379,9 @@ function App() {
             currentSceneLine={currentScene?.line ?? null}
             onSelectScene={goToLine}
             onSelectCharacter={findCharacter}
+            hasProfile={(name) => characterDocs.has(characterKey(name))}
+            onOpenProfile={openProfile}
+            onRenameCharacter={setRenamingCharacter}
           />
         )}
       </div>
@@ -345,7 +428,34 @@ function App() {
         />
       )}
 
-      {treeUndo && (
+      {renamingCharacter && (
+        <RenameCharacterDialog
+          name={renamingCharacter}
+          hasProfile={characterDocs.has(characterKey(renamingCharacter))}
+          preview={(newName, everywhere) =>
+            editorRef.current?.renameCharacter(
+              characterKey(renamingCharacter),
+              newName,
+              everywhere,
+              analysis.characters.map((c) => c.name),
+              false,
+            ) ?? { characterLines: 0, textHits: 0 }
+          }
+          onApply={(newName, everywhere) => applyCharacterRename(renamingCharacter, newName, everywhere)}
+          onClose={() => setRenamingCharacter(null)}
+        />
+      )}
+
+      {notice && (
+        <div className="toast" role="status" key={notice.key}>
+          <span>{notice.text}</span>
+          <button type="button" className="toast-close" aria-label="닫기" onClick={() => setNotice(null)}>
+            ×
+          </button>
+        </div>
+      )}
+
+      {treeUndo && !notice && (
         <div className="toast" role="status" key={treeUndo.key}>
           <span>{treeUndo.label}</span>
           <button type="button" onClick={project.undoTree}>

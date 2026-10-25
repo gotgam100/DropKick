@@ -20,8 +20,38 @@ export const NEW_DOC_NAMES: Record<Exclude<DocType, "script">, string> = {
   synopsis: "시놉시스",
 };
 
-/** 일반 문서는 빈 상태로 시작한다. (인물 설정 등 프리셋은 나중에 추가) */
+/** 일반 문서는 빈 상태로 시작한다. */
 export const MEMO_TEMPLATE = (_name: string) => "";
+
+/** 인물 설정 프리셋 */
+export const CHARACTER_TEMPLATE = (name: string) => `# ${name}
+
+## 기본 정보
+- 나이:
+- 성별:
+- 직업:
+- 외모:
+
+## 성격
+- 성격:
+- 말투:
+- 습관·버릇:
+
+## 이야기 속 역할
+- 원하는 것 (목표):
+- 필요한 것 (결핍):
+- 두려워하는 것:
+- 비밀:
+
+## 관계
+- 
+
+## 변화 (아크)
+- 처음:
+- 끝:
+
+## 메모
+`;
 
 export function findNode(tree: ProjectNode[], id: string): ProjectNode | null {
   for (const node of tree) {

@@ -33,6 +33,7 @@ import { BACKUP_ROOT, backupStamp, joinPath, loadProject, saveProject } from "./
 import { appDataDir } from "@tauri-apps/api/path";
 import { tauriFs } from "./tauriFs";
 import {
+  CHARACTER_TEMPLATE,
   findNode,
   insertNode,
   makeDoc,
@@ -40,6 +41,7 @@ import {
   moveNode,
   removeNode,
   renameNode,
+  uniqueName,
   type DropPosition,
 } from "./tree";
 
@@ -477,15 +479,21 @@ export function useProject(
     setActiveDocId(id);
   }, []);
 
-  /** 새 문서(빈 일반 문서)를 폴더 안에 만들고 연다. 만든 문서의 id를 돌려준다. */
+  /**
+   * 새 문서를 폴더 안에 만들고 연다. 만든 문서의 id를 돌려준다.
+   * - memo: 빈 일반 문서
+   * - character: 인물 설정 프리셋 (name을 주면 그 이름으로)
+   */
   const addDoc = useCallback(
-    (parentId: string | null) => {
+    (parentId: string | null, type: "memo" | "character" = "memo", name?: string) => {
       const current = sessionRef.current;
       const tree = current.manifest.tree;
       const parent = parentId;
-      const doc = makeDoc(tree, "memo", parent);
+      const made = makeDoc(tree, type, parent);
+      const siblings = parent ? ((findNode(tree, parent) as { children?: ProjectNode[] })?.children ?? []) : tree;
+      const doc = name ? { ...made, name: uniqueName(siblings, name.trim() || made.name) } : made;
       const texts = new Map(current.texts);
-      texts.set(doc.id, "");
+      texts.set(doc.id, type === "character" ? CHARACTER_TEMPLATE(doc.name) : "");
       updateTree(insertNode(tree, doc, parent), { texts }, `"${doc.name}"을(를) 만들었습니다`);
       setActiveDocId(doc.id);
       return doc.id;
@@ -801,6 +809,7 @@ export function useProject(
     mainScriptId: session.manifest.mainScript,
     activeDoc,
     activeText: session.texts.get(activeDoc.id) ?? "",
+    docTexts: session.texts,
     dirty,
     titlePage: session.titlePage,
     setTitlePage,

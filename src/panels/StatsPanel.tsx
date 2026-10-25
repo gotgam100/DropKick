@@ -5,6 +5,11 @@ type Props = {
   currentSceneLine: number | null;
   onSelectScene: (line: number) => void;
   onSelectCharacter: (name: string) => void;
+  /** 이 인물의 인물 설정 문서가 있는지 */
+  hasProfile: (name: string) => boolean;
+  /** 인물 설정 열기 (없으면 만든다) */
+  onOpenProfile: (name: string) => void;
+  onRenameCharacter: (name: string) => void;
 };
 
 const fmt = new Intl.NumberFormat("ko-KR");
@@ -14,7 +19,15 @@ function percent(part: number, total: number) {
 }
 
 /** 오른쪽 통계 화면 */
-export function StatsPanel({ analysis, currentSceneLine, onSelectScene, onSelectCharacter }: Props) {
+export function StatsPanel({
+  analysis,
+  currentSceneLine,
+  onSelectScene,
+  onSelectCharacter,
+  hasProfile,
+  onOpenProfile,
+  onRenameCharacter,
+}: Props) {
   const { scenes, characters } = analysis;
   const textTotal = analysis.dialogueChars + analysis.actionChars;
   const dialoguePct = percent(analysis.dialogueChars, textTotal);
@@ -102,7 +115,7 @@ export function StatsPanel({ analysis, currentSceneLine, onSelectScene, onSelect
                     className="bar-row"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => onSelectCharacter(c.name)}
-                    title={`${c.name}: 대사 ${fmt.format(c.speeches)}회, ${fmt.format(c.dialogueChars)}자, ${c.scenes}개 씬 (첫 등장 S#${c.firstScene}) — 누르면 씬 목록에서 찾기`}
+                    title={`${c.name}: 대사 ${fmt.format(c.speeches)}회, ${fmt.format(c.dialogueChars)}자, ${c.scenes}개 씬 (첫 등장 S#${c.firstScene}) — 누르면 사이드바에서 등장 씬 찾기`}
                   >
                     <span className="bar-label">{c.name}</span>
                     <span className="bar-track">
@@ -116,6 +129,24 @@ export function StatsPanel({ analysis, currentSceneLine, onSelectScene, onSelect
                       대사 {fmt.format(c.speeches)}회 · 씬 {c.scenes}개
                     </span>
                   </button>
+                  <div className="bar-actions">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => onOpenProfile(c.name)}
+                      title={hasProfile(c.name) ? "인물 설정 문서 열기" : "인물 설정 문서 만들기"}
+                    >
+                      {hasProfile(c.name) ? "설정 열기" : "+ 설정 만들기"}
+                    </button>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => onRenameCharacter(c.name)}
+                      title="원고 전체에서 이 인물 이름 바꾸기"
+                    >
+                      이름 바꾸기
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

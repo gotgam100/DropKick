@@ -6,6 +6,7 @@ import {
   createScriptState,
   cycleLineStyle,
   insertScriptNewline,
+  renameCharacter,
   sceneNumbersField,
   scriptLines,
   setStyle,
@@ -194,5 +195,57 @@ describe("인물 이름", () => {
       { style: "action", text: "민재" },
     ]);
     expect(characterNames(s)).toEqual(["민재", "수아"]);
+  });
+});
+
+describe("인물 이름 일괄 바꾸기", () => {
+  const script: ScriptLine[] = [
+    { style: "scene", text: "내부. 체육관 - 밤" },
+    { style: "action", text: "민재가 링 위에 서 있다. 민재는 웃는다." },
+    { style: "character", text: "민재" },
+    { style: "dialogue", text: "민재, 그게 내 이름이야." },
+    { style: "character", text: "민재 (V.O.)" },
+    { style: "dialogue", text: "다시." },
+    { style: "character", text: "민재석" },
+    { style: "dialogue", text: "나는 다른 사람." },
+  ];
+
+  it("인물 줄의 이름만 바꾸고 (V.O.)는 남긴다", () => {
+    let s = createScriptState(script, [history()]);
+    const result = renameCharacter(s, "민재", "준호", false);
+    expect([result.characterLines, result.textHits]).toEqual([2, 0]);
+    s = s.update({ changes: result.changes }).state;
+    expect(scriptLines(s).filter((l) => l.style === "character").map((l) => l.text)).toEqual(["준호", "준호 (V.O.)", "민재석"]);
+    expect(scriptLines(s)[1].text).toBe("민재가 링 위에 서 있다. 민재는 웃는다.");
+  });
+
+  it("지문·대사 속 이름도 함께 바꿀 수 있고, 한 번에 되돌릴 수 있다", () => {
+    let s = createScriptState(script, [history()]);
+    const result = renameCharacter(s, "민재", "준호", true);
+    expect([result.characterLines, result.textHits]).toEqual([2, 3]);
+    s = s.update({ changes: result.changes, userEvent: "rename" }).state;
+    expect(scriptLines(s)[1].text).toBe("준호가 링 위에 서 있다. 준호는 웃는다.");
+    expect(scriptLines(s)[3].text).toBe("준호, 그게 내 이름이야.");
+    s = run(s, undo);
+    expect(scriptLines(s)).toEqual(script);
+  });
+
+  it("다른 인물 이름 안의 같은 글자(민재석)는 바꾸지 않는다", () => {
+    const s = createScriptState([
+      { style: "character", text: "민재" },
+      { style: "dialogue", text: "민재석 형, 민재가 왔어요." },
+    ]);
+    const result = renameCharacter(s, "민재", "준호", true, ["민재", "민재석"]);
+    const next = s.update({ changes: result.changes }).state;
+    expect(scriptLines(next)[1].text).toBe("민재석 형, 준호가 왔어요.");
+  });
+
+  it("영문 이름은 대소문자를 가리지 않는다", () => {
+    const s = createScriptState([
+      { style: "character", text: "Will" },
+      { style: "dialogue", text: "will you?" },
+    ]);
+    const result = renameCharacter(s, "WILL", "Edward", true);
+    expect([result.characterLines, result.textHits]).toEqual([1, 1]);
   });
 });

@@ -11,6 +11,7 @@ import {
   lineStylesField,
   sceneNumbersField,
   scriptLines,
+  renameCharacter,
   setStyle,
   type ScriptLine,
 } from "./lineStyles";
@@ -49,6 +50,14 @@ export type EditorHandle = {
   focus: () => void;
   /** 그 줄로 커서를 옮기고 화면 위쪽에 보이게 한다. */
   goToLine: (line: number) => void;
+  /** 인물 이름 일괄 바꾸기. apply가 false면 바꿀 곳 수만 센다. (한 번의 ⌘Z로 되돌릴 수 있다) */
+  renameCharacter: (
+    oldKey: string,
+    newName: string,
+    everywhere: boolean,
+    otherNames: string[],
+    apply: boolean,
+  ) => { characterLines: number; textHits: number };
 };
 
 type Props = {
@@ -179,6 +188,15 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
     },
     focus() {
       viewRef.current?.focus();
+    },
+    renameCharacter(oldKey, newName, everywhere, otherNames, apply) {
+      const view = viewRef.current;
+      if (!view) return { characterLines: 0, textHits: 0 };
+      const result = renameCharacter(view.state, oldKey, newName, everywhere, otherNames);
+      if (apply && result.changes.length > 0) {
+        view.dispatch({ changes: result.changes, userEvent: "rename" });
+      }
+      return { characterLines: result.characterLines, textHits: result.textHits };
     },
     goToLine(lineNumber) {
       const view = viewRef.current;
