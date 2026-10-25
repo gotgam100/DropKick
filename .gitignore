@@ -29,3 +29,6 @@ src-tauri/gen/schemas
 
 # 테스트 원고로 내보낸 PDF
 samples/*.pdf
+
+# 테스트·작업용 DropKick 프로젝트 (내 맥에만 둔다)
+*.dropkick/
