@@ -39,6 +39,10 @@ export type EditorHandle = {
   getLines: () => ScriptLine[];
   /** 지금 내용을 "저장된 상태"로 표시한다. */
   markSaved: () => void;
+  /** 저장을 시작할 때의 상태를 기억해 둔다. (저장 중에 더 쓴 글은 "수정됨"으로 남게) */
+  captureSaveState: () => SaveToken | null;
+  /** 저장이 끝나면 저장을 시작했던 그 상태를 "저장된 상태"로 표시한다. */
+  markSavedAt: (token: SaveToken) => void;
   undo: () => void;
   redo: () => void;
   find: () => void;
@@ -56,6 +60,9 @@ type Props = {
 };
 
 type Snapshot = { doc: Text; styles: readonly LineStyle[] };
+
+/** 저장 시작 시점의 원고 상태 (바깥에서는 내용을 몰라도 된다) */
+export type SaveToken = { readonly snapshot: Snapshot };
 
 function readInfo(state: EditorState, withCounts: EditorInfo | null): EditorInfo {
   const style = currentStyle(state);
@@ -150,6 +157,16 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
       if (!view) return;
       savedRef.current = snapshot(view.state);
       setDirty(false);
+    },
+    captureSaveState() {
+      const view = viewRef.current;
+      return view ? { snapshot: snapshot(view.state) } : null;
+    },
+    markSavedAt(token) {
+      const view = viewRef.current;
+      if (!view) return;
+      savedRef.current = token.snapshot;
+      setDirty(!sameAs(view.state, token.snapshot));
     },
     undo() {
       if (viewRef.current) undo(viewRef.current);

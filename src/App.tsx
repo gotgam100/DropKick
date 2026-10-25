@@ -137,6 +137,24 @@ function App() {
     files[sample]().then((m) => editorRef.current?.load(fromFountain(m.default).lines));
   }, []);
 
+  // 트리 작업 알림은 8초 뒤 사라진다.
+  const { treeUndo, dismissTreeUndo } = project;
+  useEffect(() => {
+    if (!treeUndo) return;
+    const timer = setTimeout(dismissTreeUndo, 8000);
+    return () => clearTimeout(timer);
+  }, [treeUndo, dismissTreeUndo]);
+
+  const saveLabel = (() => {
+    const { state, at } = project.saveStatus;
+    if (state === "saving") return "저장 중…";
+    if (state === "error") return "저장하지 못함";
+    if (!project.path) return "아직 저장 안 함 (⌘S)";
+    if (project.dirty) return "자동 저장 대기";
+    if (at) return `저장됨 ${at.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`;
+    return "저장됨";
+  })();
+
   const docChars = useMemo(() => project.activeText.replace(/\s/g, "").length, [project.activeText]);
 
   return (
@@ -297,7 +315,22 @@ function App() {
             <span>공백 제외 {numberFormat.format(docChars)}자</span>
           </>
         )}
+        <span className={`status-save status-save-${project.saveStatus.state}`} title="저장된 프로젝트는 입력을 멈추면 자동으로 저장됩니다.">
+          {saveLabel}
+        </span>
       </footer>
+
+      {treeUndo && (
+        <div className="toast" role="status" key={treeUndo.key}>
+          <span>{treeUndo.label}</span>
+          <button type="button" onClick={project.undoTree}>
+            되돌리기
+          </button>
+          <button type="button" className="toast-close" aria-label="닫기" onClick={dismissTreeUndo}>
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -10,7 +10,7 @@ import {
   serializeManifest,
   walkDocs,
 } from "./model";
-import { joinPath, loadProject, saveProject, type ProjectFs } from "./projectIO";
+import { BACKUP_ROOT, backupStamp, joinPath, loadProject, saveProject, type ProjectFs } from "./projectIO";
 import { folderNamed, insertNode, makeDoc, moveNode, removeNode, renameNode } from "./tree";
 import { fromFountain } from "../fountain/fountain";
 
@@ -204,6 +204,41 @@ describe("트리 변경을 저장", () => {
       deleted: result.removed,
     });
     expect(files.get(joinPath(ROOT, "메모/아이디어.md"))).toBe("새로 쓴 메모");
+  });
+});
+
+describe("백업", () => {
+  it("저장하기 전 내용을 백업 폴더에 남긴다 (바뀐 파일, 옮긴 파일, 지운 파일)", async () => {
+    const mem = memoryFs();
+    const project = createProject("드롭킥");
+    let tree = project.manifest.tree;
+    const memos = folderNamed(tree, "메모")!;
+    const a = { ...makeDoc(tree, "memo", memos), name: "가" };
+    tree = insertNode(tree, a, memos);
+    const b = { ...makeDoc(tree, "memo", memos), name: "나" };
+    tree = insertNode(tree, b, memos);
+    project.texts.set(a.id, "가 옛 내용");
+    project.texts.set(b.id, "나 옛 내용");
+    const saved = await saveProject(mem.fs, ROOT, { ...project.manifest, tree }, project.texts);
+
+    const texts = new Map(project.texts);
+    texts.set(project.manifest.mainScript, "새 원고");
+    const removed = removeNode(saved.tree, b.id);
+    const next = renameNode(removed.tree, a.id, "가나");
+    const dir = `${BACKUP_ROOT}/${backupStamp(new Date(2026, 9, 25, 14, 3, 22))}`;
+    expect(dir).toBe(".dropkick-backups/2026-10-25 14-03-22");
+    await saveProject(mem.fs, ROOT, { ...saved, tree: next }, texts, {
+      only: new Set([project.manifest.mainScript]),
+      previous: saved,
+      deleted: removed.removed,
+      backupDir: dir,
+    });
+    const backupOf = (rel: string) => mem.files.get(joinPath(ROOT, `${dir}/${rel}`));
+    expect(backupOf("스크립트.fountain")).toContain("Title: 드롭킥");
+    expect(backupOf("메모/가.md")).toBe("가 옛 내용");
+    expect(backupOf("메모/나.md")).toBe("나 옛 내용");
+    // 바뀌지 않은 파일은 백업하지 않는다
+    expect([...mem.files.keys()].filter((k) => k.includes(BACKUP_ROOT))).toHaveLength(3);
   });
 });
 

@@ -180,6 +180,45 @@ fn remove_dir_if_empty(path: String) -> Result<bool, String> {
     fs::remove_dir(dir).map(|_| true).map_err(|e| format!("폴더를 정리할 수 없습니다: {e}"))
 }
 
+const BACKUP_ROOT: &str = ".dropkick-backups";
+
+/// 프로젝트의 백업 폴더(.dropkick-backups) 안에서 가장 최근 keep개만 남기고 오래된 백업을 지운다.
+/// 백업 폴더 밖은 건드리지 않는다.
+#[tauri::command]
+fn prune_backups(project: String, keep: usize) -> Result<usize, String> {
+    let root = Path::new(&project).join(BACKUP_ROOT);
+    let Ok(entries) = fs::read_dir(&root) else {
+        return Ok(0);
+    };
+    let mut snapshots: Vec<PathBuf> = entries
+        .flatten()
+        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .map(|e| e.path())
+        .collect();
+    // 이름이 "2026-10-25 14-03-22" 형식이라 이름순 = 시간순
+    snapshots.sort();
+    let remove = snapshots.len().saturating_sub(keep);
+    for dir in snapshots.iter().take(remove) {
+        if dir.parent() == Some(root.as_path()) {
+            fs::remove_dir_all(dir).map_err(|e| format!("오래된 백업을 정리할 수 없습니다: {e}"))?;
+        }
+    }
+    Ok(remove)
+}
+
+/// 폴더를 Finder에서 연다. (백업 폴더 보기)
+#[tauri::command]
+fn open_in_finder(path: String) -> Result<(), String> {
+    if !Path::new(&path).is_dir() {
+        return Err("폴더가 아직 없습니다. 한 번 저장하면 백업이 만들어집니다.".into());
+    }
+    std::process::Command::new("open")
+        .arg(&path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Finder를 열 수 없습니다: {e}"))
+}
+
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
@@ -218,6 +257,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::separator(app)?,
             &item("save", "저장", Some("CmdOrCtrl+S"))?,
             &item("save_as", "다른 이름으로 저장…", Some("CmdOrCtrl+Shift+S"))?,
+            &item("open_backups", "백업 폴더 보기", None)?,
             &PredefinedMenuItem::separator(app)?,
             &item("export_pdf", "PDF로 내보내기…", Some("CmdOrCtrl+P"))?,
             &PredefinedMenuItem::separator(app)?,
@@ -304,6 +344,8 @@ pub fn run() {
             rename_path,
             trash_path,
             remove_dir_if_empty,
+            prune_backups,
+            open_in_finder,
             quit_app
         ])
         .run(tauri::generate_context!())
@@ -387,6 +429,27 @@ mod tests {
 
         // 없는 파일을 휴지통으로 보내는 건 문제 없다
         trash_path(p("없는 파일.md")).unwrap();
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn prunes_only_old_backups() {
+        let root = std::env::temp_dir().join(format!("dropkick-backup-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let backups = root.join(BACKUP_ROOT);
+        for name in ["2026-10-25 10-00-00", "2026-10-25 11-00-00", "2026-10-25 12-00-00"] {
+            fs::create_dir_all(backups.join(name)).unwrap();
+            fs::write(backups.join(name).join("a.md"), "x").unwrap();
+        }
+        fs::write(root.join("원고.fountain"), "keep").unwrap();
+
+        assert_eq!(prune_backups(root.to_string_lossy().to_string(), 2).unwrap(), 1);
+        assert!(!backups.join("2026-10-25 10-00-00").exists());
+        assert!(backups.join("2026-10-25 12-00-00").exists());
+        assert!(root.join("원고.fountain").exists());
+        // 백업 폴더가 없어도 문제없다
+        assert_eq!(prune_backups(backups.join("없음").to_string_lossy().to_string(), 2).unwrap(), 0);
 
         fs::remove_dir_all(&root).unwrap();
     }

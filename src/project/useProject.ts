@@ -29,7 +29,8 @@ import {
   type ProjectManifest,
   type ProjectNode,
 } from "./model";
-import { loadProject, saveProject } from "./projectIO";
+import { BACKUP_ROOT, backupStamp, joinPath, loadProject, saveProject } from "./projectIO";
+import { appDataDir } from "@tauri-apps/api/path";
 import { tauriFs } from "./tauriFs";
 import {
   findNode,
@@ -44,6 +45,14 @@ import {
 
 const SCRIPT_FILTERS = [{ name: "Fountain 시나리오", extensions: ["fountain", "spmd", "txt"] }];
 const LAST_KEY = "dropkick.last";
+/** 입력을 멈추고 이만큼 지나면 자동 저장 */
+const AUTOSAVE_DELAY = 3000;
+/** 자동 저장 때는 이 간격마다 한 번만 백업을 남긴다 (직접 저장은 매번) */
+const AUTO_BACKUP_INTERVAL = 10 * 60 * 1000;
+/** 프로젝트마다 남겨 둘 백업 수 */
+const BACKUPS_TO_KEEP = 30;
+/** 저장 안 한 새 프로젝트를 복구용으로 기록하는 간격 */
+const RECOVERY_INTERVAL = 10000;
 const OLD_LAST_FILE_KEY = "dropkick.lastFile";
 
 type Session = {
@@ -130,6 +139,43 @@ async function notify(text: string, kind: "info" | "warning" = "info") {
   else window.alert(text);
 }
 
+// ---------- 저장 안 한 새 프로젝트 복구 ----------
+
+type Recovery = {
+  version: 1;
+  savedAt: string;
+  manifest: ProjectManifest;
+  texts: [string, string][];
+  titlePage: string | null;
+};
+
+async function recoveryPath(): Promise<string> {
+  return joinPath(await appDataDir(), "recovery/unsaved-project.json");
+}
+
+async function writeRecovery(data: Recovery | null) {
+  try {
+    const path = await recoveryPath();
+    await tauriFs.ensureDir(path.split("/").slice(0, -1).join("/"));
+    await tauriFs.writeText(path, data ? JSON.stringify(data) : "");
+  } catch {
+    // 복구 기록은 보조 기능이라 실패해도 작업은 계속한다.
+  }
+}
+
+async function readRecovery(): Promise<Recovery | null> {
+  try {
+    const path = await recoveryPath();
+    if ((await tauriFs.kind(path)) !== "file") return null;
+    const text = await tauriFs.readText(path);
+    if (!text.trim()) return null;
+    const data = JSON.parse(text) as Recovery;
+    return data.version === 1 && data.manifest && Array.isArray(data.texts) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 function scriptLinesOf(text: string) {
   const doc = fromFountain(text);
   return { titlePage: doc.titlePage, lines: doc.lines.filter((l) => isLineStyle(l.style)) };
@@ -175,12 +221,17 @@ export function useProject(
     })(),
   );
   // sessionRef가 바뀌면 화면을 다시 그리도록 숫자를 올린다.
-  const [, setVersion] = useState(0);
+  const [version, setVersion] = useState(0);
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const [activeDocId, setActiveDocId] = useState(sessionRef.current.manifest.mainScript);
   const activeRef = useRef(activeDocId);
   activeRef.current = activeDocId;
   const [scriptDirty, setScriptDirtyState] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<{ state: "idle" | "saving" | "saved" | "error"; at: Date | null }>({
+    state: "idle",
+    at: null,
+  });
+  const lastBackupRef = useRef(0);
   const scriptDirtyRef = useRef(false);
   const busyRef = useRef(false);
 
@@ -216,34 +267,71 @@ export function useProject(
 
   // ---------- 저장 ----------
 
+  /**
+   * 프로젝트를 path에 저장한다.
+   * - all: 모든 문서를 쓴다 (처음 저장, 다른 이름으로 저장)
+   * - auto: 자동 저장 (오류 창을 띄우지 않고, 백업은 10분에 한 번)
+   * 저장하는 동안 더 쓴 글은 "수정됨"으로 남는다.
+   */
   const writeProjectTo = useCallback(
-    async (path: string, all: boolean): Promise<boolean> => {
-      const current = sessionRef.current;
+    async (path: string, all: boolean, auto = false): Promise<boolean> => {
+      const start = sessionRef.current;
       const editor = editorRef.current;
       if (!editor) return false;
+      setSaveStatus((s) => ({ ...s, state: "saving" }));
       try {
-        const manifest = { ...current.manifest, title: projectTitleFromPath(path), lastOpened: activeRef.current };
-        const texts = new Map(current.texts);
+        const token = editor.captureSaveState();
+        const manifest = { ...start.manifest, title: projectTitleFromPath(path), lastOpened: activeRef.current };
+        const texts = new Map(start.texts);
         texts.set(manifest.mainScript, currentScriptText());
         const changed = new Set<string>([manifest.mainScript]);
-        for (const [id, text] of texts) if (current.savedTexts.get(id) !== text) changed.add(id);
+        for (const [id, text] of texts) if (start.savedTexts.get(id) !== text) changed.add(id);
+
+        const now = Date.now();
+        const makeBackup = !all && start.savedManifest && (!auto || now - lastBackupRef.current > AUTO_BACKUP_INTERVAL);
+        const backupDir = makeBackup ? `${BACKUP_ROOT}/${backupStamp(new Date(now))}` : undefined;
+
         const saved = await saveProject(
           tauriFs,
           path,
           manifest,
           texts,
-          all ? {} : { only: changed, previous: current.savedManifest ?? undefined, deleted: current.deleted },
+          all ? {} : { only: changed, previous: start.savedManifest ?? undefined, deleted: start.deleted, backupDir },
         );
-        editor.markSaved();
-        setSession({ ...newSession(path, saved, texts, current.titlePage, true) });
+        if (backupDir) {
+          lastBackupRef.current = now;
+          invoke("prune_backups", { project: path, keep: BACKUPS_TO_KEEP }).catch(() => {});
+        }
+        if (token) editor.markSavedAt(token);
+
+        // 저장하는 동안 바뀐 것(새로 쓴 글, 트리 변경)은 그대로 두고, 저장한 것만 "저장됨"으로 표시한다.
+        const current = sessionRef.current;
+        const files = new Map(walkDocs(saved.tree).map((d) => [d.id, d.file]));
+        const applyFiles = (nodes: ProjectNode[]): ProjectNode[] =>
+          nodes.map((n) => (n.type === "folder" ? { ...n, children: applyFiles(n.children) } : { ...n, file: files.get(n.id) ?? n.file }));
+        const treeUnchanged = current.manifest.tree === start.manifest.tree;
+        sessionRef.current = {
+          ...current,
+          path,
+          manifest: treeUnchanged ? saved : { ...current.manifest, title: saved.title, tree: applyFiles(current.manifest.tree) },
+          savedManifest: saved,
+          savedTexts: texts,
+          deleted: current.deleted.filter((d) => !start.deleted.includes(d)),
+          treeChanged: !treeUnchanged,
+        };
+        rememberLast({ kind: "project", path });
+        refresh();
+        setSaveStatus({ state: "saved", at: new Date() });
+        if (!start.path) writeRecovery(null);
         return true;
       } catch (error) {
-        await showError("프로젝트를 저장하지 못했습니다.", error);
+        setSaveStatus((s) => ({ ...s, state: "error" }));
+        if (!auto) await showError("프로젝트를 저장하지 못했습니다.", error);
         return false;
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [editorRef, setSession],
+    [editorRef, refresh],
   );
 
   /** 다른 이름으로 저장 = 새 폴더에 모든 문서를 저장 */
@@ -267,7 +355,9 @@ export function useProject(
       { title: "DropKick", kind: "warning", buttons: { yes: "저장", no: "저장 안 함", cancel: "취소" } },
     );
     if (answer === "저장" || answer === "Yes") return saveCurrent();
-    return answer === "저장 안 함" || answer === "No";
+    const discard = answer === "저장 안 함" || answer === "No";
+    if (discard && !sessionRef.current.path) writeRecovery(null);
+    return discard;
   }, [saveCurrent]);
 
   // ---------- 열기 ----------
@@ -339,14 +429,44 @@ export function useProject(
 
   // ---------- 트리 ----------
 
+  // 트리 작업 되돌리기 (가장 최근 한 번)
+  const undoRef = useRef<{ session: Session; activeDocId: string } | null>(null);
+  const [treeUndo, setTreeUndo] = useState<{ label: string; key: number } | null>(null);
+
   const updateTree = useCallback(
-    (tree: ProjectNode[], extra: Partial<Session> = {}) => {
+    (tree: ProjectNode[], extra: Partial<Session> = {}, label?: string) => {
       const current = sessionRef.current;
+      if (label) {
+        undoRef.current = { session: current, activeDocId: activeRef.current };
+        setTreeUndo({ label, key: Date.now() });
+      }
       sessionRef.current = { ...current, ...extra, manifest: { ...current.manifest, tree }, treeChanged: true };
       refresh();
     },
     [refresh],
   );
+
+  const undoTree = useCallback(() => {
+    const saved = undoRef.current;
+    if (!saved) return;
+    undoRef.current = null;
+    setTreeUndo(null);
+    const current = sessionRef.current;
+    // 되돌린 뒤에도 그사이 쓴 글은 남기고, 트리만 되돌린다.
+    const texts = new Map(saved.session.texts);
+    for (const [id, text] of current.texts) if (texts.has(id)) texts.set(id, text);
+    sessionRef.current = {
+      ...current,
+      manifest: saved.session.manifest,
+      texts,
+      deleted: saved.session.deleted,
+      treeChanged: true,
+    };
+    if (findNode(saved.session.manifest.tree, saved.activeDocId)) setActiveDocId(saved.activeDocId);
+    refresh();
+  }, [refresh]);
+
+  const dismissTreeUndo = useCallback(() => setTreeUndo(null), []);
 
   const openDoc = useCallback((id: string) => {
     if (findNode(sessionRef.current.manifest.tree, id)?.type === "folder") return;
@@ -362,7 +482,7 @@ export function useProject(
       const doc = makeDoc(tree, "memo", parent);
       const texts = new Map(current.texts);
       texts.set(doc.id, "");
-      updateTree(insertNode(tree, doc, parent), { texts });
+      updateTree(insertNode(tree, doc, parent), { texts }, `"${doc.name}"을(를) 만들었습니다`);
       setActiveDocId(doc.id);
       return doc.id;
     },
@@ -373,7 +493,7 @@ export function useProject(
     (parentId: string | null = null) => {
       const current = sessionRef.current;
       const folder = makeFolder(current.manifest.tree, parentId);
-      updateTree(insertNode(current.manifest.tree, folder, parentId));
+      updateTree(insertNode(current.manifest.tree, folder, parentId), {}, `"${folder.name}" 폴더를 만들었습니다`);
       return folder.id;
     },
     [updateTree],
@@ -392,9 +512,9 @@ export function useProject(
       if (renamed && text !== undefined && (text === heading || text.startsWith(`${heading}\n`))) {
         const texts = new Map(current.texts);
         texts.set(id, `# ${renamed.name}${text.slice(heading.length)}`);
-        updateTree(tree, { texts });
+        updateTree(tree, { texts }, `이름을 "${renamed.name}"(으)로 바꿨습니다`);
       } else {
-        updateTree(tree);
+        updateTree(tree, {}, `이름을 "${renamed?.name ?? name}"(으)로 바꿨습니다`);
       }
     },
     [updateTree],
@@ -416,10 +536,11 @@ export function useProject(
       const savedIds = new Set(current.savedManifest ? walkDocs(current.savedManifest.tree).map((d) => d.id) : []);
       const texts = new Map(current.texts);
       for (const doc of result.removed) texts.delete(doc.id);
-      updateTree(result.tree, {
-        texts,
-        deleted: [...current.deleted, ...result.removed.filter((d) => savedIds.has(d.id))],
-      });
+      updateTree(
+        result.tree,
+        { texts, deleted: [...current.deleted, ...result.removed.filter((d) => savedIds.has(d.id))] },
+        `"${node.name}"을(를) 지웠습니다`,
+      );
       if (result.removed.some((d) => d.id === activeRef.current)) setActiveDocId(current.manifest.mainScript);
     },
     [updateTree],
@@ -429,7 +550,8 @@ export function useProject(
     (id: string, targetId: string, position: DropPosition) => {
       const current = sessionRef.current;
       const next = moveNode(current.manifest.tree, id, targetId, position);
-      if (next !== current.manifest.tree) updateTree(next);
+      const node = findNode(current.manifest.tree, id);
+      if (next !== current.manifest.tree) updateTree(next, {}, `"${node?.name ?? ""}"을(를) 옮겼습니다`);
     },
     [updateTree],
   );
@@ -511,6 +633,19 @@ export function useProject(
           return runExclusive(saveAs);
         case "export_pdf":
           return runExclusive(exportPdf);
+        case "open_backups":
+          return runExclusive(async () => {
+            const path = sessionRef.current.path;
+            if (!path) {
+              await notify("아직 저장하지 않은 프로젝트입니다. 저장하면 이후 백업이 프로젝트 폴더에 남습니다.");
+              return;
+            }
+            try {
+              await invoke("open_in_finder", { path: joinPath(path, BACKUP_ROOT) });
+            } catch (error) {
+              await showError("백업 폴더를 열 수 없습니다.", error);
+            }
+          });
         case "close":
           return win.close();
         case "quit":
@@ -567,15 +702,72 @@ export function useProject(
     textEditorRef,
   ]);
 
-  // 시작할 때 마지막으로 작업한 프로젝트나 파일을 연다.
+  // 시작할 때: 저장하지 않은 새 프로젝트가 남아 있으면 복구를 묻고, 아니면 마지막 프로젝트를 연다.
   useEffect(() => {
     if (!isTauri()) return;
-    const last = readLast();
-    if (!last) return;
-    openProjectAt(last.path, true).catch(() => rememberLast(null));
+    (async () => {
+      const recovery = await readRecovery();
+      if (recovery) {
+        const when = new Date(recovery.savedAt).toLocaleString("ko-KR");
+        const restore = await ask(
+          `저장하지 않은 프로젝트 "${recovery.manifest.title || "제목 없음"}"이(가) 남아 있습니다. (${when})\n복구할까요?`,
+          "복구",
+        );
+        if (restore) {
+          const texts = new Map(recovery.texts);
+          const { lines } = scriptLinesOf(texts.get(recovery.manifest.mainScript) ?? "");
+          editorRef.current?.load(lines.length > 0 ? lines : [{ style: "action", text: "" }]);
+          sessionRef.current = { ...newSession(null, recovery.manifest, texts, recovery.titlePage, false), treeChanged: true };
+          setActiveDocId(recovery.manifest.mainScript);
+          refresh();
+          return;
+        }
+        await writeRecovery(null);
+      }
+      const last = readLast();
+      if (last) openProjectAt(last.path, true).catch(() => rememberLast(null));
+    })();
     // 시작할 때 한 번만
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 자동 저장: 저장된 적 있는 프로젝트를 고치면, 입력이 멈추고 잠시 뒤 저장한다.
+  useEffect(() => {
+    if (!isTauri() || !sessionRef.current.path || !dirty) return;
+    const timer = setTimeout(async () => {
+      const path = sessionRef.current.path;
+      if (!path || busyRef.current) return;
+      busyRef.current = true;
+      try {
+        await writeProjectTo(path, false, true);
+      } finally {
+        busyRef.current = false;
+      }
+    }, AUTOSAVE_DELAY);
+    return () => clearTimeout(timer);
+  }, [dirty, version, scriptDirty, writeProjectTo]);
+
+  // 저장 위치를 아직 정하지 않은 새 프로젝트는, 앱이 갑자기 꺼져도 살릴 수 있게 따로 기록해 둔다.
+  useEffect(() => {
+    if (!isTauri() || sessionRef.current.path || !dirty) return;
+    const record = () => {
+      const current = sessionRef.current;
+      if (current.path) return;
+      const texts = new Map(current.texts);
+      texts.set(current.manifest.mainScript, currentScriptText());
+      writeRecovery({
+        version: 1,
+        savedAt: new Date().toISOString(),
+        manifest: current.manifest,
+        texts: [...texts],
+        titlePage: current.titlePage,
+      });
+    };
+    record();
+    const timer = setInterval(record, RECOVERY_INTERVAL);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty]);
 
   const title = sessionTitle(session);
   useEffect(() => {
@@ -597,6 +789,11 @@ export function useProject(
     activeDoc,
     activeText: session.texts.get(activeDoc.id) ?? "",
     dirty,
+    saveStatus,
+    autosaving: Boolean(session.path),
+    treeUndo,
+    undoTree,
+    dismissTreeUndo,
     dirtyDocIds,
     treeDirty,
     setScriptDirty,
