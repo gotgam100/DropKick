@@ -37,6 +37,8 @@ npm test
 npm run tauri build
 ```
 
+서명·공증까지 한 배포용 `.dmg`는 [docs/RELEASE.md](docs/RELEASE.md)를 따라 `scripts/release.sh`로 만든다.
+
 ## 사용한 오픈소스
 
 | 오픈소스 | 라이선스 |

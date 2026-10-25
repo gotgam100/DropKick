@@ -2,8 +2,20 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use std::sync::Mutex;
+
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
+
+/// Finder에서 더블클릭해 연 프로젝트 경로. 화면이 준비되기 전에 들어오면 여기 모아 둔다.
+#[derive(Default)]
+struct PendingOpens(Mutex<Vec<String>>);
+
+/// 화면이 시작할 때 아직 열지 않은 프로젝트 경로를 가져간다.
+#[tauri::command]
+fn take_pending_opens(state: tauri::State<PendingOpens>) -> Vec<String> {
+    std::mem::take(&mut *state.0.lock().unwrap())
+}
 
 /// 원고 파일을 UTF-8 텍스트로 읽는다.
 #[tauri::command]
@@ -327,6 +339,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(PendingOpens::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .menu(build_menu)
@@ -346,10 +359,29 @@ pub fn run() {
             remove_dir_if_empty,
             prune_backups,
             open_in_finder,
+            take_pending_opens,
             quit_app
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Finder에서 .dropkick 프로젝트를 더블클릭하거나 앱 아이콘에 끌어다 놓은 경우
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = event {
+                let paths: Vec<String> = urls
+                    .iter()
+                    .filter_map(|url| url.to_file_path().ok())
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect();
+                if paths.is_empty() {
+                    return;
+                }
+                app.state::<PendingOpens>().0.lock().unwrap().extend(paths.clone());
+                let _ = app.emit("open-paths", paths);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }
 
 #[cfg(test)]

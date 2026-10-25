@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 배포용 앱 Info.plist에 더해지는 항목. .dropkick 프로젝트 폴더를 Finder에서 파일 하나(패키지)로 다룬다. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>DropKick 프로젝트</string>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>dropkick</string>
+      </array>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.baekmac.dropkick.project</string>
+      </array>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Owner</string>
+      <key>LSTypeIsPackage</key>
+      <true/>
+    </dict>
+  </array>
+</dict>
+</plist>

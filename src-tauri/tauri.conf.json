@@ -37,6 +37,29 @@
       "icons/icon.ico"
     ],
     "category": "Productivity",
-    "copyright": "© 2026 baekmac"
+    "copyright": "© 2026 baekmac",
+    "fileAssociations": [
+      {
+        "ext": [
+          "dropkick"
+        ],
+        "name": "DropKick 프로젝트",
+        "description": "DropKick 시나리오 프로젝트",
+        "role": "Editor",
+        "rank": "Owner",
+        "exportedType": {
+          "identifier": "com.baekmac.dropkick.project",
+          "conformsTo": [
+            "com.apple.package",
+            "public.composite-content"
+          ]
+        }
+      }
+    ],
+    "shortDescription": "한글 시나리오 작성 앱",
+    "longDescription": "할리우드 형식의 한글 시나리오를 쓰고, 페이지·PDF·통계와 메모·인물 설정을 함께 관리하는 맥 앱",
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    }
   }
 }

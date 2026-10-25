@@ -391,11 +391,21 @@ export function useProject(
     [editorRef, setScriptDirty, setSession],
   );
 
-  /** ⌘O: 프로젝트 폴더(제목.dropkick)를 고른다. */
+  /**
+   * ⌘O: 프로젝트(제목.dropkick)를 고른다.
+   * 배포용 앱에서는 .dropkick이 파일 하나처럼 보여서 바로 고를 수 있고,
+   * 폴더로 보이는 경우에도 그 안의 project.json을 고르면 열린다.
+   */
   const openProjectFolder = useCallback(async () => {
     if (!(await confirmDiscard())) return;
-    const chosen = await open({ multiple: false, directory: true, title: "프로젝트 폴더 열기" });
+    let chosen = await open({
+      multiple: false,
+      directory: false,
+      title: "프로젝트 열기",
+      filters: [{ name: "DropKick 프로젝트", extensions: ["dropkick", "json"] }],
+    });
     if (typeof chosen !== "string") return;
+    if (chosen.endsWith("/project.json")) chosen = chosen.slice(0, -"/project.json".length);
     try {
       await openProjectAt(chosen);
     } catch (error) {
@@ -687,6 +697,24 @@ export function useProject(
       else cleanups.push(unlisten);
     });
 
+    // 앱이 켜져 있을 때 Finder에서 다른 프로젝트를 더블클릭한 경우
+    listen<string[]>("open-paths", async () => {
+      const paths = await invoke<string[]>("take_pending_opens");
+      const path = paths[paths.length - 1];
+      if (!path || path === sessionRef.current.path) return;
+      runExclusive(async () => {
+        if (!(await confirmDiscard())) return;
+        try {
+          await openProjectAt(path);
+        } catch (error) {
+          await showError("프로젝트를 열지 못했습니다.", error);
+        }
+      });
+    }).then((unlisten) => {
+      if (disposed) unlisten();
+      else cleanups.push(unlisten);
+    });
+
     win
       .onCloseRequested(async (event) => {
         if (!dirtyRef.current) return;
@@ -716,6 +744,7 @@ export function useProject(
     exportPdf,
     importFountain,
     newProject,
+    openProjectAt,
     openProjectFolder,
     runExclusive,
     saveAs,
@@ -727,6 +756,12 @@ export function useProject(
   useEffect(() => {
     if (!isTauri()) return;
     (async () => {
+      // Finder에서 프로젝트를 더블클릭해 앱이 켜진 경우: 그 프로젝트를 연다.
+      const pending = await invoke<string[]>("take_pending_opens").catch(() => [] as string[]);
+      if (pending.length > 0) {
+        openProjectAt(pending[pending.length - 1]).catch((error) => showError("프로젝트를 열지 못했습니다.", error));
+        return;
+      }
       const recovery = await readRecovery();
       if (recovery) {
         const when = new Date(recovery.savedAt).toLocaleString("ko-KR");
