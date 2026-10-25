@@ -10,6 +10,7 @@ import { findNode } from "./project/tree";
 import { BLANK_SCRIPT_LINES, DOC_TYPE_LABELS } from "./project/model";
 import { sceneAtLine, type ScriptAnalysis } from "./analysis/analyze";
 import { ProjectTree } from "./panels/ProjectTree";
+import { TitlePageDialog } from "./titlepage/TitlePageDialog";
 import { StatsPanel } from "./panels/StatsPanel";
 import "./App.css";
 import "./panels/panels.css";
@@ -64,6 +65,7 @@ function App() {
   });
   const [analysis, setAnalysis] = useState<ScriptAnalysis>(EMPTY_ANALYSIS);
   const [treeFilter, setTreeFilter] = useState("");
+  const [editingTitlePage, setEditingTitlePage] = useState(false);
   const [showSidebar, toggleSidebar, setShowSidebar] = usePanelSetting("dropkick.panel.scenes", true);
   const [showStats, toggleStats] = usePanelSetting("dropkick.panel.stats", false);
   const project = useProject(editorRef, textEditorRef, BLANK_SCRIPT_LINES);
@@ -203,7 +205,19 @@ function App() {
                 <span className="style-name">{STYLE_LABELS[style]}</span>
                 <kbd>{shortcutFor(style)}</kbd>
               </button>
-            ))
+            )).concat(
+              <span key="divider" className="toolbar-divider" />,
+              <button
+                key="title-page"
+                type="button"
+                className={project.titlePage ? "style-button" : "style-button muted"}
+                title="표지 편집 (PDF 첫 장)"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setEditingTitlePage(true)}
+              >
+                <span className="style-name">표지</span>
+              </button>,
+            )
           ) : (
             <span className="stylebar-doc">
               {DOC_TYPE_LABELS[project.activeDoc.type]} · {project.activeDoc.name}
@@ -319,6 +333,17 @@ function App() {
           {saveLabel}
         </span>
       </footer>
+
+      {editingTitlePage && (
+        <TitlePageDialog
+          titlePage={project.titlePage}
+          onSave={project.setTitlePage}
+          onClose={() => {
+            setEditingTitlePage(false);
+            editorRef.current?.focus();
+          }}
+        />
+      )}
 
       {treeUndo && (
         <div className="toast" role="status" key={treeUndo.key}>

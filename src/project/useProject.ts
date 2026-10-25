@@ -68,7 +68,9 @@ type Session = {
   /** 저장할 때 휴지통으로 옮길 문서 */
   deleted: DocNode[];
   treeChanged: boolean;
+  /** 원고 표지 (Fountain 표지 정보). 원고 파일 맨 앞에 저장된다. */
   titlePage: string | null;
+  savedTitlePage: string | null;
 };
 
 type Last = { kind: "project"; path: string };
@@ -204,6 +206,7 @@ function newSession(path: string | null, manifest: ProjectManifest, texts: Map<s
     deleted: [],
     treeChanged: false,
     titlePage,
+    savedTitlePage: titlePage,
   };
 }
 
@@ -246,7 +249,7 @@ export function useProject(
     if (id === session.manifest.mainScript) continue;
     if (session.savedTexts.get(id) !== text) dirtyDocIds.add(id);
   }
-  if (scriptDirty) dirtyDocIds.add(session.manifest.mainScript);
+  if (scriptDirty || session.titlePage !== session.savedTitlePage) dirtyDocIds.add(session.manifest.mainScript);
   const treeDirty = session.treeChanged || session.deleted.length > 0;
   const dirty = dirtyDocIds.size > 0 || treeDirty;
   const dirtyRef = useRef(dirty);
@@ -316,6 +319,7 @@ export function useProject(
           manifest: treeUnchanged ? saved : { ...current.manifest, title: saved.title, tree: applyFiles(current.manifest.tree) },
           savedManifest: saved,
           savedTexts: texts,
+          savedTitlePage: start.titlePage,
           deleted: current.deleted.filter((d) => !start.deleted.includes(d)),
           treeChanged: !treeUnchanged,
         };
@@ -568,6 +572,15 @@ export function useProject(
     [refresh],
   );
 
+  /** 표지를 바꾼다. (원고와 함께 저장된다) */
+  const setTitlePage = useCallback(
+    (titlePage: string | null) => {
+      sessionRef.current = { ...sessionRef.current, titlePage };
+      refresh();
+    },
+    [refresh],
+  );
+
   // ---------- PDF ----------
 
   const exportPdf = useCallback(async () => {
@@ -789,6 +802,8 @@ export function useProject(
     activeDoc,
     activeText: session.texts.get(activeDoc.id) ?? "",
     dirty,
+    titlePage: session.titlePage,
+    setTitlePage,
     saveStatus,
     autosaving: Boolean(session.path),
     treeUndo,

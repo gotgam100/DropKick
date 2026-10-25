@@ -698,3 +698,112 @@
   color: var(--muted);
   font-size: 16px;
 }
+
+.toolbar-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 6px;
+  background: var(--border);
+}
+
+.style-button.muted .style-name {
+  color: var(--muted);
+}
+
+/* ---------- 대화상자 (표지 편집 등) ---------- */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 90px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.dialog {
+  width: min(480px, calc(100vw - 32px));
+  padding: 22px 24px 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--chrome);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+}
+
+.dialog h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.dialog-hint {
+  margin: 0 0 16px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.dialog-field {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.dialog-field > span {
+  padding-top: 7px;
+  color: var(--muted);
+}
+
+.dialog-field input,
+.dialog-field textarea {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+  resize: vertical;
+}
+
+.dialog-field input:focus,
+.dialog-field textarea:focus {
+  border-color: var(--caret);
+}
+
+.dialog-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 10px 82px;
+  color: var(--ink);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dialog-actions button {
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  cursor: default;
+}
+
+.dialog-actions button.primary {
+  border-color: var(--caret);
+  background: var(--caret);
+  color: #fff;
+  font-weight: 600;
+}
