@@ -12,6 +12,9 @@ import { characterKey, sceneAtLine, type ScriptAnalysis } from "./analysis/analy
 import { ProjectTree } from "./panels/ProjectTree";
 import { TitlePageDialog } from "./titlepage/TitlePageDialog";
 import { RenameCharacterDialog } from "./panels/RenameCharacterDialog";
+import { RevisionView, type Snapshot } from "./revisions/RevisionView";
+import { NewRevisionDialog } from "./revisions/NewRevisionDialog";
+import { nextRevisionName, settingsDocs } from "./revisions/revisions";
 import { StatsPanel } from "./panels/StatsPanel";
 import "./App.css";
 import "./panels/panels.css";
@@ -69,10 +72,13 @@ function App() {
   const [editingTitlePage, setEditingTitlePage] = useState(false);
   const [renamingCharacter, setRenamingCharacter] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; key: number } | null>(null);
+  const [openRevisionId, setOpenRevisionId] = useState<string | null>(null);
+  const [newRevisionOpen, setNewRevisionOpen] = useState(false);
   const [showSidebar, toggleSidebar, setShowSidebar] = usePanelSetting("dropkick.panel.scenes", true);
   const [showStats, toggleStats] = usePanelSetting("dropkick.panel.stats", false);
   const project = useProject(editorRef, textEditorRef, BLANK_SCRIPT_LINES);
-  const isScript = project.activeDoc.id === project.mainScriptId;
+  const openRevision = project.revisions.find((r) => r.id === openRevisionId) ?? null;
+  const isScript = project.activeDoc.id === project.mainScriptId && !openRevision;
   const scriptName = findNode(project.tree, project.mainScriptId)?.name ?? "스크립트";
 
   const currentScene = useMemo(() => sceneAtLine(analysis.scenes, info.line), [analysis.scenes, info.line]);
@@ -82,6 +88,7 @@ function App() {
   const pendingLineRef = useRef<number | null>(null);
   const goToLine = useCallback(
     (line: number) => {
+      setOpenRevisionId(null);
       if (isScript) {
         editorRef.current?.goToLine(line);
         return;
@@ -109,6 +116,7 @@ function App() {
     listen<string>("menu", (event) => {
       if (event.payload === "toggle_scenes") toggleSidebar();
       if (event.payload === "toggle_stats") toggleStats();
+      if (event.payload === "new_revision") setNewRevisionOpen(true);
     }).then((fn) => {
       if (disposed) fn();
       else unlisten = fn;
@@ -204,6 +212,22 @@ function App() {
     return "저장됨";
   })();
 
+  const revisionStats = () => ({ pages: analysis.pages, scenes: analysis.scenes.length, runtimeMinutes: analysis.runtimeMinutes });
+
+  const currentSnapshot = useCallback(
+    (): Snapshot => ({
+      name: "지금 원고",
+      lines: editorRef.current?.getLines() ?? [],
+      docs: settingsDocs(project.tree).map(({ doc, folders }) => ({
+        doc: { id: doc.id, type: doc.type, name: doc.name, folders },
+        text: project.docTexts.get(doc.id) ?? "",
+      })),
+      pages: analysis.pages,
+      runtime: analysis.runtimeMinutes,
+    }),
+    [analysis.pages, analysis.runtimeMinutes, project.docTexts, project.tree],
+  );
+
   const docChars = useMemo(() => project.activeText.replace(/\s/g, "").length, [project.activeText]);
 
   return (
@@ -237,7 +261,14 @@ function App() {
         </div>
 
         <div className="toolbar-center" aria-label="문장 스타일">
-          {isScript ? (
+          {openRevision ? (
+            <span className="stylebar-doc">
+              수정고 · {openRevision.name}
+              <button type="button" className="style-button" onClick={() => setOpenRevisionId(null)}>
+                ← {scriptName}
+              </button>
+            </span>
+          ) : isScript ? (
             LINE_STYLES.map((style) => (
               <button
                 key={style}
@@ -303,7 +334,10 @@ function App() {
             currentSceneLine={currentScene?.line ?? null}
             filter={treeFilter}
             onFilterChange={setTreeFilter}
-            onOpenDoc={project.openDoc}
+            onOpenDoc={(id) => {
+              setOpenRevisionId(null);
+              project.openDoc(id);
+            }}
             onSelectScene={goToLine}
             onAdd={(kind, parentId) =>
               kind === "folder"
@@ -313,6 +347,10 @@ function App() {
             onRename={project.rename}
             onRemove={project.remove}
             onMove={project.move}
+            revisions={project.revisions}
+            openRevisionId={openRevisionId}
+            onOpenRevision={setOpenRevisionId}
+            onNewRevision={() => setNewRevisionOpen(true)}
           />
         )}
 
@@ -332,7 +370,26 @@ function App() {
           </article>
         </main>
 
-        {!isScript && (
+        {openRevision && (
+          <RevisionView
+            meta={openRevision}
+            revisions={project.revisions}
+            load={project.loadRevision}
+            current={currentSnapshot}
+            onRestore={async () => {
+              if (await project.restoreRevision(openRevision, revisionStats())) {
+                setOpenRevisionId(null);
+                setNotice({ text: `"${openRevision.name}"로 되돌렸습니다. 되돌리기 전 상태는 수정고에 보관했습니다.`, key: Date.now() });
+              }
+            }}
+            onExportPdf={(script) => project.exportRevisionPdf(openRevision.name, script)}
+            onDelete={async () => {
+              if (await project.deleteRevision(openRevision)) setOpenRevisionId(null);
+            }}
+          />
+        )}
+
+        {!isScript && !openRevision && (
           <main className="text-desk">
             {activeCharacter !== undefined && (
               <div className="character-info">
@@ -443,6 +500,17 @@ function App() {
           }
           onApply={(newName, everywhere) => applyCharacterRename(renamingCharacter, newName, everywhere)}
           onClose={() => setRenamingCharacter(null)}
+        />
+      )}
+
+      {newRevisionOpen && (
+        <NewRevisionDialog
+          defaultName={nextRevisionName(project.revisions)}
+          onClose={() => setNewRevisionOpen(false)}
+          onCreate={async (name, note) => {
+            const meta = await project.createRevision(name, note, revisionStats());
+            if (meta) setNotice({ text: `"${meta.name}"(으)로 보관했습니다. 사이드바 아래 수정고에서 볼 수 있습니다.`, key: Date.now() });
+          }}
         />
       )}
 

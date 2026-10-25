@@ -33,6 +33,16 @@ import { BACKUP_ROOT, backupStamp, joinPath, loadProject, saveProject } from "./
 import { appDataDir } from "@tauri-apps/api/path";
 import { tauriFs } from "./tauriFs";
 import {
+  readRevision,
+  restoreSettings,
+  revisionDir,
+  settingsDocs,
+  writeRevision,
+  type RevisionContent,
+  type RevisionStats,
+} from "../revisions/revisions";
+import type { RevisionMeta } from "./model";
+import {
   CHARACTER_TEMPLATE,
   findNode,
   insertNode,
@@ -599,13 +609,147 @@ export function useProject(
     [refresh],
   );
 
+  // ---------- 수정고 ----------
+
+  // 브라우저 미리보기(개발용)에서는 디스크 대신 메모리에 보관한다.
+  const memoryRevisions = useRef(new Map<string, RevisionContent>());
+
+  /**
+   * 지금 원고와 설정 문서를 "고"로 보관한다. 저장한 적 없는 프로젝트면 먼저 저장 위치를 묻는다.
+   * 보관한 고의 정보를 돌려준다.
+   */
+  const createRevision = useCallback(
+    async (name: string, note: string, stats?: RevisionStats): Promise<RevisionMeta | null> => {
+      if (isTauri() && !sessionRef.current.path) {
+        await notify("고를 보관하려면 먼저 프로젝트를 저장해야 합니다. 저장 위치를 골라 주세요.");
+        if (!(await saveCurrent())) return null;
+      }
+      const current = sessionRef.current;
+      const now = new Date();
+      const meta: RevisionMeta = {
+        id: `rev-${now.getTime().toString(36)}`,
+        name: name.trim() || "이름 없는 고",
+        note: note.trim(),
+        createdAt: now.toISOString(),
+        dir: revisionDir(name.trim() || "고", now),
+        ...(stats ? { stats } : {}),
+      };
+      const content: RevisionContent = {
+        meta,
+        script: currentScriptText(),
+        docs: settingsDocs(current.manifest.tree).map(({ doc, folders }) => ({
+          doc: { id: doc.id, type: doc.type, name: doc.name, folders },
+          text: current.texts.get(doc.id) ?? "",
+        })),
+      };
+      try {
+        if (isTauri() && current.path) await writeRevision(tauriFs, current.path, content);
+        else memoryRevisions.current.set(meta.id, content);
+      } catch (error) {
+        await showError("고를 보관하지 못했습니다.", error);
+        return null;
+      }
+      const latest = sessionRef.current;
+      sessionRef.current = {
+        ...latest,
+        manifest: { ...latest.manifest, revisions: [...(latest.manifest.revisions ?? []), meta] },
+        treeChanged: true,
+      };
+      refresh();
+      // 목록을 바로 project.json에 남긴다.
+      if (isTauri() && sessionRef.current.path && !busyRef.current) {
+        busyRef.current = true;
+        try {
+          await writeProjectTo(sessionRef.current.path, false, true);
+        } finally {
+          busyRef.current = false;
+        }
+      }
+      return meta;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [refresh, saveCurrent, writeProjectTo],
+  );
+
+  const loadRevision = useCallback(async (meta: RevisionMeta): Promise<RevisionContent | null> => {
+    const memory = memoryRevisions.current.get(meta.id);
+    if (memory) return memory;
+    const path = sessionRef.current.path;
+    if (!isTauri() || !path) return null;
+    try {
+      return await readRevision(tauriFs, path, meta);
+    } catch (error) {
+      await showError(`"${meta.name}"을(를) 읽지 못했습니다.`, error);
+      return null;
+    }
+  }, []);
+
+  /** 고로 되돌리기: 지금 상태를 먼저 "되돌리기 전" 고로 보관한 뒤, 원고와 설정 문서를 고 때로 바꾼다. */
+  const restoreRevision = useCallback(
+    async (meta: RevisionMeta, stats?: RevisionStats): Promise<boolean> => {
+      const ok = await ask(
+        `"${meta.name}"로 되돌릴까요?\n원고와 설정 문서(개요, 인물 설정)가 그때 내용으로 바뀝니다. 메모와 기타 문서는 그대로입니다.\n지금 상태는 먼저 "되돌리기 전" 고로 보관됩니다.`,
+        "되돌리기",
+      );
+      if (!ok) return false;
+      const content = await loadRevision(meta);
+      if (!content) return false;
+      const stamp = new Date().toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      if (!(await createRevision(`되돌리기 전 (${stamp})`, `"${meta.name}"로 되돌리기 전 자동 보관`, stats))) return false;
+
+      const { titlePage, lines } = scriptLinesOf(content.script);
+      editorRef.current?.load(lines.length > 0 ? lines : [{ style: "action", text: "" }]);
+      setScriptDirty(true);
+      const current = sessionRef.current;
+      const restored = restoreSettings(current.manifest.tree, current.texts, content.docs);
+      sessionRef.current = {
+        ...current,
+        manifest: { ...current.manifest, tree: restored.tree },
+        texts: restored.texts,
+        titlePage,
+        treeChanged: true,
+      };
+      setActiveDocId(current.manifest.mainScript);
+      refresh();
+      return true;
+    },
+    [createRevision, editorRef, loadRevision, refresh, setScriptDirty],
+  );
+
+  /** 고 지우기: 목록에서 빼고 폴더는 휴지통으로 */
+  const deleteRevision = useCallback(
+    async (meta: RevisionMeta): Promise<boolean> => {
+      if (!(await ask(`"${meta.name}"을(를) 지울까요?\n보관한 내용은 휴지통으로 옮겨집니다.`, "지우기"))) return false;
+      memoryRevisions.current.delete(meta.id);
+      const path = sessionRef.current.path;
+      if (isTauri() && path) {
+        try {
+          await tauriFs.trash(joinPath(path, meta.dir));
+        } catch (error) {
+          await showError("고를 지우지 못했습니다.", error);
+          return false;
+        }
+      }
+      const current = sessionRef.current;
+      sessionRef.current = {
+        ...current,
+        manifest: { ...current.manifest, revisions: (current.manifest.revisions ?? []).filter((r) => r.id !== meta.id) },
+        treeChanged: true,
+      };
+      refresh();
+      return true;
+    },
+    [refresh],
+  );
+
   // ---------- PDF ----------
 
-  const exportPdf = useCallback(async () => {
+  /** PDF로 내보내기. source를 주면(예: 수정고) 그 원고를, 없으면 지금 원고를 내보낸다. */
+  const exportPdf = useCallback(async (source?: { name: string; script: string }) => {
     const editor = editorRef.current;
     if (!editor) return;
     const chosen = await save({
-      defaultPath: `${sessionTitle(sessionRef.current)}.pdf`,
+      defaultPath: `${sessionTitle(sessionRef.current)}${source ? ` ${source.name}` : ""}.pdf`,
       filters: [{ name: "PDF", extensions: ["pdf"] }],
     });
     if (!chosen) return;
@@ -613,7 +757,10 @@ export function useProject(
     try {
       // PDF 만드는 코드는 필요할 때만 불러온다. (앱 시작을 가볍게)
       const { buildPdf } = await import("../pdf/buildPdf");
-      const bytes = await buildPdf({ titlePage: sessionRef.current.titlePage, lines: editor.getLines() }, await loadFonts());
+      const doc = source
+        ? scriptLinesOf(source.script)
+        : { titlePage: sessionRef.current.titlePage, lines: editor.getLines() };
+      const bytes = await buildPdf(doc, await loadFonts());
       await invoke("write_binary", bytes, { headers: { path: encodeURIComponent(path) } });
     } catch (error) {
       await showError("PDF를 만들지 못했습니다.", error);
@@ -663,7 +810,7 @@ export function useProject(
         case "save_as":
           return runExclusive(saveAs);
         case "export_pdf":
-          return runExclusive(exportPdf);
+          return runExclusive(() => exportPdf());
         case "open_backups":
           return runExclusive(async () => {
             const path = sessionRef.current.path;
@@ -854,6 +1001,12 @@ export function useProject(
     undoTree,
     dismissTreeUndo,
     dirtyDocIds,
+    revisions: session.manifest.revisions ?? [],
+    exportRevisionPdf: (name: string, script: string) => runExclusive(() => exportPdf({ name, script })),
+    createRevision,
+    loadRevision,
+    restoreRevision,
+    deleteRevision,
     treeDirty,
     setScriptDirty,
     setDocText,

@@ -894,3 +894,301 @@
   font-size: 12px;
   cursor: default;
 }
+
+/* ---------- 수정고 (사이드바) ---------- */
+
+.tree-revisions {
+  margin-top: 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.tree-section .tree-name {
+  font-weight: 600;
+}
+
+.tree-revision {
+  min-height: 28px;
+  font-size: 12.5px;
+}
+
+.icon-revisions {
+  color: var(--caret);
+}
+
+/* ---------- 수정고 보기 ---------- */
+
+.revision-view {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.revision-header {
+  padding: 18px 24px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--chrome);
+}
+
+.revision-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.revision-kicker {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--selection);
+  color: var(--caret);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.revision-title h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.revision-when {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.revision-note {
+  margin: 8px 0 0;
+  color: var(--ink);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.revision-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.revision-actions button,
+.compare-target select {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: default;
+}
+
+.revision-actions button.primary {
+  border-color: var(--caret);
+  background: var(--caret);
+  color: #fff;
+  font-weight: 600;
+}
+
+.revision-actions button.danger {
+  margin-left: auto;
+  color: var(--caret);
+}
+
+.revision-tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: 14px;
+  overflow-x: auto;
+}
+
+.revision-tabs button {
+  padding: 7px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.revision-tabs button.active {
+  border-bottom-color: var(--caret);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.revision-tabs .compare-tab {
+  margin-left: auto;
+}
+
+.revision-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.revision-desk {
+  height: 100%;
+}
+
+.revision-doc {
+  margin: 32px auto;
+}
+
+.revision-doc pre {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+/* ---------- 비교 ---------- */
+
+.revision-compare {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 20px 24px 60px;
+}
+
+.compare-target {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.compare-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin: 14px 0 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--chrome);
+  font-size: 13px;
+}
+
+.compare h3 {
+  margin: 22px 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+em.plus,
+em.minus {
+  font-style: normal;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+em.plus {
+  color: var(--chart-2);
+}
+
+em.minus {
+  color: var(--caret);
+}
+
+.compare-scene {
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.compare-scene > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--chrome);
+  font-size: 13px;
+}
+
+.compare-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.compare-added .compare-badge {
+  background: var(--chart-2);
+}
+
+.compare-removed .compare-badge {
+  background: var(--caret);
+}
+
+.compare-changed .compare-badge {
+  background: var(--muted);
+}
+
+.compare-heading {
+  flex: 1;
+  font-weight: 600;
+}
+
+.compare-same {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.diff-lines {
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.diff-line {
+  display: grid;
+  grid-template-columns: 22px 60px 1fr;
+  gap: 6px;
+  padding: 2px 12px;
+  line-height: 1.6;
+}
+
+.diff-add {
+  background: color-mix(in srgb, var(--chart-2) 14%, transparent);
+}
+
+.diff-del {
+  background: color-mix(in srgb, var(--caret) 12%, transparent);
+}
+
+.diff-del .diff-text {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--caret) 60%, transparent);
+}
+
+.diff-mark {
+  color: var(--muted);
+  font-weight: 700;
+  text-align: center;
+}
+
+.diff-style {
+  color: var(--muted);
+  font-size: 11px;
+  padding-top: 2px;
+}
+
+.diff-text {
+  white-space: pre-wrap;
+  word-break: keep-all;
+}
+
+.diff-fold {
+  padding: 2px 12px 2px 40px;
+  color: var(--muted);
+  font-size: 11.5px;
+}

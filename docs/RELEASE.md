@@ -41,7 +41,8 @@ APPLE_SIGNING_IDENTITY="Developer ID Application: 이름 (팀ID)" ./scripts/rele
 
 - 테스트 → 서명된 앱과 `.dmg` 만들기 → 애플 공증(몇 분) → 공증 결과 붙이기 순서로 진행됩니다.
 - 처음 서명할 때 키체인 접근을 허용할지 묻는 창이 뜨면 **항상 허용**을 누르세요.
-- 결과: `src-tauri/target/release/bundle/dmg/DropKick_0.1.0_aarch64.dmg`
+- 결과: `src-tauri/target/universal-apple-darwin/release/bundle/dmg/DropKick_0.1.0_universal.dmg`
+- **유니버설 앱**이라 Apple Silicon(M1 이후)과 인텔 맥 모두에서 돌아갑니다. 각 맥은 자기에게 맞는 실행 파일을 골라 쓰므로 속도 차이는 없고, 앱 크기만 두 배 정도입니다.
 
 ## 받는 사람
 
@@ -51,5 +52,7 @@ APPLE_SIGNING_IDENTITY="Developer ID Application: 이름 (팀ID)" ./scripts/rele
 
 ## 참고
 
-- 지금 빌드는 **Apple Silicon(M1 이후) 맥용**입니다. 인텔 맥에도 나눠 주려면 `--target universal-apple-darwin`으로 빌드해야 합니다. (Rust에 `x86_64-apple-darwin` 대상 추가 필요)
+- 처음 유니버설로 빌드하는 맥에서는 인텔용 Rust 대상을 한 번 추가합니다: `rustup target add x86_64-apple-darwin`
+- **최소 macOS 13 (Ventura)** 이상에서 설치됩니다.
+- 화면의 한글 줄바꿈을 PDF와 똑같이 맞추는 기능은 **Safari 17 이상**(macOS 14 이상, 또는 Safari를 업데이트한 macOS 13)에서 정확합니다. 그보다 오래된 경우에도 쓰기·저장·PDF는 정상이고, 화면의 페이지 경계만 PDF와 조금 어긋날 수 있습니다.
 - 버전을 올릴 때는 `src-tauri/tauri.conf.json`과 `package.json`의 `version`을 함께 바꿉니다.

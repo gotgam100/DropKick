@@ -4,7 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { formatEighths, type SceneSummary } from "../analysis/analyze";
-import type { ProjectNode } from "../project/model";
+import type { ProjectNode, RevisionMeta } from "../project/model";
 import { findParent, type DropPosition } from "../project/tree";
 import { searchProject, type Snippet } from "./search";
 
@@ -28,6 +28,11 @@ type Props = {
   onRename: (id: string, name: string) => void;
   onRemove: (id: string) => void;
   onMove: (id: string, targetId: string, position: DropPosition) => void;
+  /** 수정고 (사이드바 맨 아래) */
+  revisions: RevisionMeta[];
+  openRevisionId: string | null;
+  onOpenRevision: (id: string) => void;
+  onNewRevision: () => void;
 };
 
 // ---------- 아이콘 ----------
@@ -113,7 +118,12 @@ export function ProjectTree(props: Props) {
     onRename,
     onRemove,
     onMove,
+    revisions,
+    openRevisionId,
+    onOpenRevision,
+    onNewRevision,
   } = props;
+  const [revisionsOpen, setRevisionsOpen] = useState(true);
 
   // 폴더는 처음에 닫혀 있고, 펼친 폴더만 기억한다. 스크립트는 처음에 펼쳐 둔다.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -353,9 +363,9 @@ export function ProjectTree(props: Props) {
           <div
             role="treeitem"
             aria-expanded={expandable ? open : undefined}
-            aria-selected={node.id === activeDocId}
+            aria-selected={node.id === activeDocId && !openRevisionId}
             tabIndex={-1}
-            className={`tree-row${node.id === activeDocId ? " active" : ""}${dropClass}${drag?.id === node.id ? " dragging" : ""}`}
+            className={`tree-row${node.id === activeDocId && !openRevisionId ? " active" : ""}${dropClass}${drag?.id === node.id ? " dragging" : ""}`}
             style={{ paddingLeft: 4 + depth * 14 }}
             data-node-id={node.id}
             data-node-type={node.type}
@@ -460,6 +470,70 @@ export function ProjectTree(props: Props) {
           <p className="panel-empty">"{query}"이(가) 들어간 문서나 씬이 없습니다.</p>
         ) : (
           renderNodes(shown.tree, 0)
+        )}
+
+        {!query && (
+          <div className="tree-revisions">
+            <div
+              className="tree-row tree-section"
+              role="treeitem"
+              aria-expanded={revisionsOpen}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setRevisionsOpen((v) => !v)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
+              <span className="tree-toggle">
+                <Chevron open={revisionsOpen} />
+              </span>
+              <span className="tree-icon icon-revisions">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+                  <rect x="2.5" y="4.5" width="9" height="10" rx="1" />
+                  <path d="M4.5 4.5V2.5h9v10h-2" strokeLinejoin="round" />
+                </svg>
+              </span>
+              <span className="tree-name">수정고</span>
+              <span className="tree-meta">{revisions.length > 0 ? revisions.length : ""}</span>
+              <button
+                type="button"
+                className="tree-plus"
+                title="지금 원고를 새 고로 보관 (⌥⌘S)"
+                aria-label="새 고로 보관"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNewRevision();
+                }}
+              >
+                +
+              </button>
+            </div>
+            {revisionsOpen &&
+              (revisions.length === 0 ? (
+                <div className="tree-empty" style={{ paddingLeft: 40 }}>
+                  + 를 눌러 지금 원고를 1고로 보관하세요
+                </div>
+              ) : (
+                [...revisions].reverse().map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    className={`tree-row tree-revision${r.id === openRevisionId ? " active" : ""}`}
+                    style={{ paddingLeft: 26 }}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => onOpenRevision(r.id)}
+                    title={r.note || r.name}
+                  >
+                    <span className="tree-name">{r.name}</span>
+                    <span className="tree-meta">
+                      {new Date(r.createdAt).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}
+                    </span>
+                  </button>
+                ))
+              ))}
+          </div>
         )}
       </div>
 

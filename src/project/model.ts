@@ -24,6 +24,19 @@ export type DocNode = { id: string; type: DocType; name: string; file: string };
 export type FolderNode = { id: string; type: "folder"; name: string; children: ProjectNode[] };
 export type ProjectNode = DocNode | FolderNode;
 
+/** 수정고(1고, 2고 …) 목록 항목. 내용은 dir 폴더에 있다 (src/revisions) */
+export type RevisionStats = { pages: number; scenes: number; runtimeMinutes: number };
+export type RevisionMeta = {
+  id: string;
+  name: string;
+  note: string;
+  /** ISO 시각 */
+  createdAt: string;
+  /** 프로젝트 안 상대 경로 (.dropkick-revisions/…) */
+  dir: string;
+  stats?: RevisionStats;
+};
+
 export type ProjectManifest = {
   format: typeof MANIFEST_FORMAT;
   version: 1;
@@ -33,6 +46,8 @@ export type ProjectManifest = {
   tree: ProjectNode[];
   /** 마지막으로 연 문서의 id */
   lastOpened?: string;
+  /** 수정고 목록 (오래된 것부터) */
+  revisions?: RevisionMeta[];
 };
 
 export const DOC_TYPE_LABELS: Record<DocType, string> = {
@@ -137,6 +152,19 @@ export function parseManifest(text: string): ProjectManifest {
     files.add(doc.file);
   }
 
+  const revisions = Array.isArray(data.revisions)
+    ? (data.revisions as Record<string, unknown>[]).filter(
+        (r): r is RevisionMeta =>
+          Boolean(r) &&
+          typeof r.id === "string" &&
+          typeof r.name === "string" &&
+          typeof r.createdAt === "string" &&
+          typeof r.dir === "string" &&
+          isSafeRelativePath(r.dir) &&
+          r.dir.startsWith(".dropkick-revisions/"),
+      ).map((r) => ({ ...r, note: typeof r.note === "string" ? r.note : "" }))
+    : undefined;
+
   return {
     format: MANIFEST_FORMAT,
     version: 1,
@@ -144,6 +172,7 @@ export function parseManifest(text: string): ProjectManifest {
     mainScript: main.id,
     tree,
     lastOpened: typeof data.lastOpened === "string" && ids.has(data.lastOpened) ? data.lastOpened : undefined,
+    ...(revisions && revisions.length > 0 ? { revisions } : {}),
   };
 }
 

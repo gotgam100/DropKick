@@ -269,6 +269,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::separator(app)?,
             &item("save", "저장", Some("CmdOrCtrl+S"))?,
             &item("save_as", "다른 이름으로 저장…", Some("CmdOrCtrl+Shift+S"))?,
+            &item("new_revision", "새 고로 보관…", Some("CmdOrCtrl+Alt+S"))?,
             &item("open_backups", "백업 폴더 보기", None)?,
             &PredefinedMenuItem::separator(app)?,
             &item("export_pdf", "PDF로 내보내기…", Some("CmdOrCtrl+P"))?,

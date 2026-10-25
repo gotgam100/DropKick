@@ -18,12 +18,14 @@ source "$HOME/.cargo/env" 2>/dev/null || true
 echo "▶ 테스트"
 npm test
 
-echo "▶ 서명된 앱과 디스크 이미지 만들기"
+echo "▶ 서명된 유니버설 앱(Apple Silicon + 인텔)과 디스크 이미지 만들기"
 export APPLE_SIGNING_IDENTITY
-npx tauri build --bundles app,dmg
+npx tauri build --target universal-apple-darwin --bundles app,dmg
 
-DMG=$(ls -t src-tauri/target/release/bundle/dmg/*.dmg | head -1)
-APP=src-tauri/target/release/bundle/macos/DropKick.app
+BUNDLE=src-tauri/target/universal-apple-darwin/release/bundle
+DMG=$(ls -t "$BUNDLE"/dmg/*.dmg | head -1)
+APP="$BUNDLE/macos/DropKick.app"
+echo "  실행 파일 종류: $(lipo -archs "$APP/Contents/MacOS/dropkick")"
 
 echo "▶ 서명 확인"
 codesign --verify --deep --strict --verbose=2 "$APP"

@@ -59,7 +59,7 @@
     "shortDescription": "한글 시나리오 작성 앱",
     "longDescription": "할리우드 형식의 한글 시나리오를 쓰고, 페이지·PDF·통계와 메모·인물 설정을 함께 관리하는 맥 앱",
     "macOS": {
-      "minimumSystemVersion": "12.0"
+      "minimumSystemVersion": "13.0"
     }
   }
 }
