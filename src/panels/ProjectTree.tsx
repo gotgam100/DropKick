@@ -4,14 +4,13 @@
  */
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { formatEighths, type SceneSummary } from "../analysis/analyze";
-import type { DocType, ProjectNode } from "../project/model";
-import type { DropPosition } from "../project/tree";
+import type { ProjectNode } from "../project/model";
+import { findParent, type DropPosition } from "../project/tree";
 
-type NewKind = Exclude<DocType, "script"> | "folder";
+type NewKind = "doc" | "folder";
 
 type Props = {
   title: string;
-  kind: "project" | "file";
   tree: ProjectNode[];
   mainScriptId: string;
   activeDocId: string;
@@ -22,19 +21,11 @@ type Props = {
   onFilterChange: (value: string) => void;
   onOpenDoc: (id: string) => void;
   onSelectScene: (line: number) => void;
-  onAdd: (kind: NewKind, parentId?: string | null) => string | null;
+  onAdd: (kind: NewKind, parentId: string | null) => string | null;
   onRename: (id: string, name: string) => void;
   onRemove: (id: string) => void;
   onMove: (id: string, targetId: string, position: DropPosition) => void;
-  onMakeProject: () => void;
 };
-
-const NEW_ITEMS: { kind: NewKind; label: string }[] = [
-  { kind: "memo", label: "새 메모" },
-  { kind: "character", label: "새 인물 설정" },
-  { kind: "synopsis", label: "새 시놉시스/트리트먼트" },
-  { kind: "folder", label: "새 폴더" },
-];
 
 // ---------- 아이콘 ----------
 
@@ -117,7 +108,6 @@ function filterTree(tree: ProjectNode[], scenes: SceneSummary[], mainScriptId: s
 export function ProjectTree(props: Props) {
   const {
     title,
-    kind,
     tree,
     mainScriptId,
     activeDocId,
@@ -132,13 +122,12 @@ export function ProjectTree(props: Props) {
     onRename,
     onRemove,
     onMove,
-    onMakeProject,
   } = props;
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [renaming, setRenaming] = useState<string | null>(null);
+  // 오른쪽 클릭 메뉴. node가 null이면 빈 곳을 누른 것
   const [menu, setMenu] = useState<{ x: number; y: number; node: ProjectNode | null } | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
   const [drag, setDrag] = useState<{ id: string; over: string | null; position: DropPosition | null } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -152,18 +141,15 @@ export function ProjectTree(props: Props) {
 
   // 메뉴 바깥을 누르면 닫는다.
   useEffect(() => {
-    if (!menu && !addOpen) return;
-    const close = () => {
-      setMenu(null);
-      setAddOpen(false);
-    };
+    if (!menu) return;
+    const close = () => setMenu(null);
     window.addEventListener("click", close);
     window.addEventListener("blur", close);
     return () => {
       window.removeEventListener("click", close);
       window.removeEventListener("blur", close);
     };
-  }, [menu, addOpen]);
+  }, [menu]);
 
   const toggle = (id: string) =>
     setCollapsed((set) => {
@@ -175,7 +161,7 @@ export function ProjectTree(props: Props) {
 
   const isOpen = (id: string) => query !== "" || !collapsed.has(id);
 
-  const add = (kindToAdd: NewKind, parentId?: string | null) => {
+  const add = (kindToAdd: NewKind, parentId: string | null) => {
     const id = onAdd(kindToAdd, parentId);
     if (id) {
       if (parentId) setCollapsed((set) => new Set([...set].filter((x) => x !== parentId)));
@@ -286,7 +272,7 @@ export function ProjectTree(props: Props) {
             tabIndex={-1}
             className={`tree-row${node.id === activeDocId ? " active" : ""}${dropClass}`}
             style={{ paddingLeft: 4 + depth * 14 }}
-            draggable={kind === "project" && renaming !== node.id}
+            draggable={renaming !== node.id}
             onDragStart={(e) => onDragStart(e, node)}
             onDragOver={(e) => onDragOver(e, node)}
             onDragLeave={() => drag && setDrag({ ...drag, over: null, position: null })}
@@ -299,11 +285,10 @@ export function ProjectTree(props: Props) {
               if (isFolder) toggle(node.id);
               else onOpenDoc(node.id);
             }}
-            onDoubleClick={() => kind === "project" && !isScript && setRenaming(node.id)}
+            onDoubleClick={() => setRenaming(node.id)}
             onContextMenu={(e) => {
-              if (kind !== "project") return;
               e.preventDefault();
-              setAddOpen(false);
+              e.stopPropagation();
               setMenu({ x: e.clientX, y: e.clientY, node });
             }}
           >
@@ -322,6 +307,21 @@ export function ProjectTree(props: Props) {
             </span>
             {renderName(node)}
             {dirtyDocIds.has(node.id) && <span className="tree-dirty" title="저장하지 않은 변경 사항" />}
+            {isFolder && renaming !== node.id && (
+              <button
+                type="button"
+                className="tree-plus"
+                title={`"${node.name}"에 새 문서`}
+                aria-label={`${node.name}에 새 문서`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  add("doc", node.id);
+                }}
+              >
+                +
+              </button>
+            )}
           </div>
           {open && isScript && renderScenes(depth + 1)}
           {open && isFolder && (
@@ -337,17 +337,17 @@ export function ProjectTree(props: Props) {
       );
     });
 
-  const menuParent = (node: ProjectNode | null) => {
+  // 새로 만들 위치: 폴더면 그 안, 문서면 그 문서가 있는 폴더, 빈 곳이면 맨 위
+  const menuParent = (node: ProjectNode | null): string | null => {
     if (!node) return null;
     if (node.type === "folder") return node.id;
-    return undefined; // 기본 폴더
+    return findParent(tree, node.id)?.id ?? null;
   };
 
   return (
     <aside className="panel project-tree" aria-label="프로젝트">
       <header className="panel-header">
         <h2 title={title}>{title}</h2>
-        <span className="panel-count">{kind === "project" ? "프로젝트" : "파일"}</span>
       </header>
       <div className="panel-search">
         <input
@@ -359,7 +359,15 @@ export function ProjectTree(props: Props) {
         />
       </div>
 
-      <div className="tree-list" role="tree" ref={listRef}>
+      <div
+        className="tree-list"
+        role="tree"
+        ref={listRef}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setMenu({ x: e.clientX, y: e.clientY, node: null });
+        }}
+      >
         {shown.tree.length === 0 ? (
           <p className="panel-empty">"{filter}"이(가) 들어간 항목이 없습니다.</p>
         ) : (
@@ -367,43 +375,9 @@ export function ProjectTree(props: Props) {
         )}
       </div>
 
-      <footer className="tree-footer">
-        {kind === "project" ? (
-          <div className="tree-add">
-            <button
-              type="button"
-              className="tree-add-button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setMenu(null);
-                setAddOpen((v) => !v);
-              }}
-            >
-              + 새 문서
-            </button>
-            {addOpen && (
-              <div className="tree-menu tree-add-menu" role="menu">
-                {NEW_ITEMS.map((item) => (
-                  <button key={item.kind} type="button" role="menuitem" onClick={() => add(item.kind, item.kind === "folder" ? null : undefined)}>
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="tree-make-project">
-            <p>메모, 인물 설정, 시놉시스를 함께 관리하려면 프로젝트로 만드세요.</p>
-            <button type="button" onClick={onMakeProject}>
-              프로젝트로 만들기…
-            </button>
-          </div>
-        )}
-      </footer>
-
       {menu && (
         <div className="tree-menu" role="menu" style={{ left: menu.x, top: menu.y }} onClick={(e) => e.stopPropagation()}>
-          {menu.node && menu.node.id !== mainScriptId && (
+          {menu.node && (
             <button
               type="button"
               role="menuitem"
@@ -415,20 +389,26 @@ export function ProjectTree(props: Props) {
               이름 바꾸기
             </button>
           )}
-          {NEW_ITEMS.map((item) => (
-            <button
-              key={item.kind}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                add(item.kind, menuParent(menu.node) ?? (item.kind === "folder" ? null : undefined));
-                setMenu(null);
-              }}
-            >
-              {item.label}
-              {menu.node?.type === "folder" ? " (이 폴더에)" : ""}
-            </button>
-          ))}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              add("doc", menuParent(menu.node));
+              setMenu(null);
+            }}
+          >
+            새 문서{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              add("folder", menuParent(menu.node));
+              setMenu(null);
+            }}
+          >
+            새 폴더{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}
+          </button>
           {menu.node && menu.node.id !== mainScriptId && (
             <>
               <hr />

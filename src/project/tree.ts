@@ -15,27 +15,13 @@ import {
 export type DropPosition = "before" | "after" | "inside";
 
 export const NEW_DOC_NAMES: Record<Exclude<DocType, "script">, string> = {
-  memo: "새 메모",
+  memo: "새 문서",
   character: "새 인물",
   synopsis: "시놉시스",
 };
 
-export const CHARACTER_TEMPLATE = (name: string) => `# ${name}
-
-- 나이:
-- 직업:
-- 성격:
-- 목표 (원하는 것):
-- 결핍 (필요한 것):
-- 관계:
-- 변화 (아크):
-
-## 메모
-`;
-
-export const MEMO_TEMPLATE = (name: string) => `# ${name}
-
-`;
+/** 일반 문서는 빈 상태로 시작한다. (인물 설정 등 프리셋은 나중에 추가) */
+export const MEMO_TEMPLATE = (_name: string) => "";
 
 export function findNode(tree: ProjectNode[], id: string): ProjectNode | null {
   for (const node of tree) {
@@ -101,11 +87,9 @@ export function makeFolder(tree: ProjectNode[], parentId: string | null): Folder
   return { id: newId("folder"), type: "folder", name: uniqueName(siblingsOf(tree, parentId), "새 폴더"), children: [] };
 }
 
-/** 새 문서를 넣을 기본 폴더: 인물 설정은 "인물", 메모는 "메모" 폴더 (있으면) */
-export function defaultParentFor(tree: ProjectNode[], type: DocType): string | null {
-  const folderName = type === "character" ? "인물" : type === "memo" ? "메모" : null;
-  if (!folderName) return null;
-  const folder = tree.find((n) => n.type === "folder" && n.name === folderName);
+/** 이름으로 맨 위 폴더 찾기 */
+export function folderNamed(tree: ProjectNode[], name: string): string | null {
+  const folder = tree.find((n) => n.type === "folder" && n.name === name);
   return folder?.id ?? null;
 }
 

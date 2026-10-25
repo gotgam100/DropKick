@@ -37,7 +37,7 @@ export type ProjectManifest = {
 
 export const DOC_TYPE_LABELS: Record<DocType, string> = {
   script: "시나리오",
-  memo: "메모",
+  memo: "문서",
   character: "인물 설정",
   synopsis: "시놉시스",
 };
@@ -153,50 +153,39 @@ export function serializeManifest(manifest: ProjectManifest): string {
 
 // ---------- 새 프로젝트 ----------
 
-export const SYNOPSIS_TEMPLATE = `# 시놉시스
-
-## 로그라인
-한두 문장으로 이야기 전체를 요약합니다.
-
-## 기획 의도
-
-## 줄거리
-
-## 1막
-
-## 2막
-
-## 3막
-`;
-
 export type NewProject = { manifest: ProjectManifest; texts: Map<string, string> };
 
-/** 새 프로젝트: 시나리오, 시놉시스, 빈 인물/메모 폴더 */
+/** 새 프로젝트의 기본 트리: 개요, 스크립트, 인물 설정, 메모, 기타 */
+export const DEFAULT_FOLDERS_BEFORE_SCRIPT = ["개요"];
+export const DEFAULT_FOLDERS_AFTER_SCRIPT = ["인물 설정", "메모", "기타"];
+export const SCRIPT_NAME = "스크립트";
+
+/** 빈 원고: 씬헤딩(S#1)도 아직 없는, 빈 액션 줄 하나 */
+export const BLANK_SCRIPT_LINES: ScriptLine[] = [{ style: "action", text: "" }];
+
+/**
+ * 새 프로젝트. script를 주면(예: Fountain 가져오기) 그 원고로 시작한다.
+ */
 export function createProject(title: string, script?: { titlePage: string | null; lines: ScriptLine[] }): NewProject {
   const scriptId = newId("script");
-  const synopsisId = newId("synopsis");
+  const folder = (name: string): FolderNode => ({ id: newId("folder"), type: "folder", name, children: [] });
   const manifest: ProjectManifest = {
     format: MANIFEST_FORMAT,
     version: 1,
     title,
     mainScript: scriptId,
     tree: [
-      { id: scriptId, type: "script", name: "시나리오", file: "시나리오.fountain" },
-      { id: synopsisId, type: "synopsis", name: "시놉시스", file: "시놉시스.md" },
-      { id: newId("folder"), type: "folder", name: "인물", children: [] },
-      { id: newId("folder"), type: "folder", name: "메모", children: [] },
+      ...DEFAULT_FOLDERS_BEFORE_SCRIPT.map(folder),
+      { id: scriptId, type: "script", name: SCRIPT_NAME, file: `${SCRIPT_NAME}.fountain` },
+      ...DEFAULT_FOLDERS_AFTER_SCRIPT.map(folder),
     ],
     lastOpened: scriptId,
   };
   const scriptText = toFountain({
     titlePage: script ? script.titlePage : `Title: ${title}`,
-    lines: script ? script.lines : [{ style: "scene", text: "" }],
+    lines: script && script.lines.length > 0 ? script.lines : BLANK_SCRIPT_LINES,
   });
-  const texts = new Map<string, string>([
-    [scriptId, scriptText],
-    [synopsisId, SYNOPSIS_TEMPLATE],
-  ]);
-  return { manifest, texts };
+  return { manifest, texts: new Map([[scriptId, scriptText]]) };
 }
 
 // ---------- project.json이 없을 때 다시 만들기 ----------

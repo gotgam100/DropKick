@@ -11,7 +11,7 @@ import {
   walkDocs,
 } from "./model";
 import { joinPath, loadProject, saveProject, type ProjectFs } from "./projectIO";
-import { defaultParentFor, insertNode, makeDoc, moveNode, removeNode, renameNode } from "./tree";
+import { folderNamed, insertNode, makeDoc, moveNode, removeNode, renameNode } from "./tree";
 import { fromFountain } from "../fountain/fountain";
 
 /** 메모리 속 가짜 파일 시스템 */
@@ -63,17 +63,18 @@ function memoryFs() {
 const ROOT = "/Users/me/드롭킥.dropkick";
 
 describe("새 프로젝트", () => {
-  it("시나리오, 시놉시스, 빈 인물/메모 폴더로 시작한다", () => {
+  it("개요, 스크립트, 인물 설정, 메모, 기타로 시작하고 원고는 비어 있다 (S#1 없음)", () => {
     const { manifest, texts } = createProject("드롭킥");
     expect(manifest.tree.map((n) => [n.type, n.name])).toEqual([
-      ["script", "시나리오"],
-      ["synopsis", "시놉시스"],
-      ["folder", "인물"],
+      ["folder", "개요"],
+      ["script", "스크립트"],
+      ["folder", "인물 설정"],
       ["folder", "메모"],
+      ["folder", "기타"],
     ]);
     const script = fromFountain(texts.get(manifest.mainScript)!);
     expect(script.titlePage).toBe("Title: 드롭킥");
-    expect(script.lines).toEqual([{ style: "scene", text: "" }]);
+    expect(script.lines).toEqual([{ style: "action", text: "" }]);
   });
 
   it("지금 쓰던 원고로 프로젝트를 만들 수 있다", () => {
@@ -92,11 +93,9 @@ describe("저장하고 다시 열기", () => {
     const project = createProject("드롭킥");
     await saveProject(fs, ROOT, project.manifest, project.texts);
 
-    expect(files.has(joinPath(ROOT, "시나리오.fountain"))).toBe(true);
-    expect(files.has(joinPath(ROOT, "시놉시스.md"))).toBe(true);
+    expect(files.has(joinPath(ROOT, "스크립트.fountain"))).toBe(true);
     expect(files.has(joinPath(ROOT, MANIFEST_FILE))).toBe(true);
-    expect(dirs.has(joinPath(ROOT, "인물"))).toBe(true);
-    expect(dirs.has(joinPath(ROOT, "메모"))).toBe(true);
+    for (const folder of ["개요", "인물 설정", "메모", "기타"]) expect(dirs.has(joinPath(ROOT, folder))).toBe(true);
 
     const loaded = await loadProject(fs, ROOT);
     expect(loaded.recovered).toBe(false);
@@ -122,16 +121,17 @@ describe("저장하고 다시 열기", () => {
       only: new Set([project.manifest.mainScript]),
       previous: project.manifest,
     });
-    expect(writes).toEqual([joinPath(ROOT, "시나리오.fountain"), joinPath(ROOT, MANIFEST_FILE)]);
+    expect(writes).toEqual([joinPath(ROOT, "스크립트.fountain"), joinPath(ROOT, MANIFEST_FILE)]);
   });
 
   it("파일이 없어진 문서는 빈 문서로 열고 알려 준다", async () => {
     const { fs, files } = memoryFs();
     const project = createProject("드롭킥");
-    await saveProject(fs, ROOT, project.manifest, project.texts);
-    files.delete(joinPath(ROOT, "시놉시스.md"));
+    const saved = await saveProject(fs, ROOT, project.manifest, project.texts);
+    expect(saved.tree.length).toBe(5);
+    files.delete(joinPath(ROOT, "스크립트.fountain"));
     const loaded = await loadProject(fs, ROOT);
-    expect(loaded.missing).toEqual(["시놉시스.md"]);
+    expect(loaded.missing).toEqual(["스크립트.fountain"]);
   });
 });
 
@@ -140,8 +140,8 @@ describe("트리 변경을 저장", () => {
     const mem = memoryFs();
     const project = createProject("드롭킥");
     let tree = project.manifest.tree;
-    const memos = defaultParentFor(tree, "memo")!;
-    const people = defaultParentFor(tree, "character")!;
+    const memos = folderNamed(tree, "메모")!;
+    const people = folderNamed(tree, "인물 설정")!;
     const memo = { ...makeDoc(tree, "memo", memos), name: "아이디어" };
     tree = insertNode(tree, memo, memos);
     const minjae = { ...makeDoc(tree, "character", people), name: "민재" };
@@ -155,8 +155,8 @@ describe("트리 변경을 저장", () => {
   it("새 문서는 트리 위치와 이름대로 파일이 생긴다", async () => {
     const { files, saved } = await savedProject();
     expect(files.get(joinPath(ROOT, "메모/아이디어.md"))).toBe("메모 내용");
-    expect(files.get(joinPath(ROOT, "인물/민재.md"))).toBe("# 민재");
-    expect(walkDocs(saved.tree).map((d) => d.file)).toContain("인물/민재.md");
+    expect(files.get(joinPath(ROOT, "인물 설정/민재.md"))).toBe("# 민재");
+    expect(walkDocs(saved.tree).map((d) => d.file)).toContain("인물 설정/민재.md");
   });
 
   it("이름을 바꾸거나 다른 폴더로 옮기면 파일도 옮겨진다 (내용은 그대로)", async () => {
@@ -165,7 +165,7 @@ describe("트리 변경을 저장", () => {
     tree = moveNode(tree, ids.memo, ids.people, "inside");
     await saveProject(fs, ROOT, { ...saved, tree }, texts, { only: new Set(), previous: saved });
     expect(files.has(joinPath(ROOT, "메모/아이디어.md"))).toBe(false);
-    expect(files.get(joinPath(ROOT, "인물/첫 아이디어.md"))).toBe("메모 내용");
+    expect(files.get(joinPath(ROOT, "인물 설정/첫 아이디어.md"))).toBe("메모 내용");
   });
 
   it("두 문서가 이름을 맞바꿔도 내용이 섞이지 않는다", async () => {
@@ -175,8 +175,8 @@ describe("트리 변경을 저장", () => {
     tree = renameNode(tree, ids.memo, "민재");
     tree = renameNode(tree, ids.minjae, "아이디어");
     await saveProject(fs, ROOT, { ...saved, tree }, texts, { only: new Set(), previous: saved });
-    expect(files.get(joinPath(ROOT, "인물/민재.md"))).toBe("메모 내용");
-    expect(files.get(joinPath(ROOT, "인물/아이디어.md"))).toBe("# 민재");
+    expect(files.get(joinPath(ROOT, "인물 설정/민재.md"))).toBe("메모 내용");
+    expect(files.get(joinPath(ROOT, "인물 설정/아이디어.md"))).toBe("# 민재");
   });
 
   it("지운 문서는 휴지통으로, 지운 폴더는 비면 정리된다", async () => {
@@ -187,9 +187,9 @@ describe("트리 변경을 저장", () => {
       previous: saved,
       deleted: result.removed,
     });
-    expect(trashed).toEqual([joinPath(ROOT, "인물/민재.md")]);
-    expect(files.has(joinPath(ROOT, "인물/민재.md"))).toBe(false);
-    expect(dirs.has(joinPath(ROOT, "인물"))).toBe(false);
+    expect(trashed).toEqual([joinPath(ROOT, "인물 설정/민재.md")]);
+    expect(files.has(joinPath(ROOT, "인물 설정/민재.md"))).toBe(false);
+    expect(dirs.has(joinPath(ROOT, "인물 설정"))).toBe(false);
   });
 
   it("지운 문서와 같은 이름으로 새 문서를 만들어도 새 문서가 남는다", async () => {

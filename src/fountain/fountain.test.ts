@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fromFountain, toFountain, type ScriptDocument } from "./fountain";
-import { SAMPLE_SCRIPT } from "../sample";
+import { readFileSync } from "node:fs";
 
 const doc: ScriptDocument = {
   titlePage: "Title: 드롭킥\nAuthor: baekmac",
@@ -65,7 +65,7 @@ describe("Fountain 열기", () => {
   });
 
   it("예시 원고도 그대로 다시 열린다", () => {
-    const sample = { titlePage: null, lines: SAMPLE_SCRIPT };
+    const sample = fromFountain(readFileSync(new URL("../../samples/short-5p.fountain", import.meta.url), "utf8"));
     expect(fromFountain(toFountain(sample))).toEqual(sample);
   });
 

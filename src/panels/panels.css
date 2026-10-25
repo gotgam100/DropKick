@@ -394,16 +394,20 @@
 .tree-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0 6px 12px;
+  padding: 2px 8px 24px;
+}
+
+.tree-item + .tree-item {
+  margin-top: 2px;
 }
 
 .tree-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   width: 100%;
-  min-height: 28px;
-  padding-right: 8px;
+  min-height: 32px;
+  padding-right: 6px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -477,7 +481,8 @@
 
 .tree-scene {
   gap: 6px;
-  min-height: 26px;
+  min-height: 28px;
+  margin-top: 1px;
   font-size: 12.5px;
 }
 
@@ -492,8 +497,8 @@
 }
 
 .tree-empty {
-  padding-top: 3px;
-  padding-bottom: 5px;
+  padding-top: 5px;
+  padding-bottom: 7px;
   color: var(--muted);
   font-size: 12px;
 }
@@ -509,6 +514,35 @@
   color: var(--ink);
   font: inherit;
   outline: none;
+}
+
+/* 폴더 오른쪽 + 버튼: 그 폴더에 새 문서 */
+.tree-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0.55;
+  cursor: default;
+}
+
+.tree-row:hover .tree-plus {
+  opacity: 1;
+}
+
+.tree-plus:hover {
+  background: var(--button-hover);
+  color: var(--ink);
 }
 
 /* 끌어서 옮길 때 놓을 자리 표시 */
@@ -535,39 +569,6 @@
   background: var(--selection);
 }
 
-.tree-footer {
-  padding: 8px 10px 12px;
-  border-top: 1px solid var(--border);
-}
-
-.tree-add {
-  position: relative;
-}
-
-.tree-add-button,
-.tree-make-project button {
-  width: 100%;
-  height: 30px;
-  border: 1px dashed var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  cursor: default;
-}
-
-.tree-add-button:hover,
-.tree-make-project button:hover {
-  background: var(--button-hover);
-}
-
-.tree-make-project p {
-  margin: 0 0 8px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
 .tree-menu {
   position: fixed;
   z-index: 50;
@@ -577,13 +578,6 @@
   border-radius: 8px;
   background: var(--chrome);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-}
-
-.tree-add-menu {
-  position: absolute;
-  bottom: 36px;
-  left: 0;
-  right: 0;
 }
 
 .tree-menu button {

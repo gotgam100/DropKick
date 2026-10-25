@@ -5,9 +5,9 @@ import { fromFountain } from "./fountain/fountain";
 import { Editor, type EditorHandle, type EditorInfo } from "./editor/Editor";
 import { TextEditor, type TextEditorHandle } from "./editor/TextEditor";
 import { LINE_STYLES, STYLE_LABELS, shortcutFor } from "./editor/styles";
-import { SAMPLE_SCRIPT } from "./sample";
 import { useProject } from "./project/useProject";
-import { DOC_TYPE_LABELS } from "./project/model";
+import { findNode } from "./project/tree";
+import { BLANK_SCRIPT_LINES, DOC_TYPE_LABELS } from "./project/model";
 import { sceneAtLine, type ScriptAnalysis } from "./analysis/analyze";
 import { ProjectTree } from "./panels/ProjectTree";
 import { StatsPanel } from "./panels/StatsPanel";
@@ -66,8 +66,9 @@ function App() {
   const [treeFilter, setTreeFilter] = useState("");
   const [showSidebar, toggleSidebar, setShowSidebar] = usePanelSetting("dropkick.panel.scenes", true);
   const [showStats, toggleStats] = usePanelSetting("dropkick.panel.stats", false);
-  const project = useProject(editorRef, textEditorRef, SAMPLE_SCRIPT);
+  const project = useProject(editorRef, textEditorRef, BLANK_SCRIPT_LINES);
   const isScript = project.activeDoc.id === project.mainScriptId;
+  const scriptName = findNode(project.tree, project.mainScriptId)?.name ?? "스크립트";
 
   const currentScene = useMemo(() => sceneAtLine(analysis.scenes, info.line), [analysis.scenes, info.line]);
 
@@ -145,7 +146,7 @@ function App() {
         <span className="doc-name" title={project.path ?? "아직 저장하지 않았습니다"}>
           {project.title}
         </span>
-        <span className="doc-kind">{project.kind === "project" ? "프로젝트" : "Fountain 파일"}</span>
+        <span className="doc-kind">프로젝트</span>
         {project.dirty && <span className="doc-dirty">수정됨</span>}
       </header>
 
@@ -182,7 +183,7 @@ function App() {
           <span className="stylebar-doc">
             {DOC_TYPE_LABELS[project.activeDoc.type]} · {project.activeDoc.name}
             <button type="button" className="style-button" onClick={() => openDoc(mainScriptId)}>
-              ← 시나리오로
+              ← {scriptName}
             </button>
           </span>
         )}
@@ -204,7 +205,6 @@ function App() {
         {showSidebar && (
           <ProjectTree
             title={project.title}
-            kind={project.kind}
             tree={project.tree}
             mainScriptId={project.mainScriptId}
             activeDocId={project.activeDoc.id}
@@ -215,11 +215,10 @@ function App() {
             onFilterChange={setTreeFilter}
             onOpenDoc={project.openDoc}
             onSelectScene={goToLine}
-            onAdd={(kind, parentId) => (kind === "folder" ? project.addFolder(parentId ?? null) : project.addDoc(kind, parentId))}
+            onAdd={(kind, parentId) => (kind === "folder" ? project.addFolder(parentId) : project.addDoc(parentId))}
             onRename={project.rename}
             onRemove={project.remove}
             onMove={project.move}
-            onMakeProject={project.makeProject}
           />
         )}
 
@@ -231,7 +230,7 @@ function App() {
             </span>
             <Editor
               ref={editorRef}
-              initialLines={SAMPLE_SCRIPT}
+              initialLines={BLANK_SCRIPT_LINES}
               onInfo={setInfo}
               onDirtyChange={project.setScriptDirty}
               onAnalysis={setAnalysis}
