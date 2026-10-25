@@ -394,7 +394,13 @@
 .tree-list {
   flex: 1;
   overflow-y: auto;
-  padding: 2px 8px 24px;
+  padding: 8px 8px 24px;
+}
+
+/* 검색창과 트리 사이 구분선 */
+.project-tree .panel-search {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
 }
 
 .tree-item + .tree-item {
@@ -567,6 +573,28 @@
 
 .tree-row.drop-inside {
   background: var(--selection);
+}
+
+.tree-row.dragging {
+  opacity: 0.45;
+}
+
+/* 끄는 동안 커서를 따라다니는 항목 이름 */
+.tree-drag-ghost {
+  position: fixed;
+  z-index: 60;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.tree-list {
+  user-select: none;
 }
 
 .tree-menu {

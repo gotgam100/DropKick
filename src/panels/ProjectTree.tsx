@@ -2,7 +2,7 @@
  * 왼쪽 사이드바 트리: 시나리오(펼치면 씬), 시놉시스, 인물, 메모 문서와 폴더.
  * 누르면 열기, 두 번 누르면 이름 바꾸기, 오른쪽 클릭 메뉴, 끌어서 옮기기, 찾기.
  */
-import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { formatEighths, type SceneSummary } from "../analysis/analyze";
 import type { ProjectNode } from "../project/model";
 import { findParent, type DropPosition } from "../project/tree";
@@ -128,7 +128,17 @@ export function ProjectTree(props: Props) {
   const [renaming, setRenaming] = useState<string | null>(null);
   // 오른쪽 클릭 메뉴. node가 null이면 빈 곳을 누른 것
   const [menu, setMenu] = useState<{ x: number; y: number; node: ProjectNode | null } | null>(null);
-  const [drag, setDrag] = useState<{ id: string; over: string | null; position: DropPosition | null } | null>(null);
+  // 끌어서 옮기기 (마우스를 직접 따라간다. 맥 앱 엔진에서도 똑같이 동작하도록)
+  const [drag, setDrag] = useState<{
+    id: string;
+    name: string;
+    x: number;
+    y: number;
+    over: string | null;
+    position: DropPosition | null;
+  } | null>(null);
+  const pressRef = useRef<{ id: string; name: string; x: number; y: number } | null>(null);
+  const suppressClickRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   const query = filter.trim().toUpperCase();
@@ -171,31 +181,87 @@ export function ProjectTree(props: Props) {
 
   // ---------- 끌어서 옮기기 ----------
 
-  const onDragStart = (e: DragEvent, node: ProjectNode) => {
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", node.id);
-    setDrag({ id: node.id, over: null, position: null });
+  /** 커서 아래 항목과 놓을 위치(앞/뒤/안) */
+  const dropTargetAt = (x: number, y: number, draggingId: string) => {
+    const el = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-node-id]");
+    if (!el) return null;
+    const id = el.dataset.nodeId!;
+    if (id === draggingId) return null;
+    const rect = el.getBoundingClientRect();
+    const ratio = (y - rect.top) / rect.height;
+    const isFolder = el.dataset.nodeType === "folder";
+    const position: DropPosition = isFolder
+      ? ratio < 0.25
+        ? "before"
+        : ratio > 0.75
+          ? "after"
+          : "inside"
+      : ratio < 0.5
+        ? "before"
+        : "after";
+    return { id, position };
   };
 
-  const onDragOver = (e: DragEvent, node: ProjectNode) => {
-    if (!drag || drag.id === node.id) return;
-    e.preventDefault();
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const y = (e.clientY - rect.top) / rect.height;
-    let position: DropPosition;
-    if (node.type === "folder") position = y < 0.25 ? "before" : y > 0.75 ? "after" : "inside";
-    else position = y < 0.5 ? "before" : "after";
-    if (drag.over !== node.id || drag.position !== position) setDrag({ ...drag, over: node.id, position });
+  const onRowPointerDown = (e: ReactPointerEvent, node: ProjectNode) => {
+    if (e.button !== 0 || renaming === node.id) return;
+    pressRef.current = { id: node.id, name: node.name, x: e.clientX, y: e.clientY };
   };
 
-  const onDrop = (e: DragEvent, node: ProjectNode) => {
-    e.preventDefault();
-    if (drag && drag.position && drag.id !== node.id) {
-      onMove(drag.id, node.id, drag.position);
-      if (drag.position === "inside") setCollapsed((set) => new Set([...set].filter((x) => x !== node.id)));
-    }
-    setDrag(null);
-  };
+  useEffect(() => {
+    const handleMove = (e: PointerEvent) => {
+      const press = pressRef.current;
+      if (!press) return;
+      const moved = Math.hypot(e.clientX - press.x, e.clientY - press.y);
+      if (!drag && moved < 5) return;
+      const target = dropTargetAt(e.clientX, e.clientY, press.id);
+      setDrag({
+        id: press.id,
+        name: press.name,
+        x: e.clientX,
+        y: e.clientY,
+        over: target?.id ?? null,
+        position: target?.position ?? null,
+      });
+      // 목록 위아래 끝 가까이 가면 저절로 스크롤
+      const list = listRef.current;
+      if (list) {
+        const rect = list.getBoundingClientRect();
+        if (e.clientY < rect.top + 28) list.scrollTop -= 10;
+        else if (e.clientY > rect.bottom - 28) list.scrollTop += 10;
+      }
+    };
+    const handleUp = () => {
+      const press = pressRef.current;
+      pressRef.current = null;
+      if (!press || !drag) return;
+      if (drag.over && drag.position) {
+        onMove(drag.id, drag.over, drag.position);
+        if (drag.position === "inside") {
+          const target = drag.over;
+          setCollapsed((set) => new Set([...set].filter((x) => x !== target)));
+        }
+      }
+      // 끌기를 마친 마우스 떼기는 "누르기"로 치지 않는다.
+      suppressClickRef.current = true;
+      setTimeout(() => (suppressClickRef.current = false), 0);
+      setDrag(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && pressRef.current) {
+        pressRef.current = null;
+        setDrag(null);
+      }
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("keydown", onKey);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drag, onMove]);
 
   // ---------- 그리기 ----------
 
@@ -270,18 +336,17 @@ export function ProjectTree(props: Props) {
             aria-expanded={expandable ? open : undefined}
             aria-selected={node.id === activeDocId}
             tabIndex={-1}
-            className={`tree-row${node.id === activeDocId ? " active" : ""}${dropClass}`}
+            className={`tree-row${node.id === activeDocId ? " active" : ""}${dropClass}${drag?.id === node.id ? " dragging" : ""}`}
             style={{ paddingLeft: 4 + depth * 14 }}
-            draggable={renaming !== node.id}
-            onDragStart={(e) => onDragStart(e, node)}
-            onDragOver={(e) => onDragOver(e, node)}
-            onDragLeave={() => drag && setDrag({ ...drag, over: null, position: null })}
-            onDrop={(e) => onDrop(e, node)}
-            onDragEnd={() => setDrag(null)}
+            data-node-id={node.id}
+            data-node-type={node.type}
+            onPointerDown={(e) => onRowPointerDown(e, node)}
             onMouseDown={(e) => {
+              // 편집기 커서를 지키고, 끄는 동안 글자가 선택되지 않게
               if (renaming !== node.id) e.preventDefault();
             }}
             onClick={() => {
+              if (suppressClickRef.current) return;
               if (isFolder) toggle(node.id);
               else onOpenDoc(node.id);
             }}
@@ -426,6 +491,11 @@ export function ProjectTree(props: Props) {
               </button>
             </>
           )}
+        </div>
+      )}
+      {drag && (
+        <div className="tree-drag-ghost" style={{ left: drag.x + 12, top: drag.y + 8 }}>
+          {drag.name}
         </div>
       )}
     </aside>
