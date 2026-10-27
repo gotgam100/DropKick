@@ -10,6 +10,7 @@ import {
 } from "@codemirror/view";
 import { autocompletion, type CompletionContext } from "@codemirror/autocomplete";
 import { loadSettings } from "../settings/settings";
+import { scriptClipboard } from "./clipboard";
 import {
   characterNames,
   cycleLineStyle,
@@ -169,6 +170,7 @@ function characterCompletions(context: CompletionContext) {
 export function scriptEditing(): Extension {
   return [
     styleDecorations,
+    scriptClipboard(),
     // 자동 완성 창이 열려 있을 때는 Enter가 이름 선택에 쓰이도록, 스타일 키는 그보다 낮게 둔다.
     Prec.high(styleKeymap),
     autocompletion({
