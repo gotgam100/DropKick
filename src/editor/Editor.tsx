@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import type { EditorState, Extension, Text } from "@codemirror/state";
-import { EditorView, keymap, drawSelection, placeholder } from "@codemirror/view";
+import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, redo, undo } from "@codemirror/commands";
 import { highlightSelectionMatches, openSearchPanel, searchKeymap } from "@codemirror/search";
 import { paperTheme } from "./theme";
@@ -216,7 +216,6 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
 
     const extensions: Extension = [
       history(),
-      drawSelection(),
       highlightSelectionMatches(),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "false", lang: "ko" }),

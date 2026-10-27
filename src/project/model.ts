@@ -18,10 +18,10 @@ export const PROJECT_EXTENSION = ".dropkick";
 export const MANIFEST_FILE = "project.json";
 export const MANIFEST_FORMAT = "dropkick-project";
 
-export type DocType = "script" | "memo" | "character" | "synopsis";
+export type DocType = "script" | "memo" | "character" | "synopsis" | "structure";
 
-export type DocNode = { id: string; type: DocType; name: string; file: string };
-export type FolderNode = { id: string; type: "folder"; name: string; children: ProjectNode[] };
+export type DocNode = { id: string; type: DocType; name: string; file: string; icon?: string };
+export type FolderNode = { id: string; type: "folder"; name: string; children: ProjectNode[]; icon?: string };
 export type ProjectNode = DocNode | FolderNode;
 
 /** 수정고(1고, 2고 …) 목록 항목. 내용은 dir 폴더에 있다 (src/revisions) */
@@ -55,6 +55,7 @@ export const DOC_TYPE_LABELS: Record<DocType, string> = {
   memo: "문서",
   character: "인물 설정",
   synopsis: "시놉시스",
+  structure: "3막 구조",
 };
 
 export class ProjectError extends Error {}
@@ -105,7 +106,7 @@ export function folderPaths(tree: ProjectNode[], base = ""): string[] {
 
 // ---------- project.json 읽기/쓰기 ----------
 
-const DOC_TYPES: readonly string[] = ["script", "memo", "character", "synopsis"];
+const DOC_TYPES: readonly string[] = ["script", "memo", "character", "synopsis", "structure"];
 
 function parseNode(value: unknown, ids: Set<string>): ProjectNode {
   if (!value || typeof value !== "object") throw new ProjectError("트리 항목 형식이 잘못되었습니다.");
@@ -115,9 +116,16 @@ function parseNode(value: unknown, ids: Set<string>): ProjectNode {
   if (typeof id !== "string" || !id || ids.has(id)) throw new ProjectError("트리 항목 id가 없거나 겹칩니다.");
   if (typeof name !== "string") throw new ProjectError("트리 항목 이름이 없습니다.");
   ids.add(id);
+  const icon = typeof node.icon === "string" && node.icon.trim() ? node.icon.trim() : undefined;
   if (node.type === "folder") {
     if (!Array.isArray(node.children)) throw new ProjectError(`"${name}" 폴더 형식이 잘못되었습니다.`);
-    return { id, type: "folder", name, children: node.children.map((c) => parseNode(c, ids)) };
+    return {
+      id,
+      type: "folder",
+      name,
+      children: node.children.map((c) => parseNode(c, ids)),
+      ...(icon ? { icon } : {}),
+    };
   }
   if (typeof node.type !== "string" || !DOC_TYPES.includes(node.type)) {
     throw new ProjectError(`"${name}"의 문서 종류를 알 수 없습니다.`);
@@ -125,7 +133,7 @@ function parseNode(value: unknown, ids: Set<string>): ProjectNode {
   if (typeof node.file !== "string" || !isSafeRelativePath(node.file)) {
     throw new ProjectError(`"${name}"의 파일 경로가 올바르지 않습니다.`);
   }
-  return { id, type: node.type as DocType, name, file: node.file };
+  return { id, type: node.type as DocType, name, file: node.file, ...(icon ? { icon } : {}) };
 }
 
 export function parseManifest(text: string): ProjectManifest {
@@ -222,6 +230,7 @@ export function createProject(title: string, script?: { titlePage: string | null
 function typeForFile(path: string): DocType | null {
   const lower = path.toLowerCase();
   if (/\.(fountain|spmd)$/.test(lower)) return "script";
+  if (/\.beats$/.test(lower)) return "structure";
   if (!/\.(md|markdown|txt)$/.test(lower)) return null;
   const top = path.split("/")[0];
   if (top === "인물" || /^characters?$/i.test(top)) return "character";

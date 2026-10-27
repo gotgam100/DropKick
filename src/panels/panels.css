@@ -21,15 +21,26 @@
   --chart-2: #2a78d6;
   --chart-muted: #c9c5bd;
   --chart-track: rgba(0, 0, 0, 0.05);
+  /* 수정고 비교: 새 줄(파랑 --chart-2), 고친 줄(노랑), 지운 자리(강조색 --caret) */
+  --rev-changed: #c98a12;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --chart: #e8603f;
     --chart-2: #3987e5;
     --chart-muted: #4f4d49;
     --chart-track: rgba(255, 255, 255, 0.06);
+    --rev-changed: #e2a93b;
   }
+}
+
+:root[data-theme="dark"] {
+  --chart: #e8603f;
+  --chart-2: #3987e5;
+  --chart-muted: #4f4d49;
+  --chart-track: rgba(255, 255, 255, 0.06);
+  --rev-changed: #e2a93b;
 }
 
 .panel {
@@ -629,6 +640,291 @@
   border-top: 1px solid var(--border);
 }
 
+/* ---------- SF 심볼 아이콘 변경 미니멀 팝업 ---------- */
+
+.icon-popover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+
+.icon-popover {
+  position: fixed;
+  z-index: 201;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--chrome);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
+}
+
+.icon-popover-grid {
+  display: grid;
+  grid-template-columns: repeat(9, 30px);
+  gap: 3px;
+}
+
+.icon-popover-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  cursor: default;
+}
+
+.icon-popover-cell:hover {
+  background: var(--caret);
+  color: #fff;
+}
+
+.icon-popover-cell.active {
+  border-color: var(--caret);
+  background: var(--selection);
+  color: var(--caret);
+}
+
+.icon-popover-cell.active:hover {
+  background: var(--caret);
+  color: #fff;
+}
+
+/* ---------- 프리셋 메뉴, 우클릭 하위 메뉴, 프리셋 전용 문서 화면 ---------- */
+
+.tree-submenu-trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  color: var(--ink);
+  cursor: default;
+}
+
+.tree-submenu-trigger:hover {
+  background: var(--caret);
+  color: #fff;
+}
+
+.tree-submenu-arrow {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.tree-submenu {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: -5px;
+  margin-left: 2px;
+  min-width: 185px;
+  z-index: 60;
+}
+
+/* 마우스가 본 메뉴에서 하위 메뉴로 건너갈 때 끊기지 않도록 투명 다리 */
+.tree-submenu::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+}
+
+.tree-submenu-trigger:hover > .tree-submenu {
+  display: block;
+}
+
+.tree-menu .tree-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tree-menu .tree-submenu-item:hover .tree-icon {
+  color: #fff;
+}
+
+.preset-menu {
+  z-index: 201;
+  min-width: 220px;
+}
+
+.preset-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.preset-two-line {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.25;
+}
+
+.preset-menu-row .preset-menu-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.preset-menu-row .preset-menu-main:hover .tree-icon {
+  color: #fff;
+}
+
+.preset-menu-row .preset-menu-edit {
+  width: auto;
+  flex-shrink: 0;
+  padding: 4px 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.preset-menu-row .preset-menu-edit:hover {
+  color: #fff;
+}
+
+.preset-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: default;
+}
+
+.preset-icon-button:hover {
+  border-color: var(--caret);
+  color: var(--caret);
+}
+
+.preset-editor-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  max-width: 720px;
+  margin: 0 auto 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--chrome);
+  font-size: 12.5px;
+}
+
+.preset-editor-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.preset-inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.preset-inline-field > span {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.preset-inline-field input {
+  width: 135px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
+.preset-inline-field input:focus {
+  border-color: var(--caret);
+}
+
+.preset-inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.preset-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.preset-editor-actions button {
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.preset-editor-actions button:hover {
+  border-color: var(--caret);
+}
+
+.preset-editor-actions button.primary {
+  border-color: var(--caret);
+  background: var(--caret);
+  color: #fff;
+  font-weight: 600;
+}
+
+.preset-editor-actions .danger-button {
+  color: var(--caret);
+}
+
+.preset-page-title-preview {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 20px;
+  font-weight: 700;
+  user-select: none;
+}
+
+.preset-page-title-hint {
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
 /* ---------- 메모·인물·시놉시스 편집 화면 ---------- */
 
 .text-desk {
@@ -926,16 +1222,25 @@
 }
 
 .revision-header {
-  padding: 18px 24px 0;
+  padding: 10px 24px 0;
   border-bottom: 1px solid var(--border);
   background: var(--chrome);
+}
+
+.revision-top-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
 }
 
 .revision-title {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .revision-kicker {
@@ -949,7 +1254,7 @@
 
 .revision-title h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .revision-when {
@@ -957,30 +1262,32 @@
   font-size: 12px;
 }
 
-.revision-note {
-  margin: 8px 0 0;
+.revision-note-inline {
   color: var(--ink);
-  font-size: 13px;
-  white-space: pre-wrap;
+  font-size: 12.5px;
 }
 
 .revision-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 12px;
+  align-items: center;
+  gap: 6px;
 }
 
 .revision-actions button,
-.compare-target select {
-  height: 28px;
-  padding: 0 12px;
+.compare-target-select {
+  height: 26px;
+  padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--paper);
   color: var(--ink);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
   cursor: default;
+}
+
+.compare-target-select {
+  font-weight: 600;
 }
 
 .revision-actions button.primary {
@@ -991,25 +1298,25 @@
 }
 
 .revision-actions button.danger {
-  margin-left: auto;
   color: var(--caret);
 }
 
 .revision-tabs {
   display: flex;
+  align-items: center;
   gap: 2px;
-  margin-top: 14px;
+  margin-top: 8px;
   overflow-x: auto;
 }
 
 .revision-tabs button {
-  padding: 7px 12px;
+  padding: 5px 12px;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   white-space: nowrap;
   cursor: default;
 }
@@ -1021,13 +1328,32 @@
 }
 
 .revision-tabs .compare-tab {
-  margin-left: auto;
+  margin: 0 0 4px auto;
+  padding: 3px 12px;
+  border: 1px solid var(--caret);
+  border-radius: 999px;
+  color: var(--caret);
+  font-weight: 600;
+}
+
+.revision-tabs .compare-tab:hover {
+  background: var(--selection);
+}
+
+.revision-tabs .compare-tab.active {
+  background: var(--caret);
+  border-color: var(--caret);
+  color: #fff;
 }
 
 .revision-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+
+.revision-body.compare-mode {
+  overflow: hidden;
 }
 
 .revision-desk {
@@ -1049,36 +1375,278 @@
 /* ---------- 비교 ---------- */
 
 .revision-compare {
-  max-width: 860px;
-  margin: 0 auto;
-  padding: 20px 24px 60px;
-}
-
-.compare-target {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--muted);
-  font-size: 13px;
+  flex-direction: column;
+  height: 100%;
 }
 
+.compare-top {
+  padding: 10px 24px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--chrome);
+  max-height: 55%;
+  overflow: auto;
+}
+
+/* 요약: 비교 대상 선택 + 씬·줄·페이지·러닝타임 요약을 한 줄에 세로 구분선으로 표시 */
 .compare-summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 16px;
-  margin: 14px 0 18px;
-  padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--chrome);
+  background: var(--paper);
+  font-size: 12.5px;
+}
+
+.compare-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-left: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.compare-stat:first-child {
+  border-left: 0;
+}
+
+.compare-direction {
+  gap: 8px;
   font-size: 13px;
 }
 
-.compare h3 {
-  margin: 22px 0 10px;
+.compare-arrow {
   color: var(--muted);
+}
+
+.compare-stat-label {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.compare-stat-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 원고 전체 지도: 씬마다 막대 하나 */
+.compare-map {
+  margin-top: 8px;
+}
+
+.compare-map-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 5px;
   font-size: 12px;
+  font-weight: 600;
+}
+
+.compare-legend {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.compare-legend .swatch {
+  margin-left: 6px;
+}
+
+.compare-hint {
+  margin-left: 8px;
+  color: var(--muted);
+}
+
+.compare-step {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.compare-step button {
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 400;
+  cursor: default;
+}
+
+.compare-step button:disabled {
+  opacity: 0.4;
+}
+
+.compare-columns {
+  height: 42px;
+}
+
+.compare-columns .scene-column span {
+  opacity: 0.7;
+}
+
+.compare-columns .rev-col-added span,
+.rev-swatch-added {
+  background: var(--chart-2);
+  opacity: 1;
+}
+
+.compare-columns .rev-col-changed span,
+.rev-swatch-changed {
+  background: var(--rev-changed);
+  opacity: 1;
+}
+
+.compare-columns .rev-col-removed span,
+.rev-swatch-removed {
+  background: var(--caret);
+  opacity: 1;
+}
+
+/* 고친 씬이나 새 씬 바로 앞에서 옛 씬도 함께 지워진 경우 한 막대에 두 색을 함께 표시 */
+.compare-columns .rev-col-has-del span {
+  border-top: 4px solid var(--caret);
+}
+
+.compare-columns .scene-column:hover span {
+  opacity: 1;
+  outline: 1.5px solid #ffffff;
+  outline-offset: -1.5px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.compare-columns .rev-col-same:hover span {
+  background: var(--chart-muted);
+}
+
+/* 그대로인(회색) 막대를 선택했을 때는 막대 자체를 흰색으로 */
+.compare-columns .rev-col-same.current span,
+.compare-columns .rev-col-same.current:hover span {
+  background: #ffffff;
+  opacity: 1;
+  outline: 1.5px solid var(--ink);
+  outline-offset: -1px;
+}
+
+/* 색상이 있는(추가·수정·삭제) 막대를 선택했을 때는 본래 색상을 유지하고 외곽에 흰색 선 표시 */
+.compare-columns .rev-col-added.current span,
+.compare-columns .rev-col-added.current:hover span {
+  background: var(--chart-2);
+  opacity: 1;
+  outline: 2px solid #ffffff;
+  outline-offset: -1.5px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.compare-columns .rev-col-changed.current span,
+.compare-columns .rev-col-changed.current:hover span {
+  background: var(--rev-changed);
+  opacity: 1;
+  outline: 2px solid #ffffff;
+  outline-offset: -1.5px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.compare-columns .rev-col-removed.current span,
+.compare-columns .rev-col-removed.current:hover span {
+  background: var(--caret);
+  opacity: 1;
+  outline: 2px solid #ffffff;
+  outline-offset: -1.5px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.compare-docs {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.compare-docs > summary {
+  margin-bottom: 8px;
+  color: var(--muted);
+  cursor: default;
+}
+
+.compare-desk {
+  min-height: 0;
+}
+
+/* ---------- 원고 위 교정지 수정 표시 (ScriptPreview marks) ---------- */
+
+.compare-paper .cm-line.sl-current::before {
+  display: none;
+}
+
+/* 수정 전 줄 바로 아래에 오는 수정 후 줄은 문단 사이 빈 줄을 두지 않고 바로 붙인다 */
+.compare-paper .cm-line.sl.rev-has-before {
+  --gap: 0px;
+  padding-top: 0;
+}
+
+/* 지운 줄 / 수정 전 원래 줄 (빨간 취소선) */
+.compare-paper .rev-del-line {
+  background-color: color-mix(in srgb, var(--caret) 12%, transparent);
+  background-clip: content-box;
+  color: color-mix(in srgb, var(--ink) 72%, var(--caret));
+}
+
+.compare-paper .rev-del-text {
+  text-decoration: line-through;
+  text-decoration-color: var(--caret);
+  text-decoration-thickness: 1.5px;
+}
+
+/* 새로 쓴 줄 / 고쳐 쓴 줄 (파란색) */
+.compare-paper .cm-line.rev-added,
+.compare-paper .cm-line.rev-changed {
+  background-color: color-mix(in srgb, var(--chart-2) 14%, transparent);
+  background-clip: content-box;
+  color: color-mix(in srgb, var(--ink) 78%, var(--chart-2));
+}
+
+/* 왼쪽 여백 이름표 (− 삭제 / − 수정 전 / + 추가 / + 수정) */
+.compare-paper .rev-del-line::before,
+.compare-paper .cm-line.rev-added::before,
+.compare-paper .cm-line.rev-changed::before {
+  content: attr(data-rev-badge);
+  position: absolute;
+  top: var(--gap);
+  left: -1.4in;
+  width: 1.15in;
+  text-align: right;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: var(--line);
+  text-transform: none;
+  pointer-events: none;
+}
+
+.compare-paper .rev-del-line::before {
+  color: var(--caret);
+  text-decoration: none;
+}
+
+.compare-paper .cm-line.rev-added::before,
+.compare-paper .cm-line.rev-changed::before {
+  color: var(--chart-2);
+}
+
+/* 오른쪽 여백의 수정 표시(*) */
+.compare-paper .cm-line.rev-added::after,
+.compare-paper .cm-line.rev-changed::after {
+  content: "*";
+  position: absolute;
+  top: var(--gap);
+  right: -0.45in;
+  color: var(--chart-2);
+  font-weight: 700;
+  pointer-events: none;
 }
 
 em.plus,
@@ -1139,11 +1707,6 @@ em.minus {
   font-weight: 600;
 }
 
-.compare-same {
-  color: var(--muted);
-  font-size: 12.5px;
-}
-
 .diff-lines {
   padding: 6px 0;
   font-size: 13px;
@@ -1191,4 +1754,1011 @@ em.minus {
   padding: 2px 12px 2px 40px;
   color: var(--muted);
   font-size: 11.5px;
+}
+
+/* ---------- 3막 구조 보드 (세이브 더 캣 15단계 · 세로 3기둥 칸반 보드형) ---------- */
+
+.preset-menu-section-label {
+  padding: 4px 10px 2px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.toolbar-left .style-button,
+.toolbar-right .style-button {
+  padding: 0 8px;
+}
+
+.structure-view {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px 14px;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.structure-timeline-card {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--chrome);
+  font-size: 12px;
+}
+
+.structure-timeline-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+.structure-timeline-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.structure-timeline-summary {
+  color: var(--caret);
+}
+
+.structure-reset-btn {
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: default;
+}
+
+.structure-reset-btn:hover {
+  border-color: var(--caret);
+  color: var(--caret);
+}
+
+.structure-reset-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border: 1px solid var(--caret);
+  border-radius: 6px;
+  background: var(--paper);
+  font-size: 11px;
+}
+
+.structure-reset-yes,
+.structure-reset-no {
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: default;
+}
+
+.structure-reset-yes {
+  border: 0;
+  background: var(--caret);
+  color: #ffffff;
+}
+
+.structure-reset-no {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+}
+
+.structure-timeline-track {
+  display: flex;
+  gap: 4px;
+}
+
+.timeline-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline-seg.seg-act1 {
+  background: color-mix(in srgb, var(--chart-2) 22%, transparent);
+  border: 1px solid var(--chart-2);
+}
+
+.timeline-seg.seg-act2a {
+  background: color-mix(in srgb, var(--rev-changed) 22%, transparent);
+  border: 1px solid var(--rev-changed);
+}
+
+.timeline-seg.seg-act2b {
+  background: color-mix(in srgb, var(--caret) 22%, transparent);
+  border: 1px solid var(--caret);
+}
+
+.timeline-seg.seg-act3 {
+  background: rgba(78, 205, 196, 0.2);
+  border: 1px solid #4ecdc4;
+}
+
+.structure-board-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(230px, 1fr)) 250px;
+  gap: 10px;
+  overflow-x: auto;
+}
+
+.structure-column {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--chrome);
+}
+
+.structure-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.structure-column-header h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.structure-column-header-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.structure-add-card-btn {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: default;
+}
+
+.structure-add-card-btn:hover {
+  border-color: var(--caret);
+  color: var(--caret);
+}
+
+.structure-add-card-bottom {
+  flex-shrink: 0;
+  height: 30px;
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: default;
+}
+
+.structure-add-card-bottom:hover {
+  border-color: var(--caret);
+  background: var(--selection);
+  color: var(--caret);
+}
+
+.structure-column.act-1 .structure-column-header h2 {
+  color: var(--chart-2);
+}
+
+.structure-column.act-2 .structure-column-header h2 {
+  color: var(--rev-changed);
+}
+
+.structure-column.act-3 .structure-column-header h2 {
+  color: #2aa39a;
+}
+
+@media (prefers-color-scheme: dark) {
+  .structure-column.act-3 .structure-column-header h2 {
+    color: #4ecdc4;
+  }
+}
+
+.structure-column-cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.beat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--paper);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.beat-card.drop-over {
+  border-color: var(--caret);
+  box-shadow: 0 0 0 2px var(--selection);
+}
+
+.beat-card-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.beat-number {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.beat-title-input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.beat-title-input:hover {
+  border-color: var(--border);
+  background: var(--chrome);
+}
+
+.beat-title-input:focus {
+  border-color: var(--caret);
+  background: var(--chrome);
+}
+
+.beat-title-reset,
+.beat-card-delete {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: default;
+}
+
+.beat-title-reset:hover,
+.beat-card-delete:hover {
+  background: var(--button-hover);
+  color: var(--caret);
+}
+
+.beat-guide {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* 카드 내 시놉시스: 3줄 높이로 고정하고 3줄을 넘어가면 슬라이드바(스크롤바)로 내려서 확인 */
+.beat-synopsis {
+  width: 100%;
+  height: 62px;
+  min-height: 62px;
+  max-height: 62px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--chrome);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-y: auto;
+  resize: none;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.beat-synopsis:focus {
+  border-color: var(--caret);
+  background: var(--paper);
+}
+
+.beat-scenes-area {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding-top: 2px;
+}
+
+.beat-scene-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--chrome);
+  font-size: 11px;
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.beat-scene-chip:hover {
+  border-color: var(--caret);
+}
+
+.beat-scene-chip.chip-dragging {
+  opacity: 0.45;
+}
+
+.beat-scene-chip.chip-drop-before {
+  box-shadow: -2.5px 0 0 0 var(--caret);
+  border-left-color: var(--caret);
+}
+
+.beat-scene-chip.chip-drop-after {
+  box-shadow: 2.5px 0 0 0 var(--caret);
+  border-right-color: var(--caret);
+}
+
+.drag-copy-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--caret);
+  color: #ffffff;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.beat-scene-chip.missing {
+  opacity: 0.6;
+  border-style: dashed;
+  padding-left: 6px;
+}
+
+.beat-scene-chip-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 5px 0 7px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.beat-scene-chip-jump .scene-number {
+  color: var(--caret);
+  font-size: 10.5px;
+}
+
+.beat-scene-chip-name {
+  max-width: 125px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.beat-scene-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: default;
+}
+
+.beat-scene-chip-remove:hover {
+  color: var(--caret);
+}
+
+.beat-add-scene-select {
+  height: 24px;
+  max-width: 110px;
+  padding: 0 6px;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  outline: none;
+  cursor: default;
+}
+
+.beat-add-scene-select:hover {
+  border-color: var(--caret);
+  color: var(--ink);
+}
+
+.beat-scene-empty-hint {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* ---------- 오른쪽 원고 씬 서랍 ---------- */
+
+.structure-drawer {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--chrome);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.structure-drawer-header {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.structure-drawer-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.structure-drawer-title-row h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.structure-drawer-tabs {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.structure-drawer-tabs button {
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: default;
+}
+
+.structure-drawer-tabs button.active {
+  border-color: var(--caret);
+  background: var(--selection);
+  color: var(--caret);
+  font-weight: 600;
+}
+
+.structure-drawer-hint {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.structure-drawer-selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--selection);
+  color: var(--caret);
+  font-size: 11px;
+}
+
+.structure-drawer-clear-sel {
+  padding: 1px 6px;
+  border: 1px solid var(--caret);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--caret);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: default;
+}
+
+.structure-drawer-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.drawer-scene-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.drawer-scene-card:hover {
+  border-color: var(--caret);
+}
+
+.drawer-scene-card.selected {
+  border-color: var(--caret);
+  background: var(--selection);
+  box-shadow: 0 0 0 1px var(--caret);
+}
+
+.drawer-scene-top {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.drawer-scene-select-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.drawer-scene-check {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--chrome);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.drawer-scene-check.checked {
+  border-color: var(--caret);
+  background: var(--caret);
+}
+
+.drawer-scene-select-row .scene-number {
+  color: var(--caret);
+  font-size: 11.5px;
+}
+
+.drawer-scene-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.drawer-scene-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-left: 21px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.drawer-scene-placed {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--selection);
+  color: var(--caret);
+  font-weight: 600;
+}
+
+/* ---------- DropKick 정보 창 (AboutDialog.tsx) ---------- */
+
+.about-dialog {
+  width: 320px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 26px 24px 20px;
+}
+
+.about-app-icon {
+  border-radius: 16px;
+  margin-bottom: 10px;
+}
+
+.about-app-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.about-app-version {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.about-spacer {
+  height: 16px;
+}
+
+.about-github-btn {
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--caret);
+  border-radius: 6px;
+  background: var(--selection);
+  color: var(--caret);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.about-github-btn:hover {
+  background: var(--caret);
+  color: #ffffff;
+}
+
+.about-copyright {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.about-close-row {
+  margin-top: 18px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.about-close-row button {
+  height: 28px;
+  padding: 0 18px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--chrome);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: default;
+}
+
+/* ---------- 설정 창 (SettingsDialog.tsx) ---------- */
+
+.settings-dialog {
+  width: min(560px, 92vw);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 22px 18px;
+}
+
+.settings-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-header h2 {
+  margin: 0;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.settings-tabs button {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: default;
+}
+
+.settings-tabs button.active {
+  border-color: var(--caret);
+  background: var(--selection);
+  color: var(--caret);
+  font-weight: 700;
+}
+
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 2px 6px;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--chrome);
+}
+
+.settings-item-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-item-label strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.settings-item-label span {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.settings-seg-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings-seg-group button {
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: default;
+}
+
+.settings-seg-group button.active {
+  border-color: var(--caret);
+  background: var(--caret);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--chrome);
+  cursor: default;
+}
+
+.settings-toggle-row input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--caret);
+  flex-shrink: 0;
+}
+
+.settings-fields-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.settings-backup-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-backup-control input[type="range"] {
+  flex: 1;
+  accent-color: var(--caret);
+}
+
+.settings-backup-number {
+  width: 64px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.preset-custom-scroll {
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.settings-preset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.settings-preset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  font-size: 12.5px;
+}
+
+.settings-preset-row-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.settings-preset-row-actions button,
+.settings-inline-actions button,
+.settings-reset-confirm button {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: default;
+}
+
+.settings-preset-row-actions button.danger,
+.settings-inline-actions button.danger {
+  border-color: var(--caret);
+  color: var(--caret);
+}
+
+.settings-reset-confirm button.danger-solid {
+  border-color: var(--caret);
+  background: var(--caret);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.settings-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings-sub-notice {
+  margin: 2px 0 0;
+  color: var(--caret);
+  font-size: 11.5px;
+}
+
+.settings-danger-box {
+  border-color: color-mix(in srgb, var(--caret) 45%, var(--border));
+}
+
+.settings-reset-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--caret);
+  border-radius: 6px;
+  background: var(--paper);
+  font-size: 12px;
 }

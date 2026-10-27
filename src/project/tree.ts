@@ -18,6 +18,7 @@ export const NEW_DOC_NAMES: Record<Exclude<DocType, "script">, string> = {
   memo: "새 문서",
   character: "새 인물",
   synopsis: "시놉시스",
+  structure: "3막 구조(세이브 더 캣)",
 };
 
 /** 일반 문서는 빈 상태로 시작한다. */
@@ -132,6 +133,20 @@ export function renameNode(tree: ProjectNode[], id: string, name: string): Proje
   return mapTree(tree, (nodes) => nodes.map((n) => (n.id === id ? { ...n, name: unique } : n)));
 }
 
+/** 폴더나 문서의 커스텀 아이콘을 바꾸거나 기본값(undefined)으로 되돌린다. */
+export function setNodeIcon(tree: ProjectNode[], id: string, icon?: string): ProjectNode[] {
+  const clean = icon?.trim() || undefined;
+  return mapTree(tree, (nodes) =>
+    nodes.map((n) => {
+      if (n.id !== id) return n;
+      const copy = { ...n };
+      if (clean) copy.icon = clean;
+      else delete copy.icon;
+      return copy;
+    }),
+  );
+}
+
 /** 노드를 지운다. 지워진 문서들(폴더면 안의 문서 모두)을 함께 돌려준다. */
 export function removeNode(tree: ProjectNode[], id: string): { tree: ProjectNode[]; removed: DocNode[]; node: ProjectNode | null } {
   const node = findNode(tree, id);
@@ -175,6 +190,7 @@ const EXTENSION: Record<DocType, string> = {
   memo: ".md",
   character: ".md",
   synopsis: ".md",
+  structure: ".beats",
 };
 
 /**

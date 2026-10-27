@@ -54,7 +54,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --desk: #1b1b1d;
     --paper: #262628;
     --paper-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
@@ -67,6 +67,25 @@
     --match: rgba(255, 122, 92, 0.15);
     --button-hover: rgba(255, 255, 255, 0.06);
   }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --desk: #1b1b1d;
+  --paper: #262628;
+  --paper-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+  --chrome: #222224;
+  --border: #38383b;
+  --ink: #e8e6e1;
+  --muted: #7d7b76;
+  --caret: #ff7a5c;
+  --selection: rgba(255, 122, 92, 0.25);
+  --match: rgba(255, 122, 92, 0.15);
+  --button-hover: rgba(255, 255, 255, 0.06);
 }
 
 * {
@@ -98,7 +117,7 @@ body {
 .titlebar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   height: 40px;
   /* 왼쪽은 macOS 창 버튼(신호등) 자리 */
   padding: 0 16px 0 84px;
@@ -108,21 +127,23 @@ body {
   flex-shrink: 0;
 }
 
+.titlebar-path {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
 .app-name {
-  font-weight: 700;
+  margin-left: auto;
+  color: var(--caret);
+  font-size: 13px;
+  font-weight: 800;
   letter-spacing: 0.02em;
-}
-
-.doc-name {
-  color: var(--muted);
-}
-
-.doc-kind {
-  padding: 1px 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--muted);
-  font-size: 11px;
+  pointer-events: none;
 }
 
 .doc-dirty {
@@ -132,19 +153,6 @@ body {
   color: var(--caret);
   font-size: 11px;
   font-weight: 600;
-}
-
-.app-name,
-.doc-name,
-.doc-kind {
-  padding: 1px 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.doc-dirty {
   pointer-events: none;
 }
 
@@ -317,6 +325,10 @@ body {
   user-select: none;
 }
 
+.app.hide-scene-numbers .paper .cm-scene-number {
+  display: none;
+}
+
 .paper .cm-line.sl-character {
   --gap: var(--line);
   padding-left: 2.2in;
@@ -366,6 +378,10 @@ body {
   color: var(--caret);
   text-transform: none;
   pointer-events: none;
+}
+
+.app.hide-current-line .paper .cm-line.sl-current::before {
+  display: none;
 }
 
 /* ---------- 페이지 경계 (pageBreaks.ts) ---------- */

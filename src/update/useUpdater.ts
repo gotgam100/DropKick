@@ -55,7 +55,10 @@ export function useUpdater({ prepare, notify }: Options) {
         const update = await check();
         if (!update) {
           if (!quiet) {
-            await message(`최신 버전을 쓰고 있습니다. (DropKick ${await getVersion()})`, { title: "업데이트 확인", kind: "info" });
+            await message(`최신 버전을 쓰고 있습니다.\n(DropKick ${await getVersion()})`, {
+              title: "업데이트 확인",
+              kind: "info",
+            });
           }
           return;
         }

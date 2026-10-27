@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use std::sync::Mutex;
 
-use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 /// Finder에서 더블클릭해 연 프로젝트 경로. 화면이 준비되기 전에 들어오면 여기 모아 둔다.
@@ -236,23 +236,24 @@ fn open_in_finder(path: String) -> Result<(), String> {
         .map_err(|e| format!("Finder를 열 수 없습니다: {e}"))
 }
 
+/// 프로젝트 파일(.dropkick)이 위치한 로컬 폴더를 Finder에서 열고 프로젝트를 표시한다.
+#[tauri::command]
+fn reveal_in_finder(path: String) -> Result<(), String> {
+    let target = Path::new(&path);
+    if !target.exists() {
+        return Err("프로젝트 파일을 찾을 수 없습니다.".into());
+    }
+    std::process::Command::new("open")
+        .arg("-R")
+        .arg(&path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Finder를 열 수 없습니다: {e}"))
+}
+
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
-}
-
-/// 'DropKick 정보' 창에 보일 내용. 개발 중(번들 없이 실행)에도 앱 아이콘이 보이도록 직접 넣는다.
-fn about_metadata<R: Runtime>(app: &AppHandle<R>) -> AboutMetadata<'static> {
-    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))
-        .ok()
-        .map(|image| image.to_owned());
-    AboutMetadata {
-        name: Some("DropKick".into()),
-        version: Some(app.package_info().version.to_string()),
-        copyright: app.config().bundle.copyright.clone(),
-        icon,
-        ..Default::default()
-    }
 }
 
 fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
@@ -264,7 +265,8 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "DropKick",
         true,
         &[
-            &PredefinedMenuItem::about(app, Some("DropKick 정보"), Some(about_metadata(app)))?,
+            &item("about_dropkick", "DropKick 정보", None)?,
+            &item("open_settings", "설정…", Some("CmdOrCtrl+,"))?,
             &item("check_update", "업데이트 확인…", None)?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::services(app, Some("서비스"))?,
@@ -289,6 +291,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item("save", "저장", Some("CmdOrCtrl+S"))?,
             &item("save_as", "다른 이름으로 저장…", Some("CmdOrCtrl+Shift+S"))?,
             &item("new_revision", "새 고로 보관…", Some("CmdOrCtrl+Alt+S"))?,
+            &item("open_project_location", "프로젝트 위치 열기", None)?,
             &item("open_backups", "백업 폴더 보기", None)?,
             &PredefinedMenuItem::separator(app)?,
             &item("export_pdf", "PDF로 내보내기…", Some("CmdOrCtrl+P"))?,
@@ -329,6 +332,18 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
+    let zoom_menu = Submenu::with_items(
+        app,
+        "화면 비율",
+        true,
+        &[
+            &item("zoom:80", "80%", None)?,
+            &item("zoom:100", "100% (기본)", None)?,
+            &item("zoom:120", "120%", None)?,
+            &item("zoom:150", "150%", None)?,
+        ],
+    )?;
+
     let view_menu = Submenu::with_items(
         app,
         "보기",
@@ -340,6 +355,8 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
                 Some("CmdOrCtrl+Alt+1"),
             )?,
             &item("toggle_stats", "통계 보기/숨기기", Some("CmdOrCtrl+Alt+2"))?,
+            &PredefinedMenuItem::separator(app)?,
+            &zoom_menu,
         ],
     )?;
 
@@ -392,6 +409,7 @@ pub fn run() {
             remove_dir_if_empty,
             prune_backups,
             open_in_finder,
+            reveal_in_finder,
             take_pending_opens,
             quit_app
         ])

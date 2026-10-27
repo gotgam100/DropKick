@@ -49,7 +49,10 @@ export function settingsDocs(tree: ProjectNode[]): { doc: DocNode; folders: stri
     for (const node of nodes) {
       if (node.type === "folder") {
         visit(node.children, [...folders, node.name], inSettings || SETTINGS_FOLDERS.includes(node.name));
-      } else if (node.type !== "script" && (inSettings || node.type === "character" || node.type === "synopsis")) {
+      } else if (
+        node.type !== "script" &&
+        (inSettings || node.type === "character" || node.type === "synopsis" || node.type === "structure")
+      ) {
         out.push({ doc: node, folders });
       }
     }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { fromFountain } from "./fountain/fountain";
@@ -6,10 +7,24 @@ import { Editor, type EditorHandle, type EditorInfo } from "./editor/Editor";
 import { TextEditor, type TextEditorHandle } from "./editor/TextEditor";
 import { LINE_STYLES, STYLE_LABELS, shortcutFor } from "./editor/styles";
 import { useProject } from "./project/useProject";
-import { findNode, folderNamed } from "./project/tree";
+import { findNode, findParent, folderNamed } from "./project/tree";
 import { BLANK_SCRIPT_LINES, DOC_TYPE_LABELS, walkDocs, type DocNode } from "./project/model";
+import { DEFAULT_PRESETS, loadPresets, savePresets, type DocPreset } from "./project/presets";
+import {
+  DEFAULT_SETTINGS,
+  clearAllAppStorage,
+  loadSettings,
+  normalizeZoom,
+  saveSettings,
+  type AppSettings,
+} from "./settings/settings";
+import { SettingsDialog } from "./settings/SettingsDialog";
+import { AboutDialog } from "./settings/AboutDialog";
 import { characterKey, sceneAtLine, type ScriptAnalysis } from "./analysis/analyze";
 import { ProjectTree } from "./panels/ProjectTree";
+import { PresetEditorView } from "./panels/PresetEditorView";
+import { SfSymbolIcon } from "./panels/sfSymbols";
+import { StructureBoardView } from "./structure/StructureBoardView";
 import { TitlePageDialog } from "./titlepage/TitlePageDialog";
 import { RenameCharacterDialog } from "./panels/RenameCharacterDialog";
 import { RevisionView, type Snapshot } from "./revisions/RevisionView";
@@ -75,12 +90,35 @@ function App() {
   const [notice, setNotice] = useState<{ text: string; key: number } | null>(null);
   const [openRevisionId, setOpenRevisionId] = useState<string | null>(null);
   const [newRevisionOpen, setNewRevisionOpen] = useState(false);
+  const [presets, setPresets] = useState<DocPreset[]>(() => loadPresets());
+  const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [presetMenuPos, setPresetMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [presetModal, setPresetModal] = useState<{
+    initial: DocPreset | null;
+    draft?: { name: string; body: string; icon?: string; docType?: "character" | "memo" };
+  } | null>(null);
   const [showSidebar, toggleSidebar, setShowSidebar] = usePanelSetting("dropkick.panel.scenes", true);
-  const [showStats, toggleStats] = usePanelSetting("dropkick.panel.stats", false);
+  const [showStats, toggleStats, setShowStats] = usePanelSetting("dropkick.panel.stats", false);
   const project = useProject(editorRef, textEditorRef, BLANK_SCRIPT_LINES);
   const openRevision = project.revisions.find((r) => r.id === openRevisionId) ?? null;
-  const isScript = project.activeDoc.id === project.mainScriptId && !openRevision;
+  const isScript = project.activeDoc.id === project.mainScriptId && !openRevision && !presetModal;
   const scriptName = findNode(project.tree, project.mainScriptId)?.name ?? "스크립트";
+
+  const updateSettings = useCallback((next: AppSettings) => {
+    setSettings(next);
+    saveSettings(next);
+  }, []);
+
+  // 테마(시스템 / 라이트 / 다크) 즉시 반영
+  useEffect(() => {
+    if (settings.theme === "system") {
+      delete document.documentElement.dataset.theme;
+    } else {
+      document.documentElement.dataset.theme = settings.theme;
+    }
+  }, [settings.theme]);
 
   const currentScene = useMemo(() => sceneAtLine(analysis.scenes, info.line), [analysis.scenes, info.line]);
 
@@ -90,6 +128,7 @@ function App() {
   const goToLine = useCallback(
     (line: number) => {
       setOpenRevisionId(null);
+      setPresetModal(null);
       if (isScript) {
         editorRef.current?.goToLine(line);
         return;
@@ -109,15 +148,27 @@ function App() {
     [setShowSidebar],
   );
 
-  // 보기 메뉴 (사이드바 ⌥⌘1, 통계 ⌥⌘2)
+  // 메뉴 처리 (사이드바, 통계, 새 고, 설정, DropKick 정보, 화면 비율)
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
     let disposed = false;
     listen<string>("menu", (event) => {
-      if (event.payload === "toggle_scenes") toggleSidebar();
-      if (event.payload === "toggle_stats") toggleStats();
-      if (event.payload === "new_revision") setNewRevisionOpen(true);
+      const id = event.payload;
+      if (id === "toggle_scenes") toggleSidebar();
+      else if (id === "toggle_stats") toggleStats();
+      else if (id === "new_revision") setNewRevisionOpen(true);
+      else if (id === "open_settings") setSettingsOpen(true);
+      else if (id === "about_dropkick") setAboutOpen(true);
+      else if (id.startsWith("zoom:")) {
+        const z = normalizeZoom(id.slice("zoom:".length));
+        setSettings((prev) => {
+          const next = { ...prev, zoom: z };
+          saveSettings(next);
+          return next;
+        });
+        setNotice({ text: `화면 비율: ${z}%`, key: Date.now() });
+      }
     }).then((fn) => {
       if (disposed) fn();
       else unlisten = fn;
@@ -191,7 +242,7 @@ function App() {
 
   useEffect(() => {
     if (!notice) return;
-    const timer = setTimeout(() => setNotice(null), 6000);
+    const timer = setTimeout(() => setNotice(null), 3000);
     return () => clearTimeout(timer);
   }, [notice]);
 
@@ -201,11 +252,11 @@ function App() {
       ? analysis.characters.find((c) => c.name === characterKey(project.activeDoc.name)) ?? null
       : undefined;
 
-  // 트리 작업 알림은 8초 뒤 사라진다.
+  // 트리 작업 알림은 2.5초 뒤 사라진다.
   const { treeUndo, dismissTreeUndo } = project;
   useEffect(() => {
     if (!treeUndo) return;
-    const timer = setTimeout(dismissTreeUndo, 8000);
+    const timer = setTimeout(dismissTreeUndo, 2500);
     return () => clearTimeout(timer);
   }, [treeUndo, dismissTreeUndo]);
 
@@ -237,15 +288,99 @@ function App() {
 
   const docChars = useMemo(() => project.activeText.replace(/\s/g, "").length, [project.activeText]);
 
+  const updatePresets = useCallback((next: DocPreset[]) => {
+    setPresets(next);
+    savePresets(next);
+  }, []);
+
+  /** 프리셋 메뉴에서 프리셋을 눌렀을 때: 빈 문서가 열려 있으면 거기에 적용하고, 아니면 새 문서를 만든다. */
+  const handleSelectPreset = useCallback(
+    (preset: DocPreset) => {
+      setPresetMenuPos(null);
+      setPresetModal(null);
+      if (!isScript && !openRevision && !presetModal && project.activeText.trim() === "") {
+        project.applyPresetToDoc(project.activeDoc.id, preset);
+        return;
+      }
+      setOpenRevisionId(null);
+      const targetFolder =
+        preset.docType === "character"
+          ? folderNamed(project.tree, "인물 설정") ?? folderNamed(project.tree, "인물")
+          : findParent(project.tree, project.activeDoc.id)?.id ?? folderNamed(project.tree, "메모");
+      project.addDocWithPreset(targetFolder ?? null, preset);
+      setShowSidebar(true);
+    },
+    [isScript, openRevision, presetModal, project, setShowSidebar],
+  );
+
+  /** 3막 구조 보드 열기(이미 있으면 열고, 없으면 '개요' 폴더 안에 새로 만든다) */
+  const handleOpenOrCreateStructure = useCallback(
+    (forceNew = false) => {
+      setPresetMenuPos(null);
+      setPresetModal(null);
+      setOpenRevisionId(null);
+      if (!forceNew) {
+        const existing = walkDocs(project.tree).find((d) => d.type === "structure");
+        if (existing) {
+          if (existing.name === "3막 구조") {
+            project.rename(existing.id, "3막 구조(세이브 더 캣)");
+          }
+          project.openDoc(existing.id);
+          return;
+        }
+      }
+      const targetFolder = folderNamed(project.tree, "개요");
+      project.addDoc(targetFolder ?? null, "structure", "3막 구조(세이브 더 캣)");
+      setShowSidebar(true);
+    },
+    [project, setShowSidebar],
+  );
+
+  // 상단 헤더 왼쪽 경로 표시: "프로젝트 이름 - 선택한 폴더 - 문서 이름"
+  const headerPathLabel = useMemo(() => {
+    if (presetModal) {
+      return `${project.title} - 프리셋 - ${presetModal.initial ? presetModal.initial.name : "새 프리셋 만들기"}`;
+    }
+    if (openRevision) {
+      return `${project.title} - 수정고 - ${openRevision.name}`;
+    }
+    const folders: string[] = [];
+    let curId: string | null = project.activeDoc.id;
+    while (curId) {
+      const parent = findParent(project.tree, curId);
+      if (!parent) break;
+      folders.unshift(parent.name);
+      curId = parent.id;
+    }
+    return [project.title, ...folders, project.activeDoc.name].join(" - ");
+  }, [openRevision, presetModal, project.activeDoc.id, project.activeDoc.name, project.title, project.tree]);
+
+  const handleFullResetApp = useCallback(async () => {
+    const ok = await project.resetToInitialState();
+    if (!ok) return;
+    clearAllAppStorage();
+    setSettings(DEFAULT_SETTINGS);
+    setPresets(DEFAULT_PRESETS);
+    setShowSidebar(true);
+    setShowStats(false);
+    setOpenRevisionId(null);
+    setPresetModal(null);
+    setSettingsOpen(false);
+    setNotice({ text: "프로그램을 처음 상태로 초기화했습니다.", key: Date.now() });
+  }, [project, setShowSidebar, setShowStats]);
+
+  const zoomStyle = settings.zoom !== 100 ? { zoom: settings.zoom / 100 } : undefined;
+
   return (
-    <div className="app">
+    <div
+      className={`app${!settings.showSceneNumbers ? " hide-scene-numbers" : ""}${!settings.highlightCurrentLine ? " hide-current-line" : ""}`}
+    >
       <header className="titlebar" data-tauri-drag-region>
-        <span className="app-name">DropKick</span>
-        <span className="doc-name" title={project.path ?? "아직 저장하지 않았습니다"}>
-          {project.title}
+        <span className="titlebar-path" title={project.path ?? "아직 저장하지 않았습니다"}>
+          {headerPathLabel}
         </span>
-        <span className="doc-kind">프로젝트</span>
         {project.dirty && <span className="doc-dirty">수정됨</span>}
+        <span className="app-name">DropKick!</span>
       </header>
 
       {/* 도구모음: 아래 사이드바 / 원고 / 통계와 같은 세 칸으로 나눈다. */}
@@ -265,10 +400,34 @@ function App() {
             <span className="style-name">사이드바</span>
             <kbd>⌥⌘1</kbd>
           </button>
+          <button
+            type="button"
+            className={presetMenuPos ? "style-button active" : "style-button"}
+            aria-expanded={Boolean(presetMenuPos)}
+            title="문서 프리셋 (기본 프리셋 및 추가한 프리셋 선택)"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => {
+              if (presetMenuPos) {
+                setPresetMenuPos(null);
+              } else {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setPresetMenuPos({ x: rect.left, y: rect.bottom + 4 });
+              }
+            }}
+          >
+            <span className="style-name">프리셋 ▾</span>
+          </button>
         </div>
 
         <div className="toolbar-center" aria-label="문장 스타일">
-          {openRevision ? (
+          {presetModal ? (
+            <span className="stylebar-doc">
+              프리셋 · {presetModal.initial ? `${presetModal.initial.name} 편집` : "새 프리셋 만들기"}
+              <button type="button" className="style-button" onClick={() => setPresetModal(null)}>
+                ← 돌아가기
+              </button>
+            </span>
+          ) : openRevision ? (
             <span className="stylebar-doc">
               수정고 · {openRevision.name}
               <button type="button" className="style-button" onClick={() => setOpenRevisionId(null)}>
@@ -316,6 +475,15 @@ function App() {
         <div className="toolbar-right">
           <button
             type="button"
+            className={!isScript && !openRevision && !presetModal && project.activeDoc.type === "structure" ? "style-button active" : "style-button"}
+            title="3막 구조 보드 (세이브 더 캣 15단계)"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => handleOpenOrCreateStructure(false)}
+          >
+            <span className="style-name">3막 구조</span>
+          </button>
+          <button
+            type="button"
             className={showStats ? "style-button active" : "style-button"}
             aria-pressed={showStats}
             title="통계 보기/숨기기 (⌥⌘2)"
@@ -343,27 +511,44 @@ function App() {
             onFilterChange={setTreeFilter}
             onOpenDoc={(id) => {
               setOpenRevisionId(null);
+              setPresetModal(null);
               project.openDoc(id);
             }}
             onSelectScene={goToLine}
-            onAdd={(kind, parentId) =>
-              kind === "folder"
-                ? project.addFolder(parentId)
-                : project.addDoc(parentId, kind === "character" ? "character" : "memo")
-            }
+            onAdd={(kind, parentId) => {
+              setPresetModal(null);
+              setOpenRevisionId(null);
+              if (kind === "folder") return project.addFolder(parentId);
+              if (kind === "structure") return project.addDoc(parentId, "structure");
+              return project.addDoc(parentId, kind === "character" ? "character" : "memo");
+            }}
+            presets={presets}
+            onAddPreset={(preset, parentId) => {
+              setOpenRevisionId(null);
+              setPresetModal(null);
+              return project.addDocWithPreset(parentId, preset);
+            }}
+            onCreatePreset={() => {
+              setOpenRevisionId(null);
+              setPresetModal({ initial: null });
+            }}
             onRename={project.rename}
             onRemove={project.remove}
             onMove={project.move}
+            onSetIcon={project.setIcon}
             revisions={project.revisions}
             openRevisionId={openRevisionId}
-            onOpenRevision={setOpenRevisionId}
+            onOpenRevision={(id) => {
+              setPresetModal(null);
+              setOpenRevisionId(id);
+            }}
             onNewRevision={() => setNewRevisionOpen(true)}
           />
         )}
 
         {/* 원고 에디터는 항상 살려 두고(되돌리기 기록, 분석 유지) 다른 문서를 볼 때만 숨긴다. */}
         <main className="desk" hidden={!isScript}>
-          <article className="paper">
+          <article className="paper" style={zoomStyle}>
             <span className="page-number" aria-hidden="true">
               1.
             </span>
@@ -396,7 +581,49 @@ function App() {
           />
         )}
 
-        {!isScript && !openRevision && (
+        {presetModal && (
+          <PresetEditorView
+            key={presetModal.initial?.id ?? "new"}
+            initial={presetModal.initial}
+            draft={presetModal.draft}
+            canDelete={presets.length > 1 || presetModal.initial?.id !== "preset-character"}
+            onSave={(savedPreset) => {
+              const exists = presets.some((p) => p.id === savedPreset.id);
+              const next = exists
+                ? presets.map((p) => (p.id === savedPreset.id ? savedPreset : p))
+                : [...presets, savedPreset];
+              updatePresets(next);
+              setNotice({
+                text: exists
+                  ? `"${savedPreset.name}" 프리셋을 저장했습니다.`
+                  : `"${savedPreset.name}" 프리셋을 추가했습니다.`,
+                key: Date.now(),
+              });
+            }}
+            onDelete={(id) => {
+              const target = presets.find((p) => p.id === id);
+              const next = presets.filter((p) => p.id !== id);
+              updatePresets(next.length > 0 ? next : loadPresets());
+              if (target) {
+                setNotice({ text: `"${target.name}" 프리셋을 지웠습니다.`, key: Date.now() });
+              }
+            }}
+            onClose={() => setPresetModal(null)}
+          />
+        )}
+
+        {!isScript && !openRevision && !presetModal && project.activeDoc.type === "structure" && (
+          <StructureBoardView
+            text={project.activeText}
+            scenes={analysis.scenes}
+            totalPages={analysis.pages}
+            runtimeMinutes={analysis.runtimeMinutes}
+            onChange={(nextText) => project.setDocText(project.activeDoc.id, nextText)}
+            onSelectScene={goToLine}
+          />
+        )}
+
+        {!isScript && !openRevision && !presetModal && project.activeDoc.type !== "structure" && (
           <main className="text-desk">
             {activeCharacter !== undefined && (
               <div className="character-info">
@@ -426,7 +653,7 @@ function App() {
                 )}
               </div>
             )}
-            <article className="text-page">
+            <article className="text-page" style={zoomStyle}>
               <TextEditor
                 ref={textEditorRef}
                 docId={project.activeDoc.id}
@@ -510,6 +737,123 @@ function App() {
         />
       )}
 
+      {presetMenuPos &&
+        createPortal(
+          <div className="icon-popover-backdrop" onMouseDown={() => setPresetMenuPos(null)}>
+            <div
+              className="tree-menu preset-menu"
+              role="menu"
+              aria-label="프리셋 메뉴"
+              style={{ left: presetMenuPos.x, top: presetMenuPos.y }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="preset-menu-section-label">기본 프리셋</div>
+              <div className="preset-menu-row">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="preset-menu-main"
+                  onClick={() => handleOpenOrCreateStructure(true)}
+                >
+                  <span className="tree-icon">
+                    <SfSymbolIcon type="structure" />
+                  </span>
+                  <span className="preset-two-line">
+                    <span>3막 구조</span>
+                    <span>(세이브 더 캣)</span>
+                  </span>
+                </button>
+              </div>
+              {presets
+                .filter((p) => p.id === "preset-character")
+                .map((preset) => (
+                  <div key={preset.id} className="preset-menu-row">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="preset-menu-main"
+                      onClick={() => handleSelectPreset(preset)}
+                    >
+                      <span className="tree-icon">
+                        <SfSymbolIcon type={preset.docType} icon={preset.icon} />
+                      </span>
+                      <span>인물 양식</span>
+                    </button>
+                  </div>
+                ))}
+
+              {presets.some((p) => p.id !== "preset-character") && (
+                <>
+                  <hr />
+                  <div className="preset-menu-section-label">추가한 프리셋</div>
+                  <div className="preset-custom-scroll">
+                    {presets
+                      .filter((p) => p.id !== "preset-character")
+                      .map((preset) => (
+                        <div key={preset.id} className="preset-menu-row">
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="preset-menu-main"
+                            onClick={() => handleSelectPreset(preset)}
+                          >
+                            <span className="tree-icon">
+                              <SfSymbolIcon type={preset.docType} icon={preset.icon} />
+                            </span>
+                            <span>{preset.name}</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="preset-menu-edit"
+                            title={`"${preset.name}" 프리셋 편집`}
+                            onClick={() => {
+                              setPresetMenuPos(null);
+                              setPresetModal({ initial: preset });
+                            }}
+                          >
+                            편집
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                </>
+              )}
+              <hr />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setPresetMenuPos(null);
+                  setPresetModal({ initial: null });
+                }}
+              >
+                + 새 프리셋 만들기…
+              </button>
+              {!isScript && !openRevision && !presetModal && project.activeDoc.type !== "structure" && project.activeText.trim() !== "" && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setPresetMenuPos(null);
+                    setPresetModal({
+                      initial: null,
+                      draft: {
+                        name: project.activeDoc.name,
+                        body: project.activeText,
+                        icon: project.activeDoc.icon,
+                        docType: project.activeDoc.type === "character" ? "character" : "memo",
+                      },
+                    });
+                  }}
+                >
+                  지금 문서를 프리셋으로 저장…
+                </button>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
+
       {newRevisionOpen && (
         <NewRevisionDialog
           defaultName={nextRevisionName(project.revisions)}
@@ -520,6 +864,21 @@ function App() {
           }}
         />
       )}
+
+      {settingsOpen && (
+        <SettingsDialog
+          settings={settings}
+          presets={presets}
+          onChangeSettings={updateSettings}
+          onUpdatePresets={updatePresets}
+          onOpenNewPreset={() => setPresetModal({ initial: null })}
+          onEditPreset={(preset) => setPresetModal({ initial: preset })}
+          onFullResetApp={handleFullResetApp}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
+      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
 
       {notice && (
         <div className="toast" role="status" key={notice.key}>

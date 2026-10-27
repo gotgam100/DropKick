@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createProject, walkDocs, type ProjectNode } from "./model";
+import { createProject, parseManifest, serializeManifest, walkDocs, type ProjectNode } from "./model";
+import { DEFAULT_CHARACTER_PRESET, createCustomPreset, formatPresetText, loadPresets } from "./presets";
 import {
+  CHARACTER_TEMPLATE,
   findNode,
   folderNamed,
   insertNode,
@@ -10,6 +12,7 @@ import {
   planFiles,
   removeNode,
   renameNode,
+  setNodeIcon,
 } from "./tree";
 
 function names(tree: ProjectNode[]): unknown[] {
@@ -100,6 +103,18 @@ describe("트리 편집", () => {
     next = moveNode(next, ids.people, ids.people, "inside");
     expect(names(next)[2]).toEqual({ "인물 설정": ["민재", "수아", { 속: [] }] });
   });
+
+  it("폴더와 문서의 커스텀 아이콘을 바꾸고 project.json에 저장·복원한다", () => {
+    const { manifest } = createProject("드롭킥");
+    const people = folderNamed(manifest.tree, "인물 설정")!;
+    let next = setNodeIcon(manifest.tree, people, "character");
+    next = setNodeIcon(next, manifest.mainScript, "clapper");
+    const parsed = parseManifest(serializeManifest({ ...manifest, tree: next }));
+    expect(findNode(parsed.tree, people)?.icon).toBe("character");
+    expect(findNode(parsed.tree, manifest.mainScript)?.icon).toBe("clapper");
+    const reset = setNodeIcon(parsed.tree, people, undefined);
+    expect(findNode(reset, people)?.icon).toBeUndefined();
+  });
 });
 
 describe("저장할 파일 경로", () => {
@@ -117,5 +132,16 @@ describe("저장할 파일 경로", () => {
       { id: "b", type: "memo", name: "A-B- 메모", file: "" },
     ];
     expect(walkDocs(planFiles(tree)).map((d) => d.file)).toEqual(["A-B- 메모.md", "A-B- 메모 2.md"]);
+  });
+
+  it("기본 프리셋으로 인물 양식이 들어 있고 사용자 프리셋을 만들 수 있다", () => {
+    expect(loadPresets()[0]?.name).toBe("인물 양식");
+    expect(formatPresetText(DEFAULT_CHARACTER_PRESET, "민재")).toBe(CHARACTER_TEMPLATE("민재"));
+    const custom = createCustomPreset({
+      name: "장소 설정",
+      body: "# 기존 제목\n\n## 분위기\n- 조명:\n",
+    });
+    expect(custom.defaultDocName).toBe("새 장소");
+    expect(formatPresetText(custom, "옥상")).toBe("# 옥상\n\n## 분위기\n- 조명:\n");
   });
 });

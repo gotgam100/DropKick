@@ -2,13 +2,16 @@
  * 왼쪽 사이드바 트리: 시나리오(펼치면 씬), 시놉시스, 인물, 메모 문서와 폴더.
  * 누르면 열기, 두 번 누르면 이름 바꾸기, 오른쪽 클릭 메뉴, 끌어서 옮기기, 찾기.
  */
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { formatEighths, type SceneSummary } from "../analysis/analyze";
 import type { ProjectNode, RevisionMeta } from "../project/model";
+import type { DocPreset } from "../project/presets";
 import { findParent, type DropPosition } from "../project/tree";
 import { searchProject, type Snippet } from "./search";
+import { IconPickerDialog, SfSymbolIcon } from "./sfSymbols";
 
-type NewKind = "doc" | "character" | "folder";
+type NewKind = "doc" | "character" | "structure" | "folder";
 
 type Props = {
   title: string;
@@ -25,9 +28,13 @@ type Props = {
   onOpenDoc: (id: string) => void;
   onSelectScene: (line: number) => void;
   onAdd: (kind: NewKind, parentId: string | null) => string | null;
+  presets?: DocPreset[];
+  onAddPreset?: (preset: DocPreset, parentId: string | null) => string | null;
+  onCreatePreset?: () => void;
   onRename: (id: string, name: string) => void;
   onRemove: (id: string) => void;
   onMove: (id: string, targetId: string, position: DropPosition) => void;
+  onSetIcon?: (id: string, icon?: string) => void;
   /** 수정고 (사이드바 맨 아래) */
   revisions: RevisionMeta[];
   openRevisionId: string | null;
@@ -36,49 +43,6 @@ type Props = {
 };
 
 // ---------- 아이콘 ----------
-
-function Icon({ type, open }: { type: ProjectNode["type"]; open?: boolean }) {
-  const common = { width: 16, height: 16, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.3, "aria-hidden": true } as const;
-  switch (type) {
-    case "folder":
-      return (
-        <svg {...common}>
-          {open ? (
-            <path d="M1.5 4.5v8h11l2-5.5H4l-2 5.5M1.5 4.5V3h4l1.5 1.5h5.5V7" strokeLinejoin="round" />
-          ) : (
-            <path d="M1.5 3h4L7 4.5h7.5v8h-13z" strokeLinejoin="round" />
-          )}
-        </svg>
-      );
-    case "script":
-      return (
-        <svg {...common}>
-          <rect x="3" y="1.5" width="10" height="13" rx="1" />
-          <path d="M5.5 5h5M5.5 7.5h5M7 10h3.5" strokeLinecap="round" />
-        </svg>
-      );
-    case "synopsis":
-      return (
-        <svg {...common}>
-          <path d="M2 3.5c2-1 4-1 6 0v10c-2-1-4-1-6 0zM8 3.5c2-1 4-1 6 0v10c-2-1-4-1-6 0z" strokeLinejoin="round" />
-        </svg>
-      );
-    case "character":
-      return (
-        <svg {...common}>
-          <circle cx="8" cy="5.5" r="2.8" />
-          <path d="M2.5 14c.6-3 2.8-4.5 5.5-4.5s4.9 1.5 5.5 4.5" strokeLinecap="round" />
-        </svg>
-      );
-    default:
-      return (
-        <svg {...common}>
-          <path d="M3 1.5h7l3 3v10H3z" strokeLinejoin="round" />
-          <path d="M10 1.5v3h3" strokeLinejoin="round" />
-        </svg>
-      );
-  }
-}
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -115,9 +79,13 @@ export function ProjectTree(props: Props) {
     onOpenDoc,
     onSelectScene,
     onAdd,
+    presets,
+    onAddPreset,
+    onCreatePreset,
     onRename,
     onRemove,
     onMove,
+    onSetIcon,
     revisions,
     openRevisionId,
     onOpenRevision,
@@ -132,6 +100,8 @@ export function ProjectTree(props: Props) {
   const [renaming, setRenaming] = useState<string | null>(null);
   // 오른쪽 클릭 메뉴. node가 null이면 빈 곳을 누른 것
   const [menu, setMenu] = useState<{ x: number; y: number; node: ProjectNode | null } | null>(null);
+  // 아이콘 변경 팝업 대상 노드와 위치
+  const [pickingIcon, setPickingIcon] = useState<{ node: ProjectNode; x: number; y: number } | null>(null);
   // 끌어서 옮기기 (마우스를 직접 따라간다. 맥 앱 엔진에서도 똑같이 동작하도록)
   const [drag, setDrag] = useState<{
     id: string;
@@ -144,6 +114,32 @@ export function ProjectTree(props: Props) {
   const pressRef = useRef<{ id: string; name: string; x: number; y: number } | null>(null);
   const suppressClickRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
+
+  // 우클릭 메뉴가 창 아래나 오른쪽 밖으로 잘리지 않도록 위치를 보정한다.
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el || !menu || typeof window === "undefined") return;
+    const rect = el.getBoundingClientRect();
+    const margin = 12;
+    const nextLeft = Math.max(margin, Math.min(menu.x, window.innerWidth - rect.width - margin));
+    const nextTop = Math.max(margin, Math.min(menu.y, window.innerHeight - rect.height - margin));
+    el.style.left = `${nextLeft}px`;
+    el.style.top = `${nextTop}px`;
+  }, [menu]);
+
+  const adjustSubmenuPosition = () => {
+    const sub = submenuRef.current;
+    if (!sub || typeof window === "undefined") return;
+    sub.style.top = "-5px";
+    const rect = sub.getBoundingClientRect();
+    const margin = 12;
+    if (rect.bottom > window.innerHeight - margin) {
+      const shift = rect.bottom - (window.innerHeight - margin);
+      sub.style.top = `${-5 - shift}px`;
+    }
+  };
 
   const query = filter.trim();
   const shown = useMemo(
@@ -200,6 +196,15 @@ export function ProjectTree(props: Props) {
     const id = onAdd(kindToAdd, parentId);
     if (id) {
       // 새 항목이 보이도록 들어간 폴더를 펼친다.
+      if (parentId) expand(parentId);
+      setRenaming(id);
+    }
+  };
+
+  const addPreset = (preset: DocPreset, parentId: string | null) => {
+    if (!onAddPreset) return;
+    const id = onAddPreset(preset, parentId);
+    if (id) {
       if (parentId) expand(parentId);
       setRenaming(id);
     }
@@ -396,8 +401,8 @@ export function ProjectTree(props: Props) {
             >
               {expandable && <Chevron open={open} />}
             </span>
-            <span className={`tree-icon icon-${node.type}`}>
-              <Icon type={node.type} open={open} />
+            <span className={`tree-icon icon-${node.icon ?? node.type}`}>
+              <SfSymbolIcon type={node.type} icon={node.icon} open={open} />
             </span>
             {renderName(node)}
             {dirtyDocIds.has(node.id) && <span className="tree-dirty" title="저장하지 않은 변경 사항" />}
@@ -405,12 +410,12 @@ export function ProjectTree(props: Props) {
               <button
                 type="button"
                 className="tree-plus"
-                title={`"${node.name}"에 새 문서`}
+                title={`"${node.name}"에 ${node.name === "인물 설정" || node.icon === "character" || node.icon === "person" ? "새 인물 설정" : "새 문서"}`}
                 aria-label={`${node.name}에 새 문서`}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={(e) => {
                   e.stopPropagation();
-                  add("doc", node.id);
+                  add(node.name === "인물 설정" || node.icon === "character" || node.icon === "person" ? "character" : "doc", node.id);
                 }}
               >
                 +
@@ -537,73 +542,203 @@ export function ProjectTree(props: Props) {
         )}
       </div>
 
-      {menu && (
-        <div className="tree-menu" role="menu" style={{ left: menu.x, top: menu.y }} onClick={(e) => e.stopPropagation()}>
-          {menu.node && (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setRenaming(menu.node!.id);
-                setMenu(null);
-              }}
-            >
-              이름 바꾸기
-            </button>
-          )}
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              add("doc", menuParent(menu.node));
-              setMenu(null);
-            }}
-          >
-            새 문서{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              add("character", menuParent(menu.node));
-              setMenu(null);
-            }}
-          >
-            새 인물 설정{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              add("folder", menuParent(menu.node));
-              setMenu(null);
-            }}
-          >
-            새 폴더{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}
-          </button>
-          {menu.node && menu.node.id !== mainScriptId && (
-            <>
-              <hr />
-              <button
-                type="button"
-                role="menuitem"
-                className="danger"
-                onClick={() => {
-                  const id = menu.node!.id;
-                  setMenu(null);
-                  onRemove(id);
-                }}
+      {menu &&
+        (typeof document !== "undefined"
+          ? createPortal(
+              <div
+                ref={menuRef}
+                className="tree-menu"
+                role="menu"
+                style={{ left: menu.x, top: menu.y }}
+                onClick={(e) => e.stopPropagation()}
               >
-                지우기…
-              </button>
-            </>
-          )}
-        </div>
-      )}
+                {menu.node && (
+                  <>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setRenaming(menu.node!.id);
+                        setMenu(null);
+                      }}
+                    >
+                      이름 바꾸기
+                    </button>
+                    {onSetIcon && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setPickingIcon({ node: menu.node!, x: menu.x, y: menu.y });
+                          setMenu(null);
+                        }}
+                      >
+                        아이콘 변경…
+                      </button>
+                    )}
+                    <hr />
+                  </>
+                )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    add("doc", menuParent(menu.node));
+                    setMenu(null);
+                  }}
+                >
+                  새 문서{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    add("folder", menuParent(menu.node));
+                    setMenu(null);
+                  }}
+                >
+                  새 폴더{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}
+                </button>
+                {presets && onAddPreset ? (
+                  <div
+                    className="tree-submenu-trigger"
+                    role="menuitem"
+                    aria-haspopup="menu"
+                    onMouseEnter={adjustSubmenuPosition}
+                  >
+                    <span>프리셋{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}</span>
+                    <span className="tree-submenu-arrow" aria-hidden="true">
+                      ▸
+                    </span>
+                    <div ref={submenuRef} className="tree-menu tree-submenu" role="menu">
+                      <div className="preset-menu-section-label">기본 프리셋</div>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="tree-submenu-item"
+                        onClick={() => {
+                          add("structure", menuParent(menu.node));
+                          setMenu(null);
+                        }}
+                      >
+                        <span className="tree-icon">
+                          <SfSymbolIcon type="structure" />
+                        </span>
+                        <span className="preset-two-line">
+                          <span>3막 구조</span>
+                          <span>(세이브 더 캣)</span>
+                        </span>
+                      </button>
+                      {presets
+                        .filter((p) => p.id === "preset-character")
+                        .map((preset) => (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            role="menuitem"
+                            className="tree-submenu-item"
+                            onClick={() => {
+                              addPreset(preset, menuParent(menu.node));
+                              setMenu(null);
+                            }}
+                          >
+                            <span className="tree-icon">
+                              <SfSymbolIcon type={preset.docType} icon={preset.icon} />
+                            </span>
+                            <span>인물 양식</span>
+                          </button>
+                        ))}
+                      {presets.some((p) => p.id !== "preset-character") && (
+                        <>
+                          <hr />
+                          <div className="preset-menu-section-label">추가한 프리셋</div>
+                          <div className="preset-custom-scroll">
+                            {presets
+                              .filter((p) => p.id !== "preset-character")
+                              .map((preset) => (
+                                <button
+                                  key={preset.id}
+                                  type="button"
+                                  role="menuitem"
+                                  className="tree-submenu-item"
+                                  onClick={() => {
+                                    addPreset(preset, menuParent(menu.node));
+                                    setMenu(null);
+                                  }}
+                                >
+                                  <span className="tree-icon">
+                                    <SfSymbolIcon type={preset.docType} icon={preset.icon} />
+                                  </span>
+                                  <span>{preset.name}</span>
+                                </button>
+                              ))}
+                          </div>
+                        </>
+                      )}
+                      {onCreatePreset && (
+                        <>
+                          <hr />
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setMenu(null);
+                              onCreatePreset();
+                            }}
+                          >
+                            + 새 프리셋 만들기…
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      add("character", menuParent(menu.node));
+                      setMenu(null);
+                    }}
+                  >
+                    새 인물 설정{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}
+                  </button>
+                )}
+                {menu.node && menu.node.id !== mainScriptId && (
+                  <>
+                    <hr />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="danger"
+                      onClick={() => {
+                        const id = menu.node!.id;
+                        setMenu(null);
+                        onRemove(id);
+                      }}
+                    >
+                      지우기…
+                    </button>
+                  </>
+                )}
+              </div>,
+              document.body,
+            )
+          : null)}
       {drag && (
         <div className="tree-drag-ghost" style={{ left: drag.x + 12, top: drag.y + 8 }}>
           {drag.name}
         </div>
+      )}
+
+      {pickingIcon && onSetIcon && (
+        <IconPickerDialog
+          node={pickingIcon.node}
+          x={pickingIcon.x}
+          y={pickingIcon.y}
+          onApply={(icon) => onSetIcon(pickingIcon.node.id, icon)}
+          onClose={() => setPickingIcon(null)}
+        />
       )}
     </aside>
   );

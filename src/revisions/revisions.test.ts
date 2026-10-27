@@ -36,14 +36,55 @@ describe("원고 비교", () => {
       "added:내부. 라커룸 - 밤",
       "same:내부. 집 - 낮",
     ]);
-    const changed = result.scenes[0];
-    expect(changed.ops.filter((o) => o.kind !== "same").map((o) => `${o.kind}:${o.line.text}`)).toEqual([
-      "del:내부. 체육관 - 밤",
-      "add:S#1. 내부. 체육관 - 밤",
-      "del:딱 한 번만 더.",
-      "add:이번엔 진짜 마지막이야.",
-    ]);
     expect([result.addedScenes, result.removedScenes, result.changedScenes]).toEqual([1, 1, 1]);
+  });
+
+  it("같은 장소 씬이 여러 개일 때 앞쪽 씬을 지워도 뒤쪽 씬이 어긋나지 않는다", () => {
+    const multi = [
+      S("내부. 체육관 - 낮"),
+      A("첫 체육관."),
+      S("외부. 골목 - 밤"),
+      A("첫 골목."),
+      S("내부. 집 - 낮"),
+      A("집."),
+      S("외부. 골목 - 밤"),
+      A("두 번째 골목."),
+    ];
+    // 2씬(첫 골목)만 지운 원고
+    const afterDelete = [
+      S("내부. 체육관 - 낮"),
+      A("첫 체육관."),
+      S("내부. 집 - 낮"),
+      A("집."),
+      S("외부. 골목 - 밤"),
+      A("두 번째 골목."),
+    ];
+    const result = compareScripts(multi, afterDelete);
+    expect(result.scenes.map((s) => `${s.kind}:S#${s.number}:${s.heading}`)).toEqual([
+      "same:S#1:내부. 체육관 - 낮",
+      "removed:S#2:외부. 골목 - 밤",
+      "same:S#2:내부. 집 - 낮",
+      "same:S#3:외부. 골목 - 밤",
+    ]);
+  });
+
+  it("씬헤딩을 고쳐도 본문이 같으면 한 씬으로 묶어 1씬이 두 개로 나뉘지 않는다", () => {
+    const editedHeading = [
+      S("내부. 체육관 - 새벽"), // 밤 → 새벽으로 수정
+      A("민재가 서 있다."),
+      C("민재"),
+      D("딱 한 번만 더."),
+      S("외부. 골목 - 밤"),
+      A("비가 온다."),
+      S("내부. 집 - 낮"),
+      A("조용하다."),
+    ];
+    const result = compareScripts(before, editedHeading);
+    expect(result.scenes.map((s) => `${s.kind}:S#${s.number}:${s.heading}`)).toEqual([
+      "changed:S#1:내부. 체육관 - 새벽",
+      "same:S#2:외부. 골목 - 밤",
+      "same:S#3:내부. 집 - 낮",
+    ]);
   });
 
   it("줄 비교는 가운데에 끼운 줄만 추가로 본다", () => {
@@ -54,6 +95,29 @@ describe("원고 비교", () => {
   it("일반 글도 줄 단위로 비교한다", () => {
     const ops = diffText("# 민재\n- 나이: 34", "# 민재\n- 나이: 35");
     expect(ops.map((o) => `${o.kind}:${o.line.text}`)).toEqual(["same:# 민재", "del:- 나이: 34", "add:- 나이: 35"]);
+  });
+
+  it("바뀐 곳을 새 원고의 줄 위에 표시한다 (새 줄, 고친 줄, 지운 줄)", () => {
+    const after = [
+      S("내부. 체육관 - 밤"), // 0
+      A("민재가 서 있다."), // 1
+      C("민재"), // 2
+      D("이번엔 진짜 마지막이야."), // 3 고친 줄
+      S("내부. 라커룸 - 밤"), // 4 새 씬 (골목 씬은 지움)
+      A("새로 넣은 씬."), // 5
+      S("내부. 집 - 낮"), // 6
+    ]; // 마지막 "조용하다."는 지움
+    const { marks, scenes } = compareScripts(before, after);
+    expect(marks.get(3)).toMatchObject({ kind: "changed", before: [D("딱 한 번만 더.")] });
+    // 지운 골목 씬은 그 다음 줄(라커룸 씬헤딩) 앞에 표시. 라커룸 씬은 새 씬
+    expect(marks.get(4)?.kind).toBe("added");
+    expect(marks.get(4)?.removed?.map((l) => l.text)).toEqual(["외부. 골목 - 밤", "비가 온다."]);
+    expect(marks.get(5)?.kind).toBe("added");
+    // 원고 맨 끝에서 지운 줄은 마지막 줄 뒤에
+    expect(marks.get(6)).toMatchObject({ atEnd: true, removed: [A("조용하다.")] });
+    expect([0, 1, 2].some((i) => marks.has(i))).toBe(false);
+    // 씬마다 놓인 자리 (지운 씬은 지운 자리)
+    expect(scenes.map((s) => s.anchor)).toEqual([0, 4, 4, 6]);
   });
 });
 

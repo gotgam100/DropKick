@@ -54,8 +54,22 @@ function DiffLines({ ops, context = 1 }: { ops: LineOp[]; context?: number }) {
   return <div className="diff-lines">{rows}</div>;
 }
 
-function Comparison({ before, after }: { before: Snapshot; after: Snapshot }) {
+function Comparison({
+  before,
+  after,
+  target,
+  onChangeTarget,
+  otherRevisions,
+}: {
+  before: Snapshot;
+  after: Snapshot;
+  target: string;
+  onChangeTarget: (id: string) => void;
+  otherRevisions: RevisionMeta[];
+}) {
   const script = useMemo(() => compareScripts(before.lines, after.lines), [before, after]);
+  const [scrollTo, setScrollTo] = useState<{ line: number; seq: number } | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
   const docChanges = useMemo(() => {
     const beforeById = new Map(before.docs.map((d) => [d.doc.id, d]));
     const afterById = new Map(after.docs.map((d) => [d.doc.id, d]));
@@ -69,69 +83,190 @@ function Comparison({ before, after }: { before: Snapshot; after: Snapshot }) {
     for (const d of before.docs) if (!afterById.has(d.doc.id)) out.push({ name: d.doc.name, kind: "removed", ops: diffText(d.text, "") });
     return out;
   }, [before, after]);
-  const same = script.scenes.filter((s) => s.kind === "same").length;
-  const label = { added: "추가", removed: "삭제", changed: "변경", same: "같음" } as const;
+  const label = { added: "새 씬", removed: "삭제 포함", changed: "고친 씬", same: "그대로" } as const;
+  const docLabel = { added: "추가", removed: "삭제", changed: "변경" } as const;
+
+  // 막대는 비교 대상 원고(after) 하나를 기준으로: 1씬(S#1~) = 1막대.
+  // 첫 씬 앞(FADE IN: 등, number === 0)이나 지운 옛 씬은 해당 자리의 실제 씬 막대에 합쳐서 표시한다.
+  const barScenes = useMemo(() => {
+    const realScenes = script.scenes.filter((s) => s.kind !== "removed" && s.number > 0);
+    const base = realScenes.length > 0 ? realScenes : script.scenes.filter((s) => s.kind !== "removed");
+    const present = base.map((s) => ({ ...s, deletedScenes: [] as typeof script.scenes }));
+    if (present.length === 0) return present;
+    // 첫 씬 앞(number === 0)에 수정이 있으면 S#1 막대에 합친다.
+    for (const pre of script.scenes.filter((s) => s.kind !== "removed" && s.number === 0 && realScenes.length > 0)) {
+      present[0].added += pre.added;
+      present[0].removed += pre.removed;
+      if (pre.kind !== "same" && present[0].kind === "same") present[0].kind = "changed";
+    }
+    for (const rem of script.scenes.filter((s) => s.kind === "removed")) {
+      const target = present.find((p) => p.anchor >= rem.anchor) ?? present[present.length - 1];
+      target.deletedScenes.push(rem);
+    }
+    return present;
+  }, [script]);
+
+  const barKind = (s: (typeof barScenes)[number]): "added" | "changed" | "removed" | "same" => {
+    if (s.kind === "added") return "added";
+    if (s.deletedScenes.length > 0 && s.kind === "same") return "removed";
+    if (s.kind === "changed" && s.added === 0 && s.removed > 0) return "removed";
+    if (s.kind === "changed") return "changed";
+    return "same";
+  };
+
+  const sizes = barScenes.map((s) => Math.max(1, s.size));
+  const maxSize = Math.max(1, ...sizes);
+  const changedIdx = barScenes.map((s, i) => (barKind(s) !== "same" ? i : -1)).filter((i) => i >= 0);
+  const go = (i: number) => {
+    setSelected(i);
+    setScrollTo({ line: barScenes[i].anchor, seq: Date.now() });
+  };
+  const step = (dir: 1 | -1) => {
+    if (changedIdx.length === 0) return;
+    const from = selected ?? (dir === 1 ? -1 : barScenes.length);
+    const next = dir === 1 ? changedIdx.find((i) => i > from) ?? changedIdx[0] : [...changedIdx].reverse().find((i) => i < from) ?? changedIdx[changedIdx.length - 1];
+    go(next);
+  };
+  const delta = (a: number, b: number, unit: string) => {
+    const d = b - a;
+    return (
+      <>
+        {a}
+        {unit} → {b}
+        {unit}
+        {d !== 0 && <em className={d > 0 ? "plus" : "minus"}> ({d > 0 ? `+${d}` : `−${-d}`})</em>}
+      </>
+    );
+  };
+  const cleanHeading = (h: string) => h.replace(/^\s*S\s*#\s*\d+[A-Z]?\.?\s*/i, "").trim() || "(첫 씬 앞)";
+  const sceneTitle = (s: (typeof barScenes)[number]) => {
+    const k = barKind(s);
+    const num = s.number > 0 ? `S#${s.number} · ` : "";
+    const delNote =
+      s.deletedScenes.length > 0
+        ? ` (앞에서 지운 씬 ${s.deletedScenes.map((d) => `옛 S#${d.number}`).join(", ")})`
+        : "";
+    const counts = s.added || s.removed ? ` (+${s.added} −${s.removed})` : "";
+    return `${num}${cleanHeading(s.heading)} — ${label[k]}${counts}${delNote}`;
+  };
 
   return (
-    <div className="compare">
-      <div className="compare-summary">
-        <strong>{before.name}</strong> → <strong>{after.name}</strong>
-        <span>씬 추가 {script.addedScenes}</span>
-        <span>삭제 {script.removedScenes}</span>
-        <span>변경 {script.changedScenes}</span>
-        <span>
-          줄 <em className="plus">+{script.addedLines}</em> <em className="minus">−{script.removedLines}</em>
-        </span>
-        {before.pages !== undefined && after.pages !== undefined && (
-          <span>
-            페이지 {before.pages} → {after.pages}
-          </span>
-        )}
-        {before.runtime !== undefined && after.runtime !== undefined && (
-          <span>
-            러닝타임 약 {before.runtime}분 → {after.runtime}분
-          </span>
+    <>
+      <div className="compare-top">
+        <div className="compare-summary">
+          <div className="compare-stat compare-direction">
+            <strong>{before.name}</strong>
+            <span className="compare-arrow">→</span>
+            {otherRevisions.length === 0 ? (
+              <strong>{after.name}</strong>
+            ) : (
+              <select
+                className="compare-target-select"
+                aria-label="비교할 대상"
+                value={target}
+                onChange={(e) => onChangeTarget(e.target.value)}
+              >
+                <option value="current">지금 원고</option>
+                {otherRevisions.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className="compare-stat">
+            <span className="compare-stat-label">씬</span>
+            <span className="compare-stat-value">
+              추가 {script.addedScenes} · 삭제 {script.removedScenes} · 변경 {script.changedScenes}
+            </span>
+          </div>
+          <div className="compare-stat">
+            <span className="compare-stat-label">줄</span>
+            <span className="compare-stat-value">
+              <em className="plus">+{script.addedLines}</em> <em className="minus">−{script.removedLines}</em>
+            </span>
+          </div>
+          {before.pages !== undefined && after.pages !== undefined && (
+            <div className="compare-stat">
+              <span className="compare-stat-label">페이지</span>
+              <span className="compare-stat-value">{delta(before.pages, after.pages, "")}</span>
+            </div>
+          )}
+          {before.runtime !== undefined && after.runtime !== undefined && (
+            <div className="compare-stat">
+              <span className="compare-stat-label">러닝타임</span>
+              <span className="compare-stat-value">약 {delta(before.runtime, after.runtime, "분")}</span>
+            </div>
+          )}
+          {docChanges.length > 0 && (
+            <div className="compare-stat">
+              <span className="compare-stat-label">설정 문서</span>
+              <span className="compare-stat-value">{docChanges.length}개 변경</span>
+            </div>
+          )}
+        </div>
+
+        <div className="compare-map">
+          <div className="compare-map-head">
+            <span>
+              씬별 수정 위치 ({barScenes.length}씬 중 {changedIdx.length}곳)
+            </span>
+            <span className="compare-legend">
+              <i className="swatch rev-swatch-added" /> 새 씬 <i className="swatch rev-swatch-changed" /> 고친 씬{" "}
+              <i className="swatch rev-swatch-removed" /> 삭제 있음
+              <span className="compare-hint">· 막대를 누르면 그 씬으로 이동</span>
+            </span>
+            <span className="compare-step">
+              <button type="button" onClick={() => step(-1)} disabled={changedIdx.length === 0} title="이전 바뀐 씬으로">
+                ‹ 이전
+              </button>
+              <button type="button" onClick={() => step(1)} disabled={changedIdx.length === 0} title="다음 바뀐 씬으로">
+                다음 ›
+              </button>
+            </span>
+          </div>
+
+          <div className="scene-columns compare-columns" role="list" aria-label="씬별 수정 위치 (막대 하나가 씬 하나)">
+            {barScenes.map((s, i) => {
+              const k = barKind(s);
+              const bothChangedAndDeleted = s.deletedScenes.length > 0 && k !== "removed";
+              return (
+                <button
+                  key={`${s.anchor}-${i}`}
+                  type="button"
+                  role="listitem"
+                  className={`scene-column rev-col-${k}${bothChangedAndDeleted ? " rev-col-has-del" : ""}${selected === i ? " current" : ""}`}
+                  onClick={() => go(i)}
+                  title={sceneTitle(s)}
+                >
+                  <span style={{ height: `${Math.max(10, (sizes[i] / maxSize) * 100)}%` }} />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {docChanges.length > 0 && (
+          <details className="compare-docs">
+            <summary>설정 문서 바뀐 곳 {docChanges.length}개</summary>
+            {docChanges.map((d, i) => (
+              <section key={i} className={`compare-scene compare-${d.kind}`}>
+                <header>
+                  <span className="compare-badge">{docLabel[d.kind]}</span>
+                  <span className="compare-heading">{d.name}</span>
+                </header>
+                <DiffLines ops={d.ops.map((o) => ({ ...o, line: { ...o.line, style: "action" } }))} />
+              </section>
+            ))}
+          </details>
         )}
       </div>
 
-      <h3>원고</h3>
-      {script.scenes.every((s) => s.kind === "same") && <p className="panel-empty">원고는 바뀐 곳이 없습니다.</p>}
-      {script.scenes
-        .filter((s) => s.kind !== "same")
-        .map((scene, i) => (
-          <section key={`${scene.key}-${i}`} className={`compare-scene compare-${scene.kind}`}>
-            <header>
-              <span className="compare-badge">{label[scene.kind]}</span>
-              {scene.number > 0 && (
-                <span className="scene-number">
-                  {scene.kind === "removed" ? "옛 " : ""}S#{scene.number}
-                </span>
-              )}
-              <span className="compare-heading">{scene.heading.replace(/^\s*S\s*#\s*\d+\.?\s*/i, "") || "(첫 씬 앞)"}</span>
-              <span className="compare-counts">
-                {scene.added > 0 && <em className="plus">+{scene.added}</em>} {scene.removed > 0 && <em className="minus">−{scene.removed}</em>}
-              </span>
-            </header>
-            <DiffLines ops={scene.ops} />
-          </section>
-        ))}
-      {same > 0 && <p className="compare-same">바뀌지 않은 씬 {same}개</p>}
-
-      <h3>설정 문서</h3>
-      {docChanges.length === 0 ? (
-        <p className="panel-empty">설정 문서는 바뀐 곳이 없습니다.</p>
-      ) : (
-        docChanges.map((d, i) => (
-          <section key={i} className={`compare-scene compare-${d.kind}`}>
-            <header>
-              <span className="compare-badge">{label[d.kind]}</span>
-              <span className="compare-heading">{d.name}</span>
-            </header>
-            <DiffLines ops={d.ops.map((o) => ({ ...o, line: { ...o.line, style: "action" } }))} />
-          </section>
-        ))
-      )}
-    </div>
+      <div className="desk compare-desk">
+        <ScriptPreview lines={after.lines} marks={script.marks} scrollTo={scrollTo} />
+      </div>
+    </>
   );
 }
 
@@ -152,9 +287,10 @@ export function RevisionView({ meta, revisions, load, current, onRestore, onExpo
   }, [meta, load]);
 
   const lines = useMemo(() => (content ? linesOf(content.script) : []), [content]);
-  const mine: Snapshot | null = content
-    ? { name: meta.name, lines, docs: content.docs, pages: meta.stats?.pages, runtime: meta.stats?.runtimeMinutes }
-    : null;
+  const mine: Snapshot | null = useMemo(
+    () => (content ? { name: meta.name, lines, docs: content.docs, pages: meta.stats?.pages, runtime: meta.stats?.runtimeMinutes } : null),
+    [content, meta, lines],
+  );
 
   // 비교 대상 불러오기
   useEffect(() => {
@@ -181,27 +317,29 @@ export function RevisionView({ meta, revisions, load, current, onRestore, onExpo
   return (
     <main className="revision-view">
       <header className="revision-header">
-        <div className="revision-title">
-          <span className="revision-kicker">수정고</span>
-          <h2>{meta.name}</h2>
-          <span className="revision-when">{when(meta.createdAt)}</span>
-          {meta.stats && (
-            <span className="revision-when">
-              · {meta.stats.pages}페이지 · 씬 {meta.stats.scenes}개 · 약 {meta.stats.runtimeMinutes}분
-            </span>
-          )}
-        </div>
-        {meta.note && <p className="revision-note">{meta.note}</p>}
-        <div className="revision-actions">
-          <button type="button" className="primary" onClick={onRestore} disabled={!content}>
-            이 고로 되돌리기
-          </button>
-          <button type="button" onClick={() => content && onExportPdf(content.script)} disabled={!content}>
-            PDF로 내보내기
-          </button>
-          <button type="button" className="danger" onClick={onDelete}>
-            지우기
-          </button>
+        <div className="revision-top-row">
+          <div className="revision-title">
+            <span className="revision-kicker">수정고</span>
+            <h2>{meta.name}</h2>
+            <span className="revision-when">{when(meta.createdAt)}</span>
+            {meta.stats && (
+              <span className="revision-when">
+                · {meta.stats.pages}페이지 · 씬 {meta.stats.scenes}개 · 약 {meta.stats.runtimeMinutes}분
+              </span>
+            )}
+            {meta.note && <span className="revision-note-inline">· {meta.note}</span>}
+          </div>
+          <div className="revision-actions">
+            <button type="button" className="primary" onClick={onRestore} disabled={!content}>
+              이 고로 되돌리기
+            </button>
+            <button type="button" onClick={() => content && onExportPdf(content.script)} disabled={!content}>
+              PDF로 내보내기
+            </button>
+            <button type="button" className="danger" onClick={onDelete}>
+              지우기
+            </button>
+          </div>
         </div>
         <nav className="revision-tabs">
           <button type="button" className={tab === "script" ? "active" : ""} onClick={() => setTab("script")}>
@@ -213,12 +351,12 @@ export function RevisionView({ meta, revisions, load, current, onRestore, onExpo
             </button>
           ))}
           <button type="button" className={tab === "compare" ? "active compare-tab" : "compare-tab"} onClick={() => setTab("compare")}>
-            비교
+            <span aria-hidden="true">⇄</span> 다른 원고와 비교
           </button>
         </nav>
       </header>
 
-      <div className="revision-body">
+      <div className={tab === "compare" ? "revision-body compare-mode" : "revision-body"}>
         {!content ? (
           <p className="panel-empty">불러오는 중…</p>
         ) : tab === "script" ? (
@@ -227,20 +365,17 @@ export function RevisionView({ meta, revisions, load, current, onRestore, onExpo
           </div>
         ) : tab === "compare" ? (
           <div className="revision-compare">
-            <label className="compare-target">
-              비교할 대상
-              <select value={target} onChange={(e) => setTarget(e.target.value)}>
-                <option value="current">지금 원고</option>
-                {revisions
-                  .filter((r) => r.id !== meta.id)
-                  .map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            {mine && targetSnapshot ? <Comparison before={mine} after={targetSnapshot} /> : <p className="panel-empty">불러오는 중…</p>}
+            {mine && targetSnapshot ? (
+              <Comparison
+                before={mine}
+                after={targetSnapshot}
+                target={target}
+                onChangeTarget={setTarget}
+                otherRevisions={revisions.filter((r) => r.id !== meta.id)}
+              />
+            ) : (
+              <p className="panel-empty">불러오는 중…</p>
+            )}
           </div>
         ) : doc ? (
           <article className="text-page revision-doc">

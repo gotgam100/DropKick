@@ -42,8 +42,10 @@ import {
   type RevisionStats,
 } from "../revisions/revisions";
 import type { RevisionMeta } from "./model";
+import { DEFAULT_CHARACTER_PRESET, formatPresetText, loadPresets, type DocPreset } from "./presets";
+import { loadSettings } from "../settings/settings";
+import { createDefaultStructureBoard, serializeStructureBoard } from "../structure/structureModel";
 import {
-  CHARACTER_TEMPLATE,
   findNode,
   insertNode,
   makeDoc,
@@ -51,6 +53,7 @@ import {
   moveNode,
   removeNode,
   renameNode,
+  setNodeIcon,
   uniqueName,
   type DropPosition,
 } from "./tree";
@@ -315,7 +318,8 @@ export function useProject(
         );
         if (backupDir) {
           lastBackupRef.current = now;
-          invoke("prune_backups", { project: path, keep: BACKUPS_TO_KEEP }).catch(() => {});
+          const keep = Math.max(1, Math.min(100, loadSettings().backupKeepCount || BACKUPS_TO_KEEP));
+          invoke("prune_backups", { project: path, keep }).catch(() => {});
         }
         if (token) editor.markSavedAt(token);
 
@@ -434,6 +438,20 @@ export function useProject(
     setSession(newSession(null, manifest, texts, titlePage, false), manifest.mainScript);
   }, [confirmDiscard, editorRef, setScriptDirty, setSession]);
 
+  /** 프로그램 전체 초기화: 복구 기록·최근 프로젝트를 모두 비우고 새 빈 프로젝트로 되돌린다 */
+  const resetToInitialState = useCallback(async (): Promise<boolean> => {
+    if (!(await confirmDiscard())) return false;
+    await writeRecovery(null);
+    rememberLast(null);
+    const { manifest, texts } = createProject("제목 없음");
+    const { titlePage, lines } = scriptLinesOf(texts.get(manifest.mainScript) ?? "");
+    editorRef.current?.load(lines);
+    setScriptDirty(false);
+    setSession(newSession(null, manifest, texts, titlePage, false), manifest.mainScript);
+    setSaveStatus({ state: "saved", at: null });
+    return true;
+  }, [confirmDiscard, editorRef, setScriptDirty, setSession]);
+
   /** Fountain 가져오기: .fountain 원고로 새 프로젝트를 시작한다. (원래 파일은 그대로) */
   const importFountain = useCallback(async () => {
     if (!(await confirmDiscard())) return;
@@ -503,9 +521,10 @@ export function useProject(
    * 새 문서를 폴더 안에 만들고 연다. 만든 문서의 id를 돌려준다.
    * - memo: 빈 일반 문서
    * - character: 인물 설정 프리셋 (name을 주면 그 이름으로)
+   * - structure: 3막 구조 보드 (세이브 더 캣 15단계)
    */
   const addDoc = useCallback(
-    (parentId: string | null, type: "memo" | "character" = "memo", name?: string) => {
+    (parentId: string | null, type: "memo" | "character" | "structure" = "memo", name?: string) => {
       const current = sessionRef.current;
       const tree = current.manifest.tree;
       const parent = parentId;
@@ -513,10 +532,60 @@ export function useProject(
       const siblings = parent ? ((findNode(tree, parent) as { children?: ProjectNode[] })?.children ?? []) : tree;
       const doc = name ? { ...made, name: uniqueName(siblings, name.trim() || made.name) } : made;
       const texts = new Map(current.texts);
-      texts.set(doc.id, type === "character" ? CHARACTER_TEMPLATE(doc.name) : "");
+      if (type === "character") {
+        const charPreset = loadPresets().find((p) => p.docType === "character") ?? DEFAULT_CHARACTER_PRESET;
+        texts.set(doc.id, formatPresetText(charPreset, doc.name));
+      } else if (type === "structure") {
+        texts.set(doc.id, serializeStructureBoard(createDefaultStructureBoard()));
+      } else {
+        texts.set(doc.id, "");
+      }
       updateTree(insertNode(tree, doc, parent), { texts }, `"${doc.name}"을(를) 만들었습니다`);
       setActiveDocId(doc.id);
       return doc.id;
+    },
+    [updateTree],
+  );
+
+  /** 프리셋으로 새 문서를 폴더 안에 만들고 연다. */
+  const addDocWithPreset = useCallback(
+    (parentId: string | null, preset: DocPreset, name?: string) => {
+      const current = sessionRef.current;
+      const tree = current.manifest.tree;
+      const parent = parentId;
+      const made = makeDoc(tree, preset.docType, parent);
+      const siblings = parent ? ((findNode(tree, parent) as { children?: ProjectNode[] })?.children ?? []) : tree;
+      const baseName = name?.trim() || preset.defaultDocName.trim() || made.name;
+      const defaultIcon = preset.docType === "character" ? "person" : "doc.text";
+      const customIcon = preset.icon && preset.icon !== defaultIcon ? preset.icon : undefined;
+      const doc: DocNode = {
+        ...made,
+        name: uniqueName(siblings, baseName),
+        ...(customIcon ? { icon: customIcon } : {}),
+      };
+      const texts = new Map(current.texts);
+      texts.set(doc.id, formatPresetText(preset, doc.name));
+      updateTree(insertNode(tree, doc, parent), { texts }, `"${doc.name}"을(를) 만들었습니다`);
+      setActiveDocId(doc.id);
+      return doc.id;
+    },
+    [updateTree],
+  );
+
+  /** 이미 열려 있는 일반 문서에 프리셋 양식을 적용한다. */
+  const applyPresetToDoc = useCallback(
+    (docId: string, preset: DocPreset) => {
+      const current = sessionRef.current;
+      const node = findNode(current.manifest.tree, docId);
+      if (!node || node.type === "folder" || node.type === "script") return;
+      const texts = new Map(current.texts);
+      texts.set(docId, formatPresetText(preset, node.name));
+      let nextTree = current.manifest.tree;
+      if (preset.icon) {
+        const defaultIcon = node.type === "character" ? "person" : "doc.text";
+        nextTree = setNodeIcon(nextTree, docId, preset.icon === defaultIcon ? undefined : preset.icon);
+      }
+      updateTree(nextTree, { texts }, `"${node.name}"에 "${preset.name}" 프리셋을 적용했습니다`);
     },
     [updateTree],
   );
@@ -584,6 +653,17 @@ export function useProject(
       const next = moveNode(current.manifest.tree, id, targetId, position);
       const node = findNode(current.manifest.tree, id);
       if (next !== current.manifest.tree) updateTree(next, {}, `"${node?.name ?? ""}"을(를) 옮겼습니다`);
+    },
+    [updateTree],
+  );
+
+  const setIcon = useCallback(
+    (id: string, icon?: string) => {
+      const current = sessionRef.current;
+      const node = findNode(current.manifest.tree, id);
+      if (!node || (node.icon ?? undefined) === (icon || undefined)) return;
+      const next = setNodeIcon(current.manifest.tree, id, icon);
+      updateTree(next, {}, `"${node.name}" 아이콘을 바꿨습니다`);
     },
     [updateTree],
   );
@@ -811,6 +891,19 @@ export function useProject(
           return runExclusive(saveAs);
         case "export_pdf":
           return runExclusive(() => exportPdf());
+        case "open_project_location":
+          return runExclusive(async () => {
+            const path = sessionRef.current.path;
+            if (!path) {
+              await notify("아직 저장하지 않은 프로젝트입니다. 먼저 저장(⌘S)해 주세요.");
+              return;
+            }
+            try {
+              await invoke("reveal_in_finder", { path });
+            } catch (error) {
+              await showError("프로젝트 위치를 열 수 없습니다.", error);
+            }
+          });
         case "open_backups":
           return runExclusive(async () => {
             const path = sessionRef.current.path;
@@ -927,6 +1020,7 @@ export function useProject(
         }
         await writeRecovery(null);
       }
+      if (!loadSettings().openLastProjectOnStart) return;
       const last = readLast();
       if (last) openProjectAt(last.path, true).catch(() => rememberLast(null));
     })();
@@ -937,6 +1031,8 @@ export function useProject(
   // 자동 저장: 저장된 적 있는 프로젝트를 고치면, 입력이 멈추고 잠시 뒤 저장한다.
   useEffect(() => {
     if (!isTauri() || !sessionRef.current.path || !dirty) return;
+    const delay = loadSettings().autosaveDelayMs;
+    if (delay <= 0) return;
     const timer = setTimeout(async () => {
       const path = sessionRef.current.path;
       if (!path || busyRef.current) return;
@@ -946,7 +1042,7 @@ export function useProject(
       } finally {
         busyRef.current = false;
       }
-    }, AUTOSAVE_DELAY);
+    }, delay || AUTOSAVE_DELAY);
     return () => clearTimeout(timer);
   }, [dirty, version, scriptDirty, writeProjectTo]);
 
@@ -1014,9 +1110,13 @@ export function useProject(
     setDocText,
     openDoc,
     addDoc,
+    addDocWithPreset,
+    applyPresetToDoc,
     addFolder,
     rename,
     remove,
     move,
+    setIcon,
+    resetToInitialState,
   };
 }

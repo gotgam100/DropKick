@@ -9,6 +9,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import { autocompletion, type CompletionContext } from "@codemirror/autocomplete";
+import { loadSettings } from "../settings/settings";
 import {
   characterNames,
   cycleLineStyle,
@@ -148,6 +149,7 @@ const styleKeymap = keymap.of([
 
 // 인물 스타일 줄에서 앞서 나온 이름을 자동 완성한다.
 function characterCompletions(context: CompletionContext) {
+  if (!loadSettings().characterAutocomplete) return null;
   const { state, pos } = context;
   const line = state.doc.lineAt(pos);
   if (styleAtLine(state, line.number) !== "character") return null;

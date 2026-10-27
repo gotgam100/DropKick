@@ -35,3 +35,6 @@ samples/*.pdf
 
 # 배포 스크립트가 만드는 파일
 dist-release/
+
+# 아이콘 시안
+design/icon-options/

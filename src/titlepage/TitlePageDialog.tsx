@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { loadSettings } from "../settings/settings";
 import { readTitlePage, writeTitlePage, type TitlePageFields } from "./titlePage";
 
 type Props = {
@@ -18,7 +19,15 @@ const FIELDS: { key: keyof TitlePageFields; label: string; placeholder: string; 
 
 /** 표지 편집: PDF 첫 장에 들어간다. */
 export function TitlePageDialog({ titlePage, onSave, onClose }: Props) {
-  const [fields, setFields] = useState<TitlePageFields>(() => readTitlePage(titlePage));
+  const [fields, setFields] = useState<TitlePageFields>(() => {
+    const parsed = readTitlePage(titlePage);
+    const appSettings = loadSettings();
+    return {
+      ...parsed,
+      author: parsed.author || appSettings.defaultAuthor || "",
+      contact: parsed.contact || appSettings.defaultContact || "",
+    };
+  });
   const firstRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
