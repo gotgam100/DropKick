@@ -25,7 +25,7 @@
 import type { ScriptLine } from "../editor/lineStyles";
 import type { LineStyle } from "../editor/styles";
 import { textColumns, toUpperLatin, wrapText } from "./metrics";
-import { numberScenes, sceneHeadingText } from "./sceneNumbers";
+import { numberScenes } from "./sceneNumbers";
 
 /**
  * 줄 간격 배수. 할리우드 표준은 1.0(12pt, 1인치 6줄)이지만 읽기 편하도록 넓혔다.
@@ -57,6 +57,7 @@ export const ELEMENTS: Record<LineStyle, ElementSpec> = {
   character: { indent: 22, width: 38, before: 1, upper: true, bold: false },
   parenthetical: { indent: 16, width: 24, before: 0, upper: false, bold: false },
   dialogue: { indent: 10, width: 35, before: 0, upper: false, bold: false },
+  subheader: { indent: 0, width: 60, before: 1, upper: true, bold: true },
   transition: { indent: 0, width: 60, before: 1, upper: true, bold: false },
 };
 
@@ -70,6 +71,8 @@ export type PageLine = {
   bold: boolean;
   /** 원고의 몇 번째 줄에서 왔는지 (1부터). 자동으로 붙인 줄은 0 */
   source: number;
+  /** 씬헤딩 첫 줄인 경우 씬 번호 (할리우드 촬영고 좌우 여백 표기용) */
+  sceneNumber?: number;
 };
 
 export type Page = { number: number; lines: PageLine[] };
@@ -114,10 +117,6 @@ function elementRows(style: LineStyle, text: string, source: number): Row[] {
 }
 
 function buildBlocks(lines: ScriptLine[]): Block[] {
-  const scenes = numberScenes(
-    lines.map((l) => l.style),
-    (n) => lines[n - 1].text,
-  );
   const blocks: Block[] = [];
 
   for (let i = 0; i < lines.length; i++) {
@@ -136,7 +135,8 @@ function buildBlocks(lines: ScriptLine[]): Block[] {
       continue;
     }
 
-    const text = line.style === "scene" ? sceneHeadingText(line.text, scenes.get(source)) : line.text;
+    const text =
+      line.style === "scene" ? line.text.replace(/^(?:S\s*#|#)\s*\d+\.?\s*/i, "").trim() : line.text;
     const continuedAction = line.style === "action" && lines[i - 1]?.style === "action";
     blocks.push({
       kind: "single",
@@ -158,6 +158,10 @@ function contdName(name: string) {
 export const STANDARD_LINES_PER_PAGE = 54;
 
 export function paginate(lines: ScriptLine[], linesPerPage: number = PAGE.linesPerPage): Pagination {
+  const scenes = numberScenes(
+    lines.map((l) => l.style),
+    (n) => lines[n - 1].text,
+  );
   const blocks = buildBlocks(lines);
   const pages: Page[] = [];
   const pageOfLine = new Array<number>(lines.length).fill(1);
@@ -176,9 +180,12 @@ export function paginate(lines: ScriptLine[], linesPerPage: number = PAGE.linesP
     const spec = r.style === "more" ? ELEMENTS.character : ELEMENTS[r.style];
     const column =
       r.style === "transition" ? Math.max(0, spec.width - textColumns(r.text)) : spec.indent;
-    if (r.source > 0 && !page.lines.some((l) => l.source === r.source)) {
+    const isFirstRowOfSource = r.source > 0 && !page.lines.some((l) => l.source === r.source);
+    if (isFirstRowOfSource) {
       pageOfLine[r.source - 1] = page.number;
     }
+    const sceneNumber =
+      r.style === "scene" && isFirstRowOfSource ? scenes.get(r.source)?.number : undefined;
     page.lines.push({
       text: r.text,
       column,
@@ -186,6 +193,7 @@ export function paginate(lines: ScriptLine[], linesPerPage: number = PAGE.linesP
       style: r.style,
       bold: r.style !== "more" && ELEMENTS[r.style].bold,
       source: r.source,
+      sceneNumber,
     });
     row++;
   };

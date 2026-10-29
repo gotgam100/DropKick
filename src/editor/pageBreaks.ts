@@ -11,10 +11,8 @@ import { StateEffect, StateField, type EditorState, type Range } from "@codemirr
 import {
   Decoration,
   EditorView,
-  ViewPlugin,
   WidgetType,
   type DecorationSet,
-  type ViewUpdate,
 } from "@codemirror/view";
 import { paginate, type PageBreak, type Pagination } from "../layout/paginate";
 import { lineStylesField, scriptLines } from "./lineStyles";
@@ -43,13 +41,22 @@ function row(className: string, text: string) {
 }
 
 class PageBreakWidget extends WidgetType {
-  constructor(readonly info: PageBreak) {
+  constructor(
+    readonly info: PageBreak,
+    readonly total: number,
+  ) {
     super();
   }
   eq(other: PageBreakWidget) {
     const a = this.info;
     const b = other.info;
-    return a.page === b.page && a.usedRows === b.usedRows && a.more === b.more && a.contd === b.contd;
+    return (
+      a.page === b.page &&
+      a.usedRows === b.usedRows &&
+      a.more === b.more &&
+      a.contd === b.contd &&
+      this.total === other.total
+    );
   }
   toDOM() {
     const el = document.createElement("div");
@@ -60,6 +67,10 @@ class PageBreakWidget extends WidgetType {
     const bottom = document.createElement("div");
     bottom.className = "pb-bottom";
     bottom.style.height = remainingHeight(this.info.usedRows);
+    const number = document.createElement("span");
+    number.className = "pb-number-bottom";
+    number.textContent = `${this.info.page - 1}/${this.total}`;
+    bottom.appendChild(number);
     el.appendChild(bottom);
 
     const gap = document.createElement("div");
@@ -68,10 +79,6 @@ class PageBreakWidget extends WidgetType {
 
     const top = document.createElement("div");
     top.className = "pb-top";
-    const number = document.createElement("span");
-    number.className = "pb-number";
-    number.textContent = `${this.info.page}.`;
-    top.appendChild(number);
     el.appendChild(top);
 
     if (this.info.contd) el.appendChild(row("pb-contd", this.info.contd));
@@ -84,16 +91,23 @@ class PageBreakWidget extends WidgetType {
 
 /** 마지막 페이지를 종이 한 장 높이까지 채운다. */
 class PageEndWidget extends WidgetType {
-  constructor(readonly usedRows: number) {
+  constructor(
+    readonly usedRows: number,
+    readonly total: number,
+  ) {
     super();
   }
   eq(other: PageEndWidget) {
-    return other.usedRows === this.usedRows;
+    return other.usedRows === this.usedRows && other.total === this.total;
   }
   toDOM() {
     const el = document.createElement("div");
     el.className = "cm-page-end";
     el.style.height = remainingHeight(this.usedRows);
+    const number = document.createElement("span");
+    number.className = "pb-number-bottom";
+    number.textContent = `${this.total}/${this.total}`;
+    el.appendChild(number);
     return el;
   }
   ignoreEvent() {
@@ -116,12 +130,12 @@ function buildDecorations(state: EditorState, info: PageInfo): DecorationSet {
     if (brk.beforeLine < 1 || brk.beforeLine > state.doc.lines) continue;
     const from = state.doc.line(brk.beforeLine).from;
     ranges.push(
-      Decoration.widget({ widget: new PageBreakWidget(brk), block: true, side: -1 }).range(from),
+      Decoration.widget({ widget: new PageBreakWidget(brk, info.total), block: true, side: -1 }).range(from),
       pageTopLine.range(from),
     );
   }
   ranges.push(
-    Decoration.widget({ widget: new PageEndWidget(info.lastPageRows), block: true, side: 1 }).range(
+    Decoration.widget({ widget: new PageEndWidget(info.lastPageRows, info.total), block: true, side: 1 }).range(
       state.doc.length,
     ),
   );
@@ -130,54 +144,31 @@ function buildDecorations(state: EditorState, info: PageInfo): DecorationSet {
 
 type PaginationState = PageInfo & { decorations: DecorationSet };
 
-/** 페이지 경계와 페이지 수. 글을 고치면 잠시 뒤(입력이 멈췄을 때) 다시 계산한다. */
+/** 페이지 경계와 페이지 수. 줄바꿈이나 수정 시 즉각 계산하여 화면 떨림을 방지한다. */
 export const paginationField = StateField.define<PaginationState>({
   create(state) {
     const info = compute(state);
     return { ...info, decorations: buildDecorations(state, info) };
   },
   update(value, tr) {
-    let next = value;
-    if (tr.docChanged) next = { ...next, decorations: next.decorations.map(tr.changes) };
+    const stylesChanged =
+      tr.startState.field(lineStylesField, false) !== tr.state.field(lineStylesField, false);
+    if (tr.docChanged || stylesChanged) {
+      const info = compute(tr.state);
+      return { ...info, decorations: buildDecorations(tr.state, info) };
+    }
     for (const effect of tr.effects) {
       if (effect.is(setPagination)) {
-        next = { ...effect.value, decorations: buildDecorations(tr.state, effect.value) };
+        return { ...effect.value, decorations: buildDecorations(tr.state, effect.value) };
       }
     }
-    return next;
+    return value;
   },
   provide: (field) => EditorView.decorations.from(field, (v) => v.decorations),
 });
 
-const RECOMPUTE_DELAY = 250;
-
-const paginationScheduler = ViewPlugin.fromClass(
-  class {
-    timer: number | undefined;
-
-    constructor(readonly view: EditorView) {}
-
-    update(update: ViewUpdate) {
-      const changed =
-        update.docChanged ||
-        update.startState.field(lineStylesField) !== update.state.field(lineStylesField);
-      // 새 문서를 불러온 경우(setState)에는 create()에서 이미 계산했다.
-      if (!changed) return;
-      window.clearTimeout(this.timer);
-      this.timer = window.setTimeout(() => {
-        const info = compute(this.view.state);
-        this.view.dispatch({ effects: setPagination.of(info) });
-      }, RECOMPUTE_DELAY);
-    }
-
-    destroy() {
-      window.clearTimeout(this.timer);
-    }
-  },
-);
-
 export function pageBreaks() {
-  return [paginationField, paginationScheduler];
+  return [paginationField];
 }
 
 /** 커서가 있는 줄의 페이지 번호 */

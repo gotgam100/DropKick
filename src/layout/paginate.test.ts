@@ -47,7 +47,7 @@ describe("페이지 나누기", () => {
       { style: "transition", text: "cut to:" },
     ]);
     expect(rows[0]).toEqual([
-      "0:scene:S#1. INT. 체육관 - 밤",
+      "0:scene:INT. 체육관 - 밤",
       "2:action:하나",
       "3:action:둘",
       "5:character:MINJAE",

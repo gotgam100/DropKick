@@ -197,8 +197,8 @@ export const DEFAULT_FOLDERS_BEFORE_SCRIPT = ["개요"];
 export const DEFAULT_FOLDERS_AFTER_SCRIPT = ["인물 설정", "메모", "기타"];
 export const SCRIPT_NAME = "스크립트";
 
-/** 빈 원고: 씬헤딩(S#1)도 아직 없는, 빈 액션 줄 하나 */
-export const BLANK_SCRIPT_LINES: ScriptLine[] = [{ style: "action", text: "" }];
+/** 빈 원고: 새 스크립트 작성 시 첫 줄은 씬헤딩으로 시작 */
+export const BLANK_SCRIPT_LINES: ScriptLine[] = [{ style: "scene", text: "" }];
 
 /**
  * 새 프로젝트. script를 주면(예: Fountain 가져오기) 그 원고로 시작한다.

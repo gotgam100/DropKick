@@ -8,7 +8,12 @@ import {
 import {
   extractSelectedLines,
   createPasteTransaction,
+  copyScriptPayloadToClipboard,
+  getInMemoryClipboard,
+  isFountainText,
+  parseFountainClipboard,
 } from "./clipboard";
+import { SAMPLE_KOREAN_SCRIPT_FOUNTAIN } from "../guide/sampleScript";
 
 describe("스크립트 복사 및 붙여넣기 스타일 유지 (clipboard)", () => {
   it("여러 줄의 다양한 스타일을 복사할 때 줄별 스타일이 정확히 추출된다", () => {
@@ -194,5 +199,95 @@ describe("스크립트 복사 및 붙여넣기 스타일 유지 (clipboard)", ()
     // 줄 1개만 복사되어야 함
     expect(payload.styles).toEqual(["character"]);
     expect(payload.text).toBe("민재\n");
+  });
+
+  it("가이드의 예시 스크립트 복사(copyScriptPayloadToClipboard) 후 붙여넣을 때 7가지 스타일이 온전히 유지된다", async () => {
+    // 1. 가이드에서 복사할 24개 줄 준비
+    const sampleFountain = parseFountainClipboard(SAMPLE_KOREAN_SCRIPT_FOUNTAIN);
+    expect(sampleFountain).not.toBeNull();
+    expect(sampleFountain!.styles.length).toBe(24);
+
+    // 복사 실행
+    await copyScriptPayloadToClipboard(sampleFountain!);
+
+    // 메모리 캐시 확인
+    const cached = getInMemoryClipboard();
+    expect(cached).not.toBeNull();
+    expect(cached?.text).toBe(sampleFountain!.text);
+    expect(cached?.styles).toEqual(sampleFountain!.styles);
+
+    // 빈 스크립트 에디터에 붙여넣기 실행
+    let state = createScriptState([{ style: "action", text: "" }]);
+    const tr = createPasteTransaction(state, cached!, 0, 0);
+    state = tr.state;
+
+    const stylesAfter = state.field(lineStylesField);
+    expect(stylesAfter.length).toBe(24);
+
+    // 7가지 스타일이 실제 에디터 라인들에 적용되었는지 확인
+    expect(stylesAfter[0]).toBe("transition"); // FADE IN:
+    expect(stylesAfter[1]).toBe("scene");      // 실내. 낡은 시계 수리점 - 밤
+    expect(stylesAfter[2]).toBe("action");     // 어두컴컴한 공간...
+    expect(stylesAfter[4]).toBe("character");  // 민재 (V.O.)
+    expect(stylesAfter[5]).toBe("dialogue");   // 시간은 멈추지 않는다.
+    expect(stylesAfter[15]).toBe("parenthetical"); // (조심스러운 목소리로)
+    expect(stylesAfter[19]).toBe("subheader"); // 가게 안쪽 복도
+    expect(stylesAfter[23]).toBe("transition"); // FADE OUT.
+
+    expect(state.doc.line(1).text).toBe("FADE IN:");
+    expect(state.doc.line(2).text).toBe("실내. 낡은 시계 수리점 - 밤");
+    expect(state.doc.line(5).text).toBe("민재 (V.O.)");
+    expect(state.doc.line(20).text).toBe("가게 안쪽 복도");
+  });
+
+  it("일반 클립보드로 들어온 Fountain 원문 텍스트도 자동으로 감지하여 스타일을 살려 붙여넣는다", () => {
+    const rawFountain = `> FADE IN:
+
+.실내. 카페 - 낮 #1#
+
+창밖으로 비가 내린다.
+
+@민재
+기다렸어.
+
+..카운터 안쪽
+
+커피 머신 소리가 요란하다.
+`;
+    expect(isFountainText(rawFountain)).toBe(true);
+
+    const payload = parseFountainClipboard(rawFountain);
+    expect(payload).not.toBeNull();
+    expect(payload?.styles).toEqual([
+      "transition",
+      "scene",
+      "action",
+      "character",
+      "dialogue",
+      "subheader",
+      "action",
+    ]);
+
+    // 빈 에디터에 붙여넣기
+    let state = createScriptState([{ style: "action", text: "" }]);
+    const tr = createPasteTransaction(state, payload!, 0, 0);
+    state = tr.state;
+
+    const styles = state.field(lineStylesField);
+    expect(styles).toEqual([
+      "transition",
+      "scene",
+      "action",
+      "character",
+      "dialogue",
+      "subheader",
+      "action",
+    ]);
+  });
+
+  it("일반 텍스트는 Fountain으로 오인하지 않는다", () => {
+    const plain = "오늘 회의 일정입니다.\n1. 프로젝트 점검\n2. 다음 스프린트 계획";
+    expect(isFountainText(plain)).toBe(false);
+    expect(parseFountainClipboard(plain)).toBeNull();
   });
 });

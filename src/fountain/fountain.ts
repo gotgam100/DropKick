@@ -25,7 +25,7 @@ export type ScriptDocument = {
 
 const SCENE_NUMBER_SUFFIX = /\s*#[\w.\-]+#\s*$/;
 const STANDARD_SCENE_PREFIX = /^(INT|EXT|EST|INT\.?\/EXT|I\/E)[.\s]/i;
-const KOREAN_SCENE_PREFIX = /^S\s*#\s*\d+/i;
+const KOREAN_SCENE_PREFIX = /^(?:S\s*#|#)\s*\d+/i;
 const TITLE_KEY = /^[A-Za-z][A-Za-z ]*:/;
 const INTENTIONAL_BLANK = "  ";
 
@@ -59,8 +59,9 @@ function actionNeedsForce(text: string) {
 function serializeLine(line: ScriptLine, sceneNumber: number): string {
   const text = line.text;
   if (text.trim() === "") {
-    // 빈 씬헤딩/전환도 스타일이 남도록 표시만 쓴다. 나머지 빈 줄은 빈 줄 표시로.
+    // 빈 씬헤딩/서브헤더/전환도 스타일이 남도록 표시만 쓴다. 나머지 빈 줄은 빈 줄 표시로.
     if (line.style === "scene") return ".";
+    if (line.style === "subheader") return "..";
     if (line.style === "transition") return ">";
     return INTENTIONAL_BLANK;
   }
@@ -77,6 +78,8 @@ function serializeLine(line: ScriptLine, sceneNumber: number): string {
     }
     case "dialogue":
       return text.startsWith("(") ? ` ${text}` : text;
+    case "subheader":
+      return `..${text}`;
     case "transition":
       return `> ${text.replace(/<\s*$/, "")}`;
   }
@@ -173,6 +176,11 @@ export function fromFountain(source: string): ScriptDocument {
     if (trimmed.startsWith("[[") || /^=(?!=)/.test(trimmed) || /^#/.test(trimmed)) {
       // 메모, 시놉시스, 섹션은 지금은 액션으로 남긴다.
       lines.push({ style: "action", text: trimmed });
+      continue;
+    }
+
+    if (trimmed.startsWith("..")) {
+      lines.push({ style: "subheader", text: trimmed.slice(2).trim() });
       continue;
     }
 

@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
-import type { DocPreset } from "../project/presets";
+import { isDefaultPreset, type DocPreset } from "../project/presets";
+import { LINE_STYLES, STYLE_LABELS, type LineStyle } from "../editor/styles";
 import {
   DEFAULT_SETTINGS,
+  DEFAULT_STYLE_SHORTCUTS,
+  DEFAULT_NEXT_STYLE_RULES,
   type AppSettings,
   type AutosaveInterval,
   type ThemeMode,
 } from "./settings";
 
-type TabId = "view" | "writing" | "backup" | "reset";
+type TabId = "view" | "writing" | "shortcuts" | "backup" | "reset";
 
 type Props = {
   settings: AppSettings;
@@ -20,6 +23,7 @@ type Props = {
   onEditPreset: (preset: DocPreset) => void;
   onFullResetApp: () => Promise<void>;
   onClose: () => void;
+  isStandalone?: boolean;
 };
 
 export function SettingsDialog({
@@ -31,13 +35,22 @@ export function SettingsDialog({
   onEditPreset,
   onFullResetApp,
   onClose,
+  isStandalone,
 }: Props) {
   const [tab, setTab] = useState<TabId>("view");
   const [confirmResetAll, setConfirmResetAll] = useState(false);
   const [presetNotice, setPresetNotice] = useState<string | null>(null);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const customPresets = presets.filter((p) => p.id !== "preset-character");
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    posX: number;
+    posY: number;
+  } | null>(null);
+
+  const customPresets = presets.filter((p) => !isDefaultPreset(p.id));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -46,6 +59,40 @@ export function SettingsDialog({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    // 탭 버튼 등 클릭 시에는 드래그를 시작하지 않음
+    const target = e.target as HTMLElement;
+    if (target.closest("button, input, a, select, textarea")) {
+      return;
+    }
+
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      posX: position.x,
+      posY: position.y,
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (!dragRef.current) return;
+      const dx = moveEvent.clientX - dragRef.current.startX;
+      const dy = moveEvent.clientY - dragRef.current.startY;
+      setPosition({
+        x: dragRef.current.posX + dx,
+        y: dragRef.current.posY + dy,
+      });
+    };
+
+    const handlePointerUp = () => {
+      dragRef.current = null;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
 
   const patch = (partial: Partial<AppSettings>) => {
     onChangeSettings({ ...settings, ...partial });
@@ -86,7 +133,7 @@ export function SettingsDialog({
           Boolean(p) &&
           typeof p === "object" &&
           typeof p.id === "string" &&
-          p.id !== "preset-character" &&
+          !isDefaultPreset(p.id) &&
           typeof p.name === "string" &&
           typeof p.body === "string",
       );
@@ -100,8 +147,8 @@ export function SettingsDialog({
           id: item.id,
           name: item.name,
           defaultDocName: item.defaultDocName || `새 ${item.name}`,
-          docType: item.docType === "character" ? "character" : "memo",
-          icon: item.icon || "doc.text",
+          docType: item.docType === "character" ? "character" : item.docType === "script" ? "script" : "memo",
+          icon: item.icon || (item.docType === "character" ? "person" : item.docType === "script" ? "film" : "doc.text"),
           body: item.body,
         });
       }
@@ -112,15 +159,20 @@ export function SettingsDialog({
     }
   };
 
-  return (
-    <div className="dialog-backdrop" onMouseDown={onClose}>
-      <div
-        className="dialog settings-dialog"
-        role="dialog"
-        aria-label="설정"
-        onMouseDown={(e) => e.stopPropagation()}
+  const content = (
+    <div
+      className={`dialog settings-dialog ${isStandalone ? "settings-standalone-dialog" : ""}`}
+      role="dialog"
+      aria-label="설정"
+      style={{
+        transform: !isStandalone && (position.x || position.y) ? `translate(${position.x}px, ${position.y}px)` : undefined,
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <header
+        className="settings-header"
+        onPointerDown={!isStandalone ? handlePointerDown : undefined}
       >
-        <header className="settings-header">
           <h2>설정</h2>
           <div className="settings-tabs" role="tablist">
             <button
@@ -140,6 +192,15 @@ export function SettingsDialog({
               onClick={() => setTab("writing")}
             >
               집필 · 원고
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "shortcuts"}
+              className={tab === "shortcuts" ? "active" : ""}
+              onClick={() => setTab("shortcuts")}
+            >
+              단축키 · 줄바꿈
             </button>
             <button
               type="button"
@@ -249,8 +310,8 @@ export function SettingsDialog({
 
               <label className="settings-toggle-row">
                 <div className="settings-item-label">
-                  <strong>원고 화면에 씬 번호(S#1, S#2…) 표시</strong>
-                  <span>씬헤딩 앞에 자동으로 매겨지는 씬 번호를 화면에 표시합니다.</span>
+                  <strong>원고 화면에 씬 번호 표시</strong>
+                  <span>촬영고 표준에 맞춰 씬헤딩 좌우 여백에 씬 번호를 화면에 표시합니다.</span>
                 </div>
                 <input
                   type="checkbox"
@@ -258,6 +319,105 @@ export function SettingsDialog({
                   onChange={(e) => patch({ showSceneNumbers: e.target.checked })}
                 />
               </label>
+            </div>
+          )}
+
+          {tab === "shortcuts" && (
+            <div className="settings-section">
+              <div className="settings-item">
+                <div className="settings-item-label">
+                  <strong>문장 스타일 단축키 (⌘ + 키)</strong>
+                  <span>원고에서 각 문장 스타일로 변경하는 단축키를 설정합니다.</span>
+                </div>
+                <div className="settings-shortcuts-list">
+                  {LINE_STYLES.map((style) => (
+                    <div key={style} className="settings-shortcut-row">
+                      <div className="settings-shortcut-label">
+                        <span className="settings-style-pill">
+                          {STYLE_LABELS[style]}
+                        </span>
+                      </div>
+                      <div className="settings-shortcut-input-wrap">
+                        <span className="settings-cmd-prefix">⌘</span>
+                        <select
+                          className="settings-select"
+                          value={settings.styleShortcuts?.[style] ?? `${LINE_STYLES.indexOf(style) + 1}`}
+                          onChange={(e) => {
+                            const next = {
+                              ...(settings.styleShortcuts ?? DEFAULT_STYLE_SHORTCUTS),
+                              [style]: e.target.value,
+                            };
+                            patch({ styleShortcuts: next });
+                          }}
+                        >
+                          {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((k) => (
+                            <option key={k} value={k}>
+                              {k}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="settings-item-action-row">
+                  <button
+                    type="button"
+                    className="settings-btn-inline"
+                    onClick={() => patch({ styleShortcuts: DEFAULT_STYLE_SHORTCUTS })}
+                  >
+                    단축키 기본값(⌘1~⌘7)으로 복원
+                  </button>
+                </div>
+              </div>
+
+              <div className="settings-item">
+                <div className="settings-item-label">
+                  <strong>줄바꿈(Enter) 자동 스타일 전환 규칙</strong>
+                  <span>줄 끝에서 Enter를 쳤을 때 다음 줄에 자동으로 이어질 스타일을 지정합니다.</span>
+                </div>
+                <div className="settings-rules-list">
+                  {LINE_STYLES.map((style) => (
+                    <div key={style} className="settings-rule-row">
+                      <div className="settings-rule-source">
+                        <span className="settings-style-pill">
+                          {STYLE_LABELS[style]}
+                        </span>
+                        <span className="settings-rule-desc">줄 끝에서 Enter</span>
+                      </div>
+                      <span className="settings-rule-arrow">→</span>
+                      <div className="settings-rule-target">
+                        <select
+                          className="settings-select"
+                          value={settings.nextStyleOnEnter?.[style] ?? DEFAULT_NEXT_STYLE_RULES[style]}
+                          onChange={(e) => {
+                            const next = {
+                              ...(settings.nextStyleOnEnter ?? DEFAULT_NEXT_STYLE_RULES),
+                              [style]: e.target.value as LineStyle,
+                            };
+                            patch({ nextStyleOnEnter: next });
+                          }}
+                        >
+                          {LINE_STYLES.map((targetStyle) => (
+                            <option key={targetStyle} value={targetStyle}>
+                              {STYLE_LABELS[targetStyle]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="settings-item-action-row">
+                  <button
+                    type="button"
+                    className="settings-btn-inline"
+                    onClick={() => patch({ nextStyleOnEnter: DEFAULT_NEXT_STYLE_RULES })}
+                  >
+                    줄바꿈 규칙 기본값으로 복원
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -352,7 +512,7 @@ export function SettingsDialog({
                 <div className="settings-item-label">
                   <strong>추가한 프리셋 관리 ({customPresets.length}개)</strong>
                   <span>
-                    기본 프리셋(<code>3막 구조(세이브 더 캣)</code>, <code>인물 양식</code>) 외에 직접 만든 프리셋을 관리하고 백업 파일로 내보내거나 가져올 수 있습니다.
+                    기본 프리셋(<code>3막 구조 양식</code>, <code>인물 양식</code>) 외에 직접 만든 프리셋을 관리하고 백업 파일로 내보내거나 가져올 수 있습니다.
                   </span>
                 </div>
                 {customPresets.length > 0 && (
@@ -475,6 +635,15 @@ export function SettingsDialog({
           </button>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+
+    if (isStandalone) {
+      return content;
+    }
+
+    return (
+      <div className="dialog-backdrop" onMouseDown={onClose}>
+        {content}
+      </div>
+    );
+  }

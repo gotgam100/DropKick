@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createProject, parseManifest, serializeManifest, walkDocs, type ProjectNode } from "./model";
-import { DEFAULT_CHARACTER_PRESET, createCustomPreset, formatPresetText, loadPresets } from "./presets";
+import {
+  DEFAULT_CHARACTER_PRESET,
+  createCustomPreset,
+  formatPresetText,
+  loadPresets,
+} from "./presets";
 import {
   CHARACTER_TEMPLATE,
   findNode,

@@ -14,6 +14,7 @@ import { numberScenes, type SceneNumber } from "../layout/sceneNumbers";
 import {
   DEFAULT_STYLE,
   NEXT_STYLE_ON_ENTER,
+  getNextStyleRules,
   characterName,
   cycleStyle,
   type LineStyle,
@@ -108,7 +109,11 @@ function mapStyles(old: readonly LineStyle[], tr: Transaction): LineStyle[] {
 
     if (out.length < b1) out.push(firstStyle);
     for (let n = b1 + 1; n <= b2; n++) {
-      out[n - 1] = n === b2 ? old[a2.number - 1] : DEFAULT_STYLE;
+      // 줄바꿈(Enter)할 때는 다음 줄 스타일이 항상 규칙(씬헤딩/서브헤더/전환/대사 → 액션, 인물/괄호 → 대사 등)을 따르도록 보장한다.
+      const prev = old[a2.number - 1];
+      const isSingleNewline = b2 === b1 + 1;
+      const nextStyle = isSingleNewline ? NEXT_STYLE_ON_ENTER[prev] : prev;
+      out[n - 1] = n === b2 ? nextStyle : DEFAULT_STYLE;
     }
     out.length = b2;
     consumed = a2.number;
@@ -217,8 +222,16 @@ export const insertScriptNewline: StateCommand = ({ state, dispatch }) => {
   const range = state.selection.main;
   const line = state.doc.lineAt(range.from);
   const style = styleAtLine(state, line.number);
-  const atLineEnd = range.to === state.doc.lineAt(range.to).to;
-  const newStyle = atLineEnd ? NEXT_STYLE_ON_ENTER[style] : style;
+  const lineEndPos = state.doc.lineAt(range.to).to;
+  const textAfterCursor = state.sliceDoc(range.to, lineEndPos);
+  const atLineEnd = range.to === lineEndPos || textAfterCursor.trim() === "";
+  const isHeaderOrSingle =
+    style === "scene" ||
+    style === "subheader" ||
+    style === "transition" ||
+    style === "character";
+  const enterRules = getNextStyleRules();
+  const newStyle = isHeaderOrSingle || atLineEnd ? (enterRules[style] ?? "action") : style;
   const newLineStart = range.from + 1;
 
   dispatch(

@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEven
 import { createPortal } from "react-dom";
 import { formatEighths, type SceneSummary } from "../analysis/analyze";
 import type { ProjectNode, RevisionMeta } from "../project/model";
-import type { DocPreset } from "../project/presets";
+import { isDefaultPreset, type DocPreset } from "../project/presets";
 import { findParent, type DropPosition } from "../project/tree";
 import { searchProject, type Snippet } from "./search";
 import { IconPickerDialog, SfSymbolIcon } from "./sfSymbols";
@@ -345,8 +345,8 @@ export function ProjectTree(props: Props) {
           onClick={() => onSelectScene(scene.line)}
           title={`${scene.heading}\n${scene.page}페이지 · 길이 ${formatEighths(scene.eighths)}${scene.characters.length ? ` · ${scene.characters.join(", ")}` : ""}`}
         >
-          <span className="scene-number">S#{scene.number}</span>
-          <span className="tree-name">{scene.heading.replace(/^S#\d+\.\s*/, "")}</span>
+          <span className="scene-number">#{scene.number}.</span>
+          <span className="tree-name">{scene.heading.replace(/^(?:S#|#)\s*\d+\.?\s*/i, "")}</span>
           <span className="tree-meta">{scene.page}p</span>
         </button>
       )).flatMap((button, i) => {
@@ -624,13 +624,10 @@ export function ProjectTree(props: Props) {
                         <span className="tree-icon">
                           <SfSymbolIcon type="structure" />
                         </span>
-                        <span className="preset-two-line">
-                          <span>3막 구조</span>
-                          <span>(세이브 더 캣)</span>
-                        </span>
+                        <span>3막 구조 양식</span>
                       </button>
                       {presets
-                        .filter((p) => p.id === "preset-character")
+                        .filter((p) => isDefaultPreset(p.id))
                         .map((preset) => (
                           <button
                             key={preset.id}
@@ -645,16 +642,16 @@ export function ProjectTree(props: Props) {
                             <span className="tree-icon">
                               <SfSymbolIcon type={preset.docType} icon={preset.icon} />
                             </span>
-                            <span>인물 양식</span>
+                            <span>{preset.name}</span>
                           </button>
                         ))}
-                      {presets.some((p) => p.id !== "preset-character") && (
+                      {presets.some((p) => !isDefaultPreset(p.id)) && (
                         <>
                           <hr />
                           <div className="preset-menu-section-label">추가한 프리셋</div>
                           <div className="preset-custom-scroll">
                             {presets
-                              .filter((p) => p.id !== "preset-character")
+                              .filter((p) => !isDefaultPreset(p.id))
                               .map((preset) => (
                                 <button
                                   key={preset.id}

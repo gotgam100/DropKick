@@ -1,9 +1,34 @@
 /**
  * DropKick 앱 설정 관리 (로컬 저장소에 보관)
  */
+import type { LineStyle } from "../editor/styles";
+
 export type ThemeMode = "system" | "light" | "dark";
 export type ZoomPercent = 80 | 100 | 120 | 150;
 export type AutosaveInterval = 3000 | 10000 | 30000 | 0;
+
+export type StyleShortcuts = Record<LineStyle, string>;
+export type NextStyleRules = Record<LineStyle, LineStyle>;
+
+export const DEFAULT_STYLE_SHORTCUTS: StyleShortcuts = {
+  scene: "1",
+  action: "2",
+  character: "3",
+  parenthetical: "4",
+  dialogue: "5",
+  subheader: "6",
+  transition: "7",
+};
+
+export const DEFAULT_NEXT_STYLE_RULES: NextStyleRules = {
+  scene: "action",
+  action: "action",
+  character: "dialogue",
+  parenthetical: "dialogue",
+  dialogue: "action",
+  subheader: "action",
+  transition: "action",
+};
 
 export type AppSettings = {
   /** 화면 테마: 맥 설정 따르기 / 밝은 모드 / 어두운 모드 */
@@ -26,6 +51,10 @@ export type AppSettings = {
   backupKeepCount: number;
   /** 시작할 때 마지막 작업 프로젝트 자동 열기 */
   openLastProjectOnStart: boolean;
+  /** 문장 스타일별 단축키 (숫자/문자 1자리, 기본 1~7) */
+  styleShortcuts: StyleShortcuts;
+  /** 줄 끝에서 Enter를 눌렀을 때 다음 스타일 규칙 */
+  nextStyleOnEnter: NextStyleRules;
 };
 
 const STORAGE_KEY = "dropkick.settings.v1";
@@ -43,6 +72,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autosaveDelayMs: 3000,
   backupKeepCount: 30,
   openLastProjectOnStart: true,
+  styleShortcuts: DEFAULT_STYLE_SHORTCUTS,
+  nextStyleOnEnter: DEFAULT_NEXT_STYLE_RULES,
 };
 
 export function normalizeZoom(val: unknown): ZoomPercent {
@@ -71,6 +102,16 @@ export function loadSettings(): AppSettings {
     const rawKeep = typeof p.backupKeepCount === "number" ? Math.round(p.backupKeepCount) : 30;
     const backupKeepCount = Math.max(1, Math.min(100, rawKeep));
 
+    const styleShortcuts: StyleShortcuts = {
+      ...DEFAULT_STYLE_SHORTCUTS,
+      ...(p.styleShortcuts && typeof p.styleShortcuts === "object" ? p.styleShortcuts : {}),
+    };
+
+    const nextStyleOnEnter: NextStyleRules = {
+      ...DEFAULT_NEXT_STYLE_RULES,
+      ...(p.nextStyleOnEnter && typeof p.nextStyleOnEnter === "object" ? p.nextStyleOnEnter : {}),
+    };
+
     return {
       theme,
       zoom,
@@ -85,6 +126,8 @@ export function loadSettings(): AppSettings {
       backupKeepCount,
       openLastProjectOnStart:
         typeof p.openLastProjectOnStart === "boolean" ? p.openLastProjectOnStart : true,
+      styleShortcuts,
+      nextStyleOnEnter,
     };
   } catch {
     return DEFAULT_SETTINGS;

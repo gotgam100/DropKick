@@ -137,6 +137,21 @@ describe("Fountain 열기", () => {
     expect(fromFountain(toFountain(doc))).toEqual(doc);
   });
 
+  it("서브 헤더: ..기호로 저장 및 불러오기 양방향 유지", () => {
+    const doc = {
+      titlePage: null,
+      lines: [
+        { style: "scene" as const, text: "내부. 집 - 낮" },
+        { style: "action" as const, text: "거실을 지나간다." },
+        { style: "subheader" as const, text: "복도" },
+        { style: "action" as const, text: "불이 꺼져 있다." },
+      ],
+    };
+    const fountain = toFountain(doc);
+    expect(fountain).toContain("..복도");
+    expect(fromFountain(fountain)).toEqual(doc);
+  });
+
   it("빈 파일은 빈 액션 한 줄", () => {
     expect(fromFountain("").lines).toEqual([{ style: "action", text: "" }]);
   });

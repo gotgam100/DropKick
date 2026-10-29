@@ -6,6 +6,7 @@ export const LINE_STYLES = [
   "character",
   "parenthetical",
   "dialogue",
+  "subheader",
   "transition",
 ] as const;
 
@@ -19,21 +20,54 @@ export const STYLE_LABELS: Record<LineStyle, string> = {
   character: "인물",
   parenthetical: "괄호지문",
   dialogue: "대사",
+  subheader: "서브 헤더",
   transition: "전환",
 };
 
-// 줄 끝에서 Enter를 눌렀을 때 다음 줄에 자동으로 붙는 스타일
+// 줄 끝에서 Enter를 눌렀을 때 다음 줄에 자동으로 붙는 기본 스타일
 export const NEXT_STYLE_ON_ENTER: Record<LineStyle, LineStyle> = {
   scene: "action",
   action: "action",
   character: "dialogue",
   parenthetical: "dialogue",
   dialogue: "action",
-  transition: "scene",
+  subheader: "action",
+  transition: "action",
 };
 
-// ⌘1 ~ ⌘6 단축키 순서는 LINE_STYLES 순서와 같다.
+/** 사용자 설정이 반영된 줄바꿈 다음 스타일 규칙을 가져옵니다. */
+export function getNextStyleRules(): Record<LineStyle, LineStyle> {
+  try {
+    if (typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem("dropkick.settings.v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.nextStyleOnEnter && typeof parsed.nextStyleOnEnter === "object") {
+          return { ...NEXT_STYLE_ON_ENTER, ...parsed.nextStyleOnEnter };
+        }
+      }
+    }
+  } catch {
+    // 기본값 반환
+  }
+  return NEXT_STYLE_ON_ENTER;
+}
+
+// 스타일별 단축키를 반환합니다. (설정에서 변경한 경우 해당 단축키 표시)
 export function shortcutFor(style: LineStyle): string {
+  try {
+    if (typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem("dropkick.settings.v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.styleShortcuts?.[style]) {
+          return `⌘${parsed.styleShortcuts[style]}`.toUpperCase();
+        }
+      }
+    }
+  } catch {
+    // 기본값 반환
+  }
   return `⌘${LINE_STYLES.indexOf(style) + 1}`;
 }
 

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
 
 /// Finder에서 더블클릭해 연 프로젝트 경로. 화면이 준비되기 전에 들어오면 여기 모아 둔다.
 #[derive(Default)]
@@ -256,6 +256,33 @@ fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
+#[tauri::command]
+fn open_auxiliary_window(app: AppHandle, window_type: String) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window(&window_type) {
+        let _ = win.set_focus();
+        let _ = win.unminimize();
+        return Ok(());
+    }
+
+    let (title, url, width, height, min_w, min_h) = match window_type.as_str() {
+        "settings" => ("설정", "index.html?aux=settings", 780.0, 620.0, 640.0, 480.0),
+        "guide" => ("시나리오 작성 가이드", "index.html?aux=guide", 1120.0, 780.0, 840.0, 560.0),
+        _ => return Err(format!("알 수 없는 창 종류입니다: {window_type}")),
+    };
+
+    let builder = WebviewWindowBuilder::new(&app, &window_type, WebviewUrl::App(url.into()))
+        .title(title)
+        .inner_size(width, height)
+        .min_inner_size(min_w, min_h)
+        .resizable(true);
+
+    builder
+        .build()
+        .map_err(|e| format!("창을 열 수 없습니다: {e}"))?;
+
+    Ok(())
+}
+
 fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let item =
         |id: &str, label: &str, accel: Option<&str>| MenuItem::with_id(app, id, label, true, accel);
@@ -328,7 +355,8 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item("style:character", "인물", Some("CmdOrCtrl+3"))?,
             &item("style:parenthetical", "괄호지문", Some("CmdOrCtrl+4"))?,
             &item("style:dialogue", "대사", Some("CmdOrCtrl+5"))?,
-            &item("style:transition", "전환", Some("CmdOrCtrl+6"))?,
+            &item("style:subheader", "서브 헤더", Some("CmdOrCtrl+6"))?,
+            &item("style:transition", "전환", Some("CmdOrCtrl+7"))?,
         ],
     )?;
 
@@ -371,6 +399,15 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
+    let help_menu = Submenu::with_items(
+        app,
+        "도움말",
+        true,
+        &[
+            &item("open_guide", "시나리오 작성 가이드", Some("CmdOrCtrl+Shift+/"))?,
+        ],
+    )?;
+
     Menu::with_items(
         app,
         &[
@@ -380,6 +417,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &style_menu,
             &view_menu,
             &window_menu,
+            &help_menu,
         ],
     )
 }
@@ -395,6 +433,15 @@ pub fn run() {
         .menu(build_menu)
         // 메뉴를 고르면 화면(프론트엔드)에 "menu" 이벤트로 알린다.
         .on_menu_event(|app, event| {
+            let id = event.id().0.as_str();
+            if id == "open_settings" {
+                let _ = open_auxiliary_window(app.clone(), "settings".into());
+                return;
+            }
+            if id == "open_guide" {
+                let _ = open_auxiliary_window(app.clone(), "guide".into());
+                return;
+            }
             let _ = app.emit("menu", event.id().0.clone());
         })
         .invoke_handler(tauri::generate_handler![
@@ -411,7 +458,8 @@ pub fn run() {
             open_in_finder,
             reveal_in_finder,
             take_pending_opens,
-            quit_app
+            quit_app,
+            open_auxiliary_window
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

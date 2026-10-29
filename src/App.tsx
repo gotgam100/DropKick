@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { fromFountain } from "./fountain/fountain";
 import { Editor, type EditorHandle, type EditorInfo } from "./editor/Editor";
@@ -9,7 +9,7 @@ import { LINE_STYLES, STYLE_LABELS, shortcutFor } from "./editor/styles";
 import { useProject } from "./project/useProject";
 import { findNode, findParent, folderNamed } from "./project/tree";
 import { BLANK_SCRIPT_LINES, DOC_TYPE_LABELS, walkDocs, type DocNode } from "./project/model";
-import { DEFAULT_PRESETS, loadPresets, savePresets, type DocPreset } from "./project/presets";
+import { DEFAULT_PRESETS, isDefaultPreset, loadPresets, savePresets, type DocPreset } from "./project/presets";
 import {
   DEFAULT_SETTINGS,
   clearAllAppStorage,
@@ -20,6 +20,7 @@ import {
 } from "./settings/settings";
 import { SettingsDialog } from "./settings/SettingsDialog";
 import { AboutDialog } from "./settings/AboutDialog";
+import { ScreenplayGuideDialog, GUIDE_SEEN_KEY } from "./guide/ScreenplayGuideDialog";
 import { characterKey, sceneAtLine, type ScriptAnalysis } from "./analysis/analyze";
 import { ProjectTree } from "./panels/ProjectTree";
 import { PresetEditorView } from "./panels/PresetEditorView";
@@ -94,6 +95,9 @@ function App() {
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(() => {
+    return localStorage.getItem(GUIDE_SEEN_KEY) !== "true";
+  });
   const [presetMenuPos, setPresetMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [presetModal, setPresetModal] = useState<{
     initial: DocPreset | null;
@@ -104,6 +108,7 @@ function App() {
   const project = useProject(editorRef, textEditorRef, BLANK_SCRIPT_LINES);
   const openRevision = project.revisions.find((r) => r.id === openRevisionId) ?? null;
   const isScript = project.activeDoc.id === project.mainScriptId && !openRevision && !presetModal;
+  const isStructure = !isScript && !openRevision && !presetModal && project.activeDoc.type === "structure";
   const scriptName = findNode(project.tree, project.mainScriptId)?.name ?? "스크립트";
 
   const updateSettings = useCallback((next: AppSettings) => {
@@ -148,6 +153,26 @@ function App() {
     [setShowSidebar],
   );
 
+  const handleOpenSettings = useCallback(() => {
+    if (isTauri()) {
+      invoke("open_auxiliary_window", { windowType: "settings" }).catch(() => {
+        setSettingsOpen(true);
+      });
+    } else {
+      setSettingsOpen(true);
+    }
+  }, []);
+
+  const handleOpenGuide = useCallback(() => {
+    if (isTauri()) {
+      invoke("open_auxiliary_window", { windowType: "guide" }).catch(() => {
+        setGuideOpen(true);
+      });
+    } else {
+      setGuideOpen(true);
+    }
+  }, []);
+
   // 메뉴 처리 (사이드바, 통계, 새 고, 설정, DropKick 정보, 화면 비율)
   useEffect(() => {
     if (!isTauri()) return;
@@ -158,8 +183,9 @@ function App() {
       if (id === "toggle_scenes") toggleSidebar();
       else if (id === "toggle_stats") toggleStats();
       else if (id === "new_revision") setNewRevisionOpen(true);
-      else if (id === "open_settings") setSettingsOpen(true);
+      else if (id === "open_settings") handleOpenSettings();
       else if (id === "about_dropkick") setAboutOpen(true);
+      else if (id === "open_guide") handleOpenGuide();
       else if (id.startsWith("zoom:")) {
         const z = normalizeZoom(id.slice("zoom:".length));
         setSettings((prev) => {
@@ -177,7 +203,19 @@ function App() {
       disposed = true;
       unlisten?.();
     };
-  }, [toggleSidebar, toggleStats]);
+  }, [toggleSidebar, toggleStats, handleOpenSettings, handleOpenGuide]);
+
+  // 가이드 단축키 (⌘? 또는 ⌘/)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "/" || e.key === "?")) {
+        e.preventDefault();
+        handleOpenGuide();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleOpenGuide]);
 
   // 원고로 돌아오면 원고에 커서를 두고, 누른 씬이 있으면 그리로 이동한다.
   useEffect(() => {
@@ -306,7 +344,9 @@ function App() {
       const targetFolder =
         preset.docType === "character"
           ? folderNamed(project.tree, "인물 설정") ?? folderNamed(project.tree, "인물")
-          : findParent(project.tree, project.activeDoc.id)?.id ?? folderNamed(project.tree, "메모");
+          : preset.docType === "script"
+            ? folderNamed(project.tree, "스크립트") ?? null
+            : findParent(project.tree, project.activeDoc.id)?.id ?? folderNamed(project.tree, "메모");
       project.addDocWithPreset(targetFolder ?? null, preset);
       setShowSidebar(true);
     },
@@ -322,15 +362,15 @@ function App() {
       if (!forceNew) {
         const existing = walkDocs(project.tree).find((d) => d.type === "structure");
         if (existing) {
-          if (existing.name === "3막 구조") {
-            project.rename(existing.id, "3막 구조(세이브 더 캣)");
+          if (existing.name === "3막 구조" || existing.name === "3막 구조(세이브 더 캣)") {
+            project.rename(existing.id, "3막 구조 양식");
           }
           project.openDoc(existing.id);
           return;
         }
       }
       const targetFolder = folderNamed(project.tree, "개요");
-      project.addDoc(targetFolder ?? null, "structure", "3막 구조(세이브 더 캣)");
+      project.addDoc(targetFolder ?? null, "structure", "3막 구조 양식");
       setShowSidebar(true);
     },
     [project, setShowSidebar],
@@ -368,6 +408,43 @@ function App() {
     setSettingsOpen(false);
     setNotice({ text: "프로그램을 처음 상태로 초기화했습니다.", key: Date.now() });
   }, [project, setShowSidebar, setShowStats]);
+
+  // 보조 창(설정, 가이드 등)과의 이벤트 동기화
+  useEffect(() => {
+    if (!isTauri()) return;
+
+    let unlistens: (() => void)[] = [];
+
+    Promise.all([
+      listen<AppSettings>("settings-changed", (event) => {
+        setSettings(event.payload);
+      }),
+      listen<DocPreset[]>("presets-changed", (event) => {
+        setPresets(event.payload);
+      }),
+      listen<{ title: string; fountainText: string }>("load-sample-project", async (event) => {
+        const ok = await project.newProjectWithScript(event.payload.title, event.payload.fountainText);
+        if (ok) {
+          setNotice({
+            text: `예시 스크립트 "${event.payload.title}"(으)로 새 프로젝트를 시작했습니다.`,
+            key: Date.now(),
+          });
+        }
+      }),
+      listen<{ initial: DocPreset | null }>("open-preset-editor", (event) => {
+        setPresetModal({ initial: event.payload.initial });
+      }),
+      listen("app-reset", () => {
+        handleFullResetApp();
+      }),
+    ]).then((fns) => {
+      unlistens = fns;
+    });
+
+    return () => {
+      unlistens.forEach((fn) => fn());
+    };
+  }, [project, handleFullResetApp]);
 
   const zoomStyle = settings.zoom !== 100 ? { zoom: settings.zoom / 100 } : undefined;
 
@@ -461,13 +538,25 @@ function App() {
               >
                 <span className="style-name">표지</span>
               </button>,
+              <button
+                key="guide-btn"
+                type="button"
+                className={guideOpen ? "style-button active" : "style-button"}
+                title="시나리오 작성 가이드 (⌘?)"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleOpenGuide}
+              >
+                <span className="style-name">📖 가이드</span>
+              </button>,
             )
           ) : (
             <span className="stylebar-doc">
               {DOC_TYPE_LABELS[project.activeDoc.type]} · {project.activeDoc.name}
-              <button type="button" className="style-button" onClick={() => openDoc(mainScriptId)}>
-                ← {scriptName}
-              </button>
+              {!isStructure && (
+                <button type="button" className="style-button" onClick={() => openDoc(mainScriptId)}>
+                  ← {scriptName}
+                </button>
+              )}
             </span>
           )}
         </div>
@@ -475,12 +564,12 @@ function App() {
         <div className="toolbar-right">
           <button
             type="button"
-            className={!isScript && !openRevision && !presetModal && project.activeDoc.type === "structure" ? "style-button active" : "style-button"}
-            title="3막 구조 보드 (세이브 더 캣 15단계)"
+            className={isStructure ? "style-button active" : "style-button"}
+            title={isStructure ? `${scriptName} 화면으로 돌아가기` : "3막 구조 보드 (세이브 더 캣 15단계)"}
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => handleOpenOrCreateStructure(false)}
+            onClick={() => (isStructure ? openDoc(mainScriptId) : handleOpenOrCreateStructure(false))}
           >
-            <span className="style-name">3막 구조</span>
+            <span className="style-name">{isStructure ? "스크립트" : "3막 구조"}</span>
           </button>
           <button
             type="button"
@@ -549,9 +638,6 @@ function App() {
         {/* 원고 에디터는 항상 살려 두고(되돌리기 기록, 분석 유지) 다른 문서를 볼 때만 숨긴다. */}
         <main className="desk" hidden={!isScript}>
           <article className="paper" style={zoomStyle}>
-            <span className="page-number" aria-hidden="true">
-              1.
-            </span>
             <Editor
               ref={editorRef}
               initialLines={BLANK_SCRIPT_LINES}
@@ -586,7 +672,7 @@ function App() {
             key={presetModal.initial?.id ?? "new"}
             initial={presetModal.initial}
             draft={presetModal.draft}
-            canDelete={presets.length > 1 || presetModal.initial?.id !== "preset-character"}
+            canDelete={presets.length > 2 || (presetModal.initial ? !isDefaultPreset(presetModal.initial.id) : true)}
             onSave={(savedPreset) => {
               const exists = presets.some((p) => p.id === savedPreset.id);
               const next = exists
@@ -612,7 +698,7 @@ function App() {
           />
         )}
 
-        {!isScript && !openRevision && !presetModal && project.activeDoc.type === "structure" && (
+        {isStructure && (
           <StructureBoardView
             text={project.activeText}
             scenes={analysis.scenes}
@@ -623,7 +709,7 @@ function App() {
           />
         )}
 
-        {!isScript && !openRevision && !presetModal && project.activeDoc.type !== "structure" && (
+        {!isScript && !openRevision && !presetModal && !isStructure && (
           <main className="text-desk">
             {activeCharacter !== undefined && (
               <div className="character-info">
@@ -640,7 +726,7 @@ function App() {
                       씬 <strong>{activeCharacter.scenes}</strong>개
                     </span>
                     <span>
-                      첫 등장 <strong>S#{activeCharacter.firstScene}</strong>
+                      첫 등장 <strong>#{activeCharacter.firstScene}</strong>
                     </span>
                     <button type="button" onClick={() => findCharacter(activeCharacter.name)}>
                       등장 씬 찾기
@@ -758,14 +844,11 @@ function App() {
                   <span className="tree-icon">
                     <SfSymbolIcon type="structure" />
                   </span>
-                  <span className="preset-two-line">
-                    <span>3막 구조</span>
-                    <span>(세이브 더 캣)</span>
-                  </span>
+                  <span>3막 구조 양식</span>
                 </button>
               </div>
               {presets
-                .filter((p) => p.id === "preset-character")
+                .filter((p) => isDefaultPreset(p.id))
                 .map((preset) => (
                   <div key={preset.id} className="preset-menu-row">
                     <button
@@ -777,18 +860,18 @@ function App() {
                       <span className="tree-icon">
                         <SfSymbolIcon type={preset.docType} icon={preset.icon} />
                       </span>
-                      <span>인물 양식</span>
+                      <span>{preset.name}</span>
                     </button>
                   </div>
                 ))}
 
-              {presets.some((p) => p.id !== "preset-character") && (
+              {presets.some((p) => !isDefaultPreset(p.id)) && (
                 <>
                   <hr />
                   <div className="preset-menu-section-label">추가한 프리셋</div>
                   <div className="preset-custom-scroll">
                     {presets
-                      .filter((p) => p.id !== "preset-character")
+                      .filter((p) => !isDefaultPreset(p.id))
                       .map((preset) => (
                         <div key={preset.id} className="preset-menu-row">
                           <button
@@ -879,6 +962,18 @@ function App() {
       )}
 
       {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
+
+      {guideOpen && (
+        <ScreenplayGuideDialog
+          onClose={() => setGuideOpen(false)}
+          onLoadSampleProject={async (title, fountainText) => {
+            const ok = await project.newProjectWithScript(title, fountainText);
+            if (ok) {
+              setNotice({ text: `예시 스크립트 "${title}"(으)로 새 프로젝트를 시작했습니다.`, key: Date.now() });
+            }
+          }}
+        />
+      )}
 
       {notice && (
         <div className="toast" role="status" key={notice.key}>

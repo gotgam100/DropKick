@@ -16,7 +16,7 @@ type Props = {
   /** 편집할 기존 프리셋. null이면 새 프리셋 만들기 */
   initial: DocPreset | null;
   /** '지금 문서를 프리셋으로 저장'할 때 초기값 */
-  draft?: { name: string; body: string; icon?: string; docType?: "character" | "memo" };
+  draft?: { name: string; body: string; icon?: string; docType?: "character" | "memo" | "script" };
   canDelete: boolean;
   onSave: (preset: DocPreset) => void;
   onDelete?: (id: string) => void;
@@ -26,9 +26,15 @@ type Props = {
 export function PresetEditorView({ initial, draft, canDelete, onSave, onDelete, onClose }: Props) {
   const [name, setName] = useState(initial?.name ?? draft?.name ?? "");
   const [defaultDocName, setDefaultDocName] = useState(initial?.defaultDocName ?? "");
-  const [docType, setDocType] = useState<"character" | "memo">(initial?.docType ?? draft?.docType ?? "memo");
+  const [docType, setDocType] = useState<"character" | "memo" | "script">(initial?.docType ?? draft?.docType ?? "memo");
   const [icon, setIcon] = useState<string | undefined>(
-    initial?.icon ?? draft?.icon ?? ((initial?.docType ?? draft?.docType) === "character" ? "person" : "doc.text"),
+    initial?.icon ??
+      draft?.icon ??
+      ((initial?.docType ?? draft?.docType) === "character"
+        ? "person"
+        : (initial?.docType ?? draft?.docType) === "script"
+          ? "film"
+          : "doc.text"),
   );
   const [body, setBody] = useState(() =>
     initial ? initial.body : extractPresetBody(draft?.body ?? "## 항목\n- \n"),
@@ -45,7 +51,7 @@ export function PresetEditorView({ initial, draft, canDelete, onSave, onDelete, 
         name: trimmedName,
         defaultDocName: defaultDocName.trim() || fallbackDocName,
         docType,
-        icon: icon || (docType === "character" ? "person" : "doc.text"),
+        icon: icon || (docType === "character" ? "person" : docType === "script" ? "film" : "doc.text"),
         body: extractPresetBody(body),
       });
     } else {

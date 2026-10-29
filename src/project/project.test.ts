@@ -63,7 +63,7 @@ function memoryFs() {
 const ROOT = "/Users/me/드롭킥.dropkick";
 
 describe("새 프로젝트", () => {
-  it("개요, 스크립트, 인물 설정, 메모, 기타로 시작하고 원고는 비어 있다 (S#1 없음)", () => {
+  it("개요, 스크립트, 인물 설정, 메모, 기타로 시작하고 첫 줄은 씬헤딩", () => {
     const { manifest, texts } = createProject("드롭킥");
     expect(manifest.tree.map((n) => [n.type, n.name])).toEqual([
       ["folder", "개요"],
@@ -74,7 +74,7 @@ describe("새 프로젝트", () => {
     ]);
     const script = fromFountain(texts.get(manifest.mainScript)!);
     expect(script.titlePage).toBe("Title: 드롭킥");
-    expect(script.lines).toEqual([{ style: "action", text: "" }]);
+    expect(script.lines).toEqual([{ style: "scene", text: "" }]);
   });
 
   it("지금 쓰던 원고로 프로젝트를 만들 수 있다", () => {

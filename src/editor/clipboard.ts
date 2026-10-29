@@ -9,7 +9,8 @@
 import { EditorState, StateEffect, type Extension, type Text } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { setLineStyleEffect, lineStylesField } from "./lineStyles";
-import { NEXT_STYLE_ON_ENTER, type LineStyle } from "./styles";
+import { getNextStyleRules, type LineStyle } from "./styles";
+import { fromFountain } from "../fountain/fountain";
 
 export const DROPKICK_CLIPBOARD_MIME = "application/x-dropkick-script";
 
@@ -108,6 +109,121 @@ export function copyToClipboardData(
   return false;
 }
 
+/**
+ * 프로그래밍 방식(예: 가이드의 복사 버튼)으로 스크립트 Payload를 클립보드에 기록한다.
+ */
+export async function copyScriptPayloadToClipboard(
+  payload: ScriptClipboardPayload,
+): Promise<boolean> {
+  // 1. 메모리 캐시에 최우선 보관 (DropKick 내 붙여넣기 100% 보장)
+  inMemoryClipboard = payload;
+
+  let writeSuccess = false;
+
+  // 2. 시스템 클립보드에 HTML(데이터 속성 포함) 및 text/plain 기록
+  try {
+    const jsonStr = encodeURIComponent(JSON.stringify(payload));
+    const html = `<div data-dropkick-script="${jsonStr}"><pre>${escapeHtml(payload.text)}</pre></div>`;
+
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.clipboard &&
+      typeof navigator.clipboard.write === "function" &&
+      typeof ClipboardItem !== "undefined" &&
+      typeof Blob !== "undefined"
+    ) {
+      const blobText = new Blob([payload.text], { type: "text/plain" });
+      const blobHtml = new Blob([html], { type: "text/html" });
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/plain": blobText,
+          "text/html": blobHtml,
+        }),
+      ]);
+      writeSuccess = true;
+    }
+  } catch {
+    // ClipboardItem 생성이나 write 실패 시
+  }
+
+  // 3. writeText 폴백
+  if (!writeSuccess) {
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === "function"
+      ) {
+        await navigator.clipboard.writeText(payload.text);
+        writeSuccess = true;
+      }
+    } catch {}
+  }
+
+  return true;
+}
+
+/**
+ * 텍스트가 Fountain 포맷의 특징(씬헤딩, 인물, 서브헤더, 전환, 표지 등)을 포함하는지 감지한다.
+ */
+export function isFountainText(text: string): boolean {
+  if (!text || !text.trim()) return false;
+
+  // 1. 표지 메타데이터 (Title:, Author:, Credit: 등)
+  if (/^\s*Title\s*:\s*[^\n]+/im.test(text)) return true;
+
+  // 2. 강제 인물 표기 (@민재, @수아)
+  if (/^\s*@[^\s\n]/m.test(text)) return true;
+
+  // 3. 서브헤더 표기 (..복도)
+  if (/^\s*\.\.[^\s\n]/m.test(text)) return true;
+
+  // 4. 전환 표기 (> CUT TO:, > FADE OUT.)
+  if (/^\s*>[^<\n]+$/m.test(text)) return true;
+
+  // 5. 씬헤딩 점 시작 (.실내, .실외, .내부, .외부, .INT, .EXT 등)
+  if (/^\s*\.(?:실내|실외|내부|외부|INT|EXT|EST|I\/E)[.\s]/im.test(text)) return true;
+
+  // 6. 씬 번호 마커 (#1#, #2A#)
+  if (/#[\w.\-]+#\s*$/m.test(text)) return true;
+
+  // 7. 표준 영문 씬헤딩 시작 (INT. EXT.)
+  if (/^\s*(?:INT|EXT|EST|INT\.?\/EXT|I\/E)[.\s]/im.test(text)) return true;
+
+  // 8. 한국어 씬헤딩 (S#1, #1)
+  if (/^\s*(?:S\s*#|#)\s*\d+/im.test(text)) return true;
+
+  return false;
+}
+
+/**
+ * 일반 클립보드 텍스트가 Fountain 형식인 경우 구문 분석하여 라인별 스타일이 담긴 Payload로 변환한다.
+ */
+export function parseFountainClipboard(plainText: string): ScriptClipboardPayload | null {
+  if (!isFountainText(plainText)) return null;
+
+  try {
+    const doc = fromFountain(plainText);
+    if (!doc.lines || doc.lines.length === 0) return null;
+
+    // 액션 이외의 스타일(씬, 인물, 대사, 괄호지문, 서브헤더, 전환)이 최소 1개 이상 있거나 표지가 있어야 함
+    const hasScriptStyle = doc.lines.some((l) => l.style !== "action");
+    if (!hasScriptStyle && !doc.titlePage) return null;
+
+    const text = doc.lines.map((l) => l.text).join("\n");
+    const styles = doc.lines.map((l) => l.style);
+
+    return {
+      version: 1,
+      text,
+      styles,
+      isFullLine: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function readFromClipboardData(
   event: ClipboardEvent,
 ): ScriptClipboardPayload | null {
@@ -127,9 +243,13 @@ export function readFromClipboardData(
     }
   } catch {}
 
-  // 2. 앱 내 메모리 캐시 확인 (텍스트 내용이 일치할 때만)
-  if (inMemoryClipboard && inMemoryClipboard.text === plainText) {
-    return inMemoryClipboard;
+  // 2. 앱 내 메모리 캐시 확인 (텍스트 내용이 일치할 때, 줄바꿈 정규화)
+  if (inMemoryClipboard) {
+    const normMem = inMemoryClipboard.text.replace(/\r\n/g, "\n");
+    const normPlain = plainText ? plainText.replace(/\r\n/g, "\n") : "";
+    if (normMem === normPlain) {
+      return inMemoryClipboard;
+    }
   }
 
   // 3. HTML 데이터 속성 확인
@@ -146,6 +266,14 @@ export function readFromClipboardData(
       }
     }
   } catch {}
+
+  // 4. 외부/일반 클립보드의 Fountain 텍스트 감지 및 자동 변환
+  if (plainText) {
+    const fountainPayload = parseFountainClipboard(plainText);
+    if (fountainPayload) {
+      return fountainPayload;
+    }
+  }
 
   return null;
 }
@@ -188,7 +316,7 @@ export function computePasteEffects(
       // 텍스트 끝에 \n이 있어서 빈 줄이 추가된 경우 (예: "민재\n")
       // 마지막 줄 스타일의 다음 기본 스타일(예: 인물 다음 대사) 적용
       const lastStyle = payload.styles[styleCount - 1] ?? "action";
-      const nextStyle = NEXT_STYLE_ON_ENTER[lastStyle] ?? "action";
+      const nextStyle = getNextStyleRules()[lastStyle] ?? "action";
       effects.push(setLineStyleEffect.of({ pos: lineStartPos, style: nextStyle }));
     }
 

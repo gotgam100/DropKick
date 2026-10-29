@@ -43,10 +43,52 @@ describe("Enter", () => {
     expect(s.doc.line(4).text).toBe("");
   });
 
-  it("씬헤딩 끝 → 액션, 대사 끝 → 액션", () => {
+  it("인물 줄에서는 공백이 뒤에 있거나 이름 끝에서도 다음 줄은 대사", () => {
+    const custom = [
+      { style: "character" as const, text: "은비 " },
+    ];
+    let s = createScriptState(custom);
+    s = at(s, 2); // '은비' 뒤, 공백 앞
+    s = run(s, insertScriptNewline);
+    expect(styles(s)).toEqual(["character", "dialogue"]);
+  });
+
+  it("인물 스타일 줄에서 IME나 일반 줄바꿈이 일어나도 다음 줄은 대사가 된다", () => {
+    let s = createScriptState([{ style: "character", text: "민재" }]);
+    // setLineStyleEffect 없이 일반 텍스트 변경으로 \n이 들어온 경우 (IME 커밋 또는 브라우저 입력)
+    s = s.update({ changes: { from: s.doc.line(1).to, insert: "\n" } }).state;
+    expect(styles(s)).toEqual(["character", "dialogue"]);
+  });
+
+  it("씬헤딩, 서브헤더, 전환 줄에서 일반 줄바꿈이 일어나도 다음 줄은 액션이 된다", () => {
+    let s1 = createScriptState([{ style: "scene", text: "내부. 카페 - 낮" }]);
+    s1 = s1.update({ changes: { from: s1.doc.line(1).to, insert: "\n" } }).state;
+    expect(styles(s1)).toEqual(["scene", "action"]);
+
+    let s2 = createScriptState([{ style: "subheader", text: "카운터 앞" }]);
+    s2 = s2.update({ changes: { from: s2.doc.line(1).to, insert: "\n" } }).state;
+    expect(styles(s2)).toEqual(["subheader", "action"]);
+
+    let s3 = createScriptState([{ style: "transition", text: "FADE OUT." }]);
+    s3 = s3.update({ changes: { from: s3.doc.line(1).to, insert: "\n" } }).state;
+    expect(styles(s3)).toEqual(["transition", "action"]);
+  });
+
+  it("씬헤딩 끝 → 액션, 서브 헤더 → 액션, 전환 → 액션, 대사 끝 → 액션", () => {
     let s = createScriptState(sample);
     s = run(at(s, s.doc.line(1).to), insertScriptNewline);
     expect(styles(s)[1]).toBe("action");
+
+    // 서브 헤더에서 Enter → 액션
+    let s2 = createScriptState([{ style: "subheader", text: "복도" }]);
+    s2 = run(at(s2, s2.doc.length), insertScriptNewline);
+    expect(styles(s2)).toEqual(["subheader", "action"]);
+
+    // 전환에서 Enter → 액션
+    let s3 = createScriptState([{ style: "transition", text: "CUT TO:" }]);
+    s3 = run(at(s3, s3.doc.length), insertScriptNewline);
+    expect(styles(s3)).toEqual(["transition", "action"]);
+
     s = run(at(s, s.doc.length), insertScriptNewline);
     expect(styles(s).slice(-1)[0]).toBe("action");
   });
@@ -101,6 +143,12 @@ describe("스타일 지정", () => {
     let s = createScriptState(sample);
     s = run(at(s, s.doc.line(2).from + 1), setStyle("character"));
     expect(styles(s)[1]).toBe("character");
+  });
+
+  it("⌘6: 현재 줄을 서브 헤더로", () => {
+    let s = createScriptState(sample);
+    s = run(at(s, s.doc.line(2).from + 1), setStyle("subheader"));
+    expect(styles(s)[1]).toBe("subheader");
   });
 
   it("Tab: 빈 줄에서 다음 스타일로 순환", () => {

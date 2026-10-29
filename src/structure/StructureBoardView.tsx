@@ -512,10 +512,24 @@ export function StructureBoardView({
     return map;
   }, [board.beats]);
 
+  const act2Beats = useMemo(() => board.beats.filter((b) => b.act === 2), [board.beats]);
+
+  const getBeatPhase = (beat: BeatCardState): { phase: "act-1" | "act-2a" | "act-2b" | "act-3"; label: string } => {
+    if (beat.act === 1) return { phase: "act-1", label: "1막" };
+    if (beat.act === 3) return { phase: "act-3", label: "3막" };
+    const midIdx = act2Beats.findIndex((b) => b.id === "midpoint" || b.defaultTitle === "중간점");
+    const cutOff = midIdx >= 0 ? midIdx : Math.floor(act2Beats.length / 2);
+    const myIdx = act2Beats.findIndex((b) => b.id === beat.id);
+    return myIdx > cutOff
+      ? { phase: "act-2b", label: "2막 후반" }
+      : { phase: "act-2a", label: "2막 전반" };
+  };
+
   const renderBeatCard = (state: BeatCardState) => {
     const stepNumber = beatNumberMap.get(state.id) ?? 1;
     const resolvedList = resolvedByBeat.get(state.id) ?? [];
     const activeScenes = resolvedList.map((r) => r.scene).filter((s): s is SceneSummary => s !== null);
+    const { phase, label: phaseLabel } = getBeatPhase(state);
 
     const isCustomTitle =
       state.defaultTitle.trim() !== "" &&
@@ -531,10 +545,11 @@ export function StructureBoardView({
       <section
         key={state.id}
         data-beat-id={state.id}
-        className={`beat-card${isDropTarget ? " drop-over" : ""}`}
+        className={`beat-card phase-${phase}${isDropTarget ? " drop-over" : ""}`}
       >
         <div className="beat-card-head">
           <span className="beat-number">{stepNumber}.</span>
+          <span className={`beat-phase-badge phase-${phase}`}>{phaseLabel}</span>
           <input
             ref={(el) => {
               if (el) titleInputRefs.current.set(state.id, el);
@@ -563,6 +578,7 @@ export function StructureBoardView({
               ↺
             </button>
           )}
+          {state.guide && <span className="beat-guide">{state.guide}</span>}
           <button
             type="button"
             className="beat-card-delete"
@@ -574,18 +590,27 @@ export function StructureBoardView({
           </button>
         </div>
 
-        {state.guide && <p className="beat-guide">{state.guide}</p>}
+        {/* 1. 시놉시스 및 구상 */}
+        <div className="beat-card-synopsis-section">
+          <div className="beat-section-label">시놉시스 및 구상</div>
+          <textarea
+            className="beat-synopsis"
+            rows={3}
+            value={state.synopsis}
+            placeholder="이 단계의 시놉시스나 구상을 적어보세요."
+            onChange={(e) => updateBeatSynopsis(state.id, e.target.value)}
+          />
+        </div>
 
-        {/* 3줄 고정 높이 시놉시스: 3줄이 넘어가면 슬라이드바(스크롤바)로 내려서 확인 */}
-        <textarea
-          className="beat-synopsis"
-          rows={3}
-          value={state.synopsis}
-          placeholder="이 단계의 시놉시스나 구상을 적어보세요."
-          onChange={(e) => updateBeatSynopsis(state.id, e.target.value)}
-        />
-
-        <div className="beat-scenes-area">
+        {/* 2. 씬 박스 */}
+        <div className="beat-card-scenes-section">
+          <div className="beat-section-label">
+            <span>씬 박스</span>
+            {activeScenes.length > 0 && (
+              <span className="muted beat-scenes-count">({activeScenes.length}개)</span>
+            )}
+          </div>
+          <div className="beat-scenes-area">
           {resolvedList.map(({ ref, scene }) => {
             const isChipDropTarget =
               drag?.overBeatId === state.id &&
@@ -605,10 +630,10 @@ export function StructureBoardView({
                 data-chip-beat-id={state.id}
                 className={`beat-scene-chip${dropClass}${isDraggingSelf ? " chip-dragging" : ""}`}
                 onPointerDown={(e) => onChipPointerDown(e, scene, state.id, ref.key)}
-                title={`S#${scene.number} ${cleanSceneHeading(scene.heading)} (${scene.page}p)\n• 클릭: 원고의 이 씬으로 이동\n• 드래그: 순서 변경 또는 다른 카드로 이동\n• ⌘(커맨드) + 드래그: 다른 카드에 복제`}
+                title={`#${scene.number}. ${cleanSceneHeading(scene.heading)} (${scene.page}p)\n• 클릭: 원고의 이 씬으로 이동\n• 드래그: 순서 변경 또는 다른 카드로 이동\n• ⌘(커맨드) + 드래그: 다른 카드에 복제`}
               >
                 <span className="beat-scene-chip-jump">
-                  <span className="scene-number">S#{scene.number}</span>
+                  <span className="scene-number">#{scene.number}.</span>
                   <span className="beat-scene-chip-name">
                     {cleanSceneHeading(scene.heading) || "장소 미정"}
                   </span>
@@ -636,7 +661,7 @@ export function StructureBoardView({
                 title="원고에서 지워졌거나 찾을 수 없는 씬입니다"
               >
                 <span className="beat-scene-chip-name">
-                  (S#{ref.sceneNumber} {ref.heading || "삭제된 씬"})
+                  (#{ref.sceneNumber}. {ref.heading || "삭제된 씬"})
                 </span>
                 <button
                   type="button"
@@ -668,7 +693,7 @@ export function StructureBoardView({
               <option value="">+ 씬 등록…</option>
               {availableToAdd.map((s) => (
                 <option key={s.number} value={s.number}>
-                  S#{s.number} {cleanSceneHeading(s.heading) || "장소 미정"} ({s.page}p)
+                  #{s.number}. {cleanSceneHeading(s.heading) || "장소 미정"} ({s.page}p)
                 </option>
               ))}
             </select>
@@ -677,6 +702,7 @@ export function StructureBoardView({
               <span className="beat-scene-empty-hint">오른쪽 서랍에서 씬을 끌어다 놓으세요</span>
             )
           )}
+          </div>
         </div>
       </section>
     );
@@ -739,17 +765,19 @@ export function StructureBoardView({
         </div>
       </header>
 
-      {/* 본문: 1막 | 2막 | 3막 세로 3기둥 칸반 보드 + 오른쪽 원고 씬 서랍 */}
+      {/* 본문: 분할 없이 1막부터 순서대로 가로형 카드로 세로 배치 + 오른쪽 원고 씬 서랍 */}
       <div className="structure-board-body">
-        {([1, 2, 3] as const).map((act) => {
-          const meta = ACT_META[act];
-          const actBeats = board.beats.filter((b) => b.act === act);
-          return (
-            <div key={act} className={`structure-column ${meta.colorClass}`}>
-              <div className="structure-column-header">
-                <h2>{meta.title}</h2>
-                <div className="structure-column-header-right">
-                  <span className="muted">{actBeats.length}단계</span>
+        <div className="structure-cards-stream">
+          {([1, 2, 3] as const).map((act) => {
+            const meta = ACT_META[act];
+            const actBeats = board.beats.filter((b) => b.act === act);
+            return (
+              <section key={act} className={`structure-act-section ${meta.colorClass}`}>
+                <div className="structure-act-header">
+                  <div className="structure-act-header-left">
+                    <h2 className="structure-act-title">{meta.title}</h2>
+                    <span className="structure-act-count muted">{actBeats.length}단계</span>
+                  </div>
                   <button
                     type="button"
                     className="structure-add-card-btn"
@@ -759,20 +787,20 @@ export function StructureBoardView({
                     + 카드 추가
                   </button>
                 </div>
-              </div>
-              <div className="structure-column-cards">
-                {actBeats.map((state) => renderBeatCard(state))}
-                <button
-                  type="button"
-                  className="structure-add-card-bottom"
-                  onClick={() => addBeatCardToAct(act)}
-                >
-                  + 이 막에 카드 추가
-                </button>
-              </div>
-            </div>
-          );
-        })}
+                <div className="structure-act-cards">
+                  {actBeats.map((state) => renderBeatCard(state))}
+                  <button
+                    type="button"
+                    className="structure-add-card-bottom"
+                    onClick={() => addBeatCardToAct(act)}
+                  >
+                    + {meta.title}에 카드 추가
+                  </button>
+                </div>
+              </section>
+            );
+          })}
+        </div>
 
         {/* 오른쪽: 원고 씬 서랍 */}
         <aside className="structure-drawer" aria-label="원고 씬 서랍">
@@ -846,7 +874,7 @@ export function StructureBoardView({
                         >
                           {isSelected ? "✓" : ""}
                         </span>
-                        <span className="scene-number">S#{scene.number}</span>
+                        <span className="scene-number">#{scene.number}.</span>
                         <span className="drawer-scene-name">
                           {cleanSceneHeading(scene.heading) || "장소 미정"}
                         </span>
@@ -878,12 +906,12 @@ export function StructureBoardView({
           )}
           {drag.scenes.length === 1 ? (
             <>
-              <strong>S#{drag.scenes[0].number}</strong>{" "}
+              <strong>#{drag.scenes[0].number}.</strong>{" "}
               {cleanSceneHeading(drag.scenes[0].heading)}
             </>
           ) : (
             <>
-              <strong>S#{drag.scenes[0].number}</strong> 외 {drag.scenes.length - 1}개 씬 (
+              <strong>#{drag.scenes[0].number}.</strong> 외 {drag.scenes.length - 1}개 씬 (
               {drag.scenes.length}개 한꺼번에 이동)
             </>
           )}

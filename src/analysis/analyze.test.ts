@@ -26,8 +26,8 @@ describe("원고 분석", () => {
 
   it("씬 목록: 번호, 헤딩, 페이지, 등장 인물", () => {
     expect(result.scenes.map((s) => [s.number, s.heading, s.page, s.characters])).toEqual([
-      [1, "S#1. 내부. 체육관 - 밤", 1, ["민재", "관장"]],
-      [10, "S#10. 외부. 골목 - 밤", 1, ["민재", "수아"]],
+      [1, "#1. 내부. 체육관 - 밤", 1, ["민재", "관장"]],
+      [10, "#10. 외부. 골목 - 밤", 1, ["민재", "수아"]],
     ]);
     expect(result.scenes[0].speeches).toBe(2);
   });

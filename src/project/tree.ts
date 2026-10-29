@@ -14,11 +14,12 @@ import {
 
 export type DropPosition = "before" | "after" | "inside";
 
-export const NEW_DOC_NAMES: Record<Exclude<DocType, "script">, string> = {
+export const NEW_DOC_NAMES: Record<DocType, string> = {
+  script: "새 스크립트",
   memo: "새 문서",
   character: "새 인물",
   synopsis: "시놉시스",
-  structure: "3막 구조(세이브 더 캣)",
+  structure: "3막 구조 양식",
 };
 
 /** 일반 문서는 빈 상태로 시작한다. */
@@ -109,7 +110,7 @@ export function insertNode(tree: ProjectNode[], node: ProjectNode, parentId: str
 }
 
 /** 새 문서 노드를 만든다. 이름은 같은 폴더 안에서 겹치지 않게 */
-export function makeDoc(tree: ProjectNode[], type: Exclude<DocType, "script">, parentId: string | null): DocNode {
+export function makeDoc(tree: ProjectNode[], type: DocType, parentId: string | null): DocNode {
   const name = uniqueName(siblingsOf(tree, parentId), NEW_DOC_NAMES[type]);
   return { id: newId(type), type, name, file: "" };
 }

@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { message, open, save } from "@tauri-apps/plugin-dialog";
+import { confirm, message, open, save } from "@tauri-apps/plugin-dialog";
 import type { EditorHandle } from "../editor/Editor";
 import type { TextEditorHandle } from "../editor/TextEditor";
 import type { ScriptLine } from "../editor/lineStyles";
@@ -143,12 +143,12 @@ async function showError(text: string, error: unknown) {
 
 async function ask(text: string, okLabel: string): Promise<boolean> {
   if (!isTauri()) return window.confirm(text);
-  const answer = await message(text, {
+  return confirm(text, {
     title: "DropKick",
     kind: "warning",
-    buttons: { ok: okLabel, cancel: "취소" },
+    okLabel,
+    cancelLabel: "취소",
   });
-  return answer === okLabel || answer === "Ok";
 }
 
 async function notify(text: string, kind: "info" | "warning" = "info") {
@@ -438,6 +438,20 @@ export function useProject(
     setSession(newSession(null, manifest, texts, titlePage, false), manifest.mainScript);
   }, [confirmDiscard, editorRef, setScriptDirty, setSession]);
 
+  /** 특정 원고 내용(예: 예시 스크립트)으로 새 프로젝트를 시작한다 */
+  const newProjectWithScript = useCallback(
+    async (title: string, fountainText: string) => {
+      if (!(await confirmDiscard())) return false;
+      const { titlePage, lines } = scriptLinesOf(fountainText);
+      const { manifest, texts } = createProject(title, { titlePage, lines });
+      editorRef.current?.load(lines.length > 0 ? lines : [{ style: "action", text: "" }]);
+      setScriptDirty(false);
+      setSession(newSession(null, manifest, texts, titlePage, false), manifest.mainScript);
+      return true;
+    },
+    [confirmDiscard, editorRef, setScriptDirty, setSession],
+  );
+
   /** 프로그램 전체 초기화: 복구 기록·최근 프로젝트를 모두 비우고 새 빈 프로젝트로 되돌린다 */
   const resetToInitialState = useCallback(async (): Promise<boolean> => {
     if (!(await confirmDiscard())) return false;
@@ -556,7 +570,7 @@ export function useProject(
       const made = makeDoc(tree, preset.docType, parent);
       const siblings = parent ? ((findNode(tree, parent) as { children?: ProjectNode[] })?.children ?? []) : tree;
       const baseName = name?.trim() || preset.defaultDocName.trim() || made.name;
-      const defaultIcon = preset.docType === "character" ? "person" : "doc.text";
+      const defaultIcon = preset.docType === "character" ? "person" : preset.docType === "script" ? "film" : "doc.text";
       const customIcon = preset.icon && preset.icon !== defaultIcon ? preset.icon : undefined;
       const doc: DocNode = {
         ...made,
@@ -577,7 +591,9 @@ export function useProject(
     (docId: string, preset: DocPreset) => {
       const current = sessionRef.current;
       const node = findNode(current.manifest.tree, docId);
-      if (!node || node.type === "folder" || node.type === "script") return;
+      if (!node || node.type === "folder") return;
+      if (node.type === "script" && preset.docType !== "script") return;
+      if (node.type !== "script" && preset.docType === "script") return;
       const texts = new Map(current.texts);
       texts.set(docId, formatPresetText(preset, node.name));
       let nextTree = current.manifest.tree;
@@ -992,9 +1008,14 @@ export function useProject(
     textEditorRef,
   ]);
 
+  const startupHandledRef = useRef(false);
+
   // 시작할 때: 저장하지 않은 새 프로젝트가 남아 있으면 복구를 묻고, 아니면 마지막 프로젝트를 연다.
   useEffect(() => {
     if (!isTauri()) return;
+    if (startupHandledRef.current) return;
+    startupHandledRef.current = true;
+
     (async () => {
       // Finder에서 프로젝트를 더블클릭해 앱이 켜진 경우: 그 프로젝트를 연다.
       const pending = await invoke<string[]>("take_pending_opens").catch(() => [] as string[]);
@@ -1004,6 +1025,8 @@ export function useProject(
       }
       const recovery = await readRecovery();
       if (recovery) {
+        // 복구 대화상자가 뜨면 복구/취소 여부와 상관없이 이전 recovery 파일은 즉시 비워 무한 반복되지 않게 한다.
+        await writeRecovery(null);
         const when = new Date(recovery.savedAt).toLocaleString("ko-KR");
         const restore = await ask(
           `저장하지 않은 프로젝트 "${recovery.manifest.title || "제목 없음"}"이(가) 남아 있습니다. (${when})\n복구할까요?`,
@@ -1013,12 +1036,11 @@ export function useProject(
           const texts = new Map(recovery.texts);
           const { lines } = scriptLinesOf(texts.get(recovery.manifest.mainScript) ?? "");
           editorRef.current?.load(lines.length > 0 ? lines : [{ style: "action", text: "" }]);
-          sessionRef.current = { ...newSession(null, recovery.manifest, texts, recovery.titlePage, false), treeChanged: true };
+          sessionRef.current = newSession(null, recovery.manifest, texts, recovery.titlePage, false);
           setActiveDocId(recovery.manifest.mainScript);
           refresh();
           return;
         }
-        await writeRecovery(null);
       }
       if (!loadSettings().openLastProjectOnStart) return;
       const last = readLast();
@@ -1118,5 +1140,6 @@ export function useProject(
     move,
     setIcon,
     resetToInitialState,
+    newProjectWithScript,
   };
 }

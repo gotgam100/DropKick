@@ -198,9 +198,9 @@ export type StructureBoardData = {
   beats: BeatCardState[];
 };
 
-/** "S#1. 내부. 체육관 - 밤" → "내부. 체육관 - 밤" */
+/** "S#1. 내부. 체육관 - 밤" 또는 "#1. 내부. 체육관 - 밤" → "내부. 체육관 - 밤" */
 export function cleanSceneHeading(heading: string): string {
-  return heading.replace(/^S#\d+\.\s*/, "").trim();
+  return heading.replace(/^(?:S\s*#|#)\s*\d+\.?\s*/i, "").trim();
 }
 
 function snippetOf(text: string): string {

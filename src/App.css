@@ -249,7 +249,8 @@ body {
 
 .desk {
   flex: 1;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 40px 16px 80px;
 }
 
@@ -267,17 +268,23 @@ body {
   border-radius: 2px;
 }
 
-/* 페이지 번호: 위에서 0.5in, 오른쪽 여백(7.5in)에 맞춤. PDF와 같은 자리 */
-.page-number,
-.paper .pb-number {
+/* 페이지 번호: 하단 중앙, '1/20' 형식. PDF와 같은 자리 (용지 폭 8.5in 기준 중앙 = 4.25in = 1.5in 본문 여백 + 2.75in) */
+.paper .pb-bottom,
+.paper .cm-page-end {
+  position: relative;
+}
+
+.paper .pb-number-bottom {
   position: absolute;
-  top: 0.5in;
-  right: 1in;
+  bottom: 0.5in;
+  left: 2.75in;
+  transform: translateX(-50%);
   font-family: var(--font-script);
   font-size: var(--script-size);
   line-height: 1;
   color: var(--muted);
   user-select: none;
+  pointer-events: none;
 }
 
 .editor-host {
@@ -311,6 +318,12 @@ body {
   text-transform: uppercase;
 }
 
+.paper .cm-line.sl-subheader {
+  --gap: var(--line);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .paper .cm-line.sl-action {
   --gap: var(--line);
 }
@@ -320,9 +333,43 @@ body {
   --gap: 0px;
 }
 
-/* 씬헤딩 앞 자동 씬 번호 */
+/* 씬헤딩 씬 번호 (할리우드 촬영고 표준: 본문에 가깝게, 헤딩 텍스트와 높이 일치) */
 .paper .cm-scene-number {
+  display: inline;
+  width: 0;
+  height: 0;
+  line-height: 0;
+  vertical-align: top;
   user-select: none;
+  pointer-events: none;
+}
+
+.paper .cm-scene-num-left {
+  position: absolute;
+  top: var(--gap);
+  line-height: var(--line);
+  height: var(--line);
+  left: -0.5in;
+  width: 0.4in;
+  text-align: right;
+  font-family: var(--font-script);
+  font-size: var(--script-size);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.paper .cm-scene-num-right {
+  position: absolute;
+  top: var(--gap);
+  line-height: var(--line);
+  height: var(--line);
+  right: 0;
+  width: 0.4in;
+  text-align: right;
+  font-family: var(--font-script);
+  font-size: var(--script-size);
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .app.hide-scene-numbers .paper .cm-scene-number {

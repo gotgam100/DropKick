@@ -163,9 +163,6 @@ export function ScriptPreview({ lines, marks, scrollTo }: Props) {
 
   return (
     <article className={marks ? "paper compare-paper" : "paper"}>
-      <span className="page-number" aria-hidden="true">
-        1.
-      </span>
       <div className="editor-host" ref={hostRef} />
     </article>
   );

@@ -115,7 +115,7 @@ export function StatsPanel({
                     className="bar-row"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => onSelectCharacter(c.name)}
-                    title={`${c.name}: 대사 ${fmt.format(c.speeches)}회, ${fmt.format(c.dialogueChars)}자, ${c.scenes}개 씬 (첫 등장 S#${c.firstScene}) — 누르면 사이드바에서 등장 씬 찾기`}
+                    title={`${c.name}: 대사 ${fmt.format(c.speeches)}회, ${fmt.format(c.dialogueChars)}자, ${c.scenes}개 씬 (첫 등장 #${c.firstScene}) — 누르면 사이드바에서 등장 씬 찾기`}
                   >
                     <span className="bar-label">{c.name}</span>
                     <span className="bar-track">
@@ -168,7 +168,7 @@ export function StatsPanel({
                     className={s.line === currentSceneLine ? "scene-column current" : "scene-column"}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => onSelectScene(s.line)}
-                    title={`S#${s.number} · ${formatEighths(s.eighths)}페이지 · ${s.heading.replace(/^S#\d+\.\s*/, "")}`}
+                    title={`#${s.number}. · ${formatEighths(s.eighths)}페이지 · ${s.heading.replace(/^(?:S#|#)\s*\d+\.?\s*/i, "")}`}
                   >
                     <span style={{ height: `${Math.max(4, (s.eighths / maxEighths) * 100)}%` }} />
                   </button>
@@ -186,8 +186,8 @@ export function StatsPanel({
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => onSelectScene(s.line)}
                     >
-                      <span className="scene-number">S#{s.number}</span>
-                      <span className="scene-heading">{s.heading.replace(/^S#\d+\.\s*/, "")}</span>
+                      <span className="scene-number">#{s.number}.</span>
+                      <span className="scene-heading">{s.heading.replace(/^(?:S#|#)\s*\d+\.?\s*/i, "")}</span>
                       <span className="bar-value">{formatEighths(s.eighths)}p</span>
                     </button>
                   </li>

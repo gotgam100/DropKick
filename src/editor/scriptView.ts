@@ -1,4 +1,4 @@
-import { Prec, type Extension, type Range } from "@codemirror/state";
+import { EditorSelection, Prec, type Extension, type Range } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -17,6 +17,7 @@ import {
   insertScriptNewline,
   lineStylesField,
   sceneNumbersField,
+  setLineStyleEffect,
   setStyle,
   styleAtLine,
 } from "./lineStyles";
@@ -52,7 +53,7 @@ const WORD = /\S+/g;
 // 앞 줄과 같은 스타일이 이어질 때 문단 사이 빈 줄 없이 붙여 쓰는 스타일
 const CONTINUOUS_STYLES = new Set<LineStyle>(["action"]);
 
-// 씬헤딩 앞에 붙는 자동 씬 번호 (글자가 아니라 화면 표시)
+// 씬헤딩 좌우 여백에 붙는 자동 씬 번호 (할리우드 촬영고 표준)
 class SceneNumberWidget extends WidgetType {
   constructor(readonly number: number) {
     super();
@@ -63,7 +64,17 @@ class SceneNumberWidget extends WidgetType {
   toDOM() {
     const span = document.createElement("span");
     span.className = "cm-scene-number";
-    span.textContent = `S#${this.number}. `;
+
+    const left = document.createElement("span");
+    left.className = "cm-scene-num-left";
+    left.textContent = `${this.number}`;
+
+    const right = document.createElement("span");
+    right.className = "cm-scene-num-right";
+    right.textContent = `${this.number}`;
+
+    span.appendChild(left);
+    span.appendChild(right);
     return span;
   }
   ignoreEvent() {
@@ -148,6 +159,26 @@ const styleKeymap = keymap.of([
   })),
 ]);
 
+// 사용자가 설정에서 지정한 스타일 단축키(⌘+숫자/키)를 실시간 반영
+const dynamicShortcutHandler = EditorView.domEventHandlers({
+  keydown(e, view) {
+    if (e.metaKey || e.ctrlKey) {
+      const shortcuts = loadSettings().styleShortcuts;
+      if (shortcuts) {
+        for (const style of LINE_STYLES) {
+          const key = shortcuts[style];
+          if (key && e.key.toLowerCase() === key.toLowerCase()) {
+            e.preventDefault();
+            setStyle(style)(view);
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  },
+});
+
 // 인물 스타일 줄에서 앞서 나온 이름을 자동 완성한다.
 function characterCompletions(context: CompletionContext) {
   if (!loadSettings().characterAutocomplete) return null;
@@ -161,7 +192,20 @@ function characterCompletions(context: CompletionContext) {
   return {
     from: line.from,
     to: line.to,
-    options: names.map((name) => ({ label: name, type: "character" })),
+    options: names.map((name) => ({
+      label: name,
+      type: "character",
+      apply: (view: EditorView, _completion: unknown, from: number, _to: number) => {
+        const line = view.state.doc.lineAt(from);
+        view.dispatch({
+          changes: [{ from: line.from, to: line.to, insert: name + "\n" }],
+          selection: EditorSelection.cursor(line.from + name.length + 1),
+          effects: setLineStyleEffect.of({ pos: line.from + name.length + 1, style: "dialogue" }),
+          scrollIntoView: true,
+          userEvent: "input.complete",
+        });
+      },
+    })),
     validFor: /^[^\n]*$/,
   };
 }
@@ -171,6 +215,7 @@ export function scriptEditing(): Extension {
   return [
     styleDecorations,
     scriptClipboard(),
+    dynamicShortcutHandler,
     // 자동 완성 창이 열려 있을 때는 Enter가 이름 선택에 쓰이도록, 스타일 키는 그보다 낮게 둔다.
     Prec.high(styleKeymap),
     autocompletion({

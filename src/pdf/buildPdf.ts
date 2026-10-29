@@ -96,13 +96,38 @@ export async function buildPdf(doc: ScriptDocument, files: FontFiles): Promise<U
   if (doc.titlePage && doc.titlePage.trim()) drawTitlePage(pdf, fonts, doc.titlePage);
 
   const { pages } = paginate(doc.lines);
+  const totalPages = pages.length;
   for (const p of pages) {
     const page = pdf.addPage([WIDTH, HEIGHT]);
-    // 페이지 번호: 1페이지부터, 위에서 0.5인치, 오른쪽 여백(7.5인치)에 맞춤
-    const label = `${p.number}.`;
-    const x = 7.5 * PT - textColumns(label) * COLUMN;
-    page.drawText(label, { x, y: HEIGHT - 0.5 * PT - 9.5, size: SIZE, font: courier });
-    for (const line of p.lines) drawLine(page, fonts, line.text, line.column, line.row, line.bold);
+    // 페이지 번호: 1페이지부터, 하단 중앙, '1/20' 형식
+    const label = `${p.number}/${totalPages}`;
+    const textWidth = textColumns(label) * COLUMN;
+    const x = (WIDTH - textWidth) / 2;
+    const y = 0.5 * PT - 4;
+    page.drawText(label, { x, y, size: SIZE, font: courier });
+
+    for (const line of p.lines) {
+      drawLine(page, fonts, line.text, line.column, line.row, line.bold);
+      if (line.style === "scene" && line.sceneNumber != null) {
+        const numStr = String(line.sceneNumber);
+        // 씬 번호(할리우드 촬영고 표준): 본문에 가깝게 배치 (화면과 1:1)
+        const leftX = LEFT - (textColumns(numStr) + 1.5) * COLUMN;
+        const lineY = HEIGHT - PAGE.topMarginIn * PT - line.row * LINE - BASELINE;
+        page.drawText(numStr, {
+          x: leftX,
+          y: lineY,
+          size: SIZE,
+          font: courierBold,
+        });
+        const rightX = 7.5 * PT - textColumns(numStr) * COLUMN;
+        page.drawText(numStr, {
+          x: rightX,
+          y: lineY,
+          size: SIZE,
+          font: courierBold,
+        });
+      }
+    }
   }
 
   return pdf.save();
