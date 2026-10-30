@@ -33,6 +33,19 @@ function remainingHeight(usedRows: number) {
   return `calc(10in - var(--line) * ${usedRows})`;
 }
 
+/** 화면에서 한 줄의 높이 (App.css의 --line과 같은 값) */
+const LINE_PX = 20.796875;
+const INCH_PX = 96;
+
+/**
+ * 위젯이 차지할 높이(px)를 미리 알려 준다.
+ * 아직 화면에 그려 본 적 없는 위젯은 CodeMirror가 높이를 "한 줄쯤"으로 짐작하는데,
+ * 페이지 경계 하나는 한 장(약 1000px)이라 짐작이 크게 틀려, 글이 길어질수록 위치 계산이 어긋나기 때문이다.
+ */
+function remainingPx(usedRows: number) {
+  return 10 * INCH_PX - LINE_PX * usedRows;
+}
+
 function row(className: string, text: string) {
   const el = document.createElement("div");
   el.className = `pb-row ${className}`;
@@ -57,6 +70,11 @@ class PageBreakWidget extends WidgetType {
       a.contd === b.contd &&
       this.total === other.total
     );
+  }
+  get estimatedHeight() {
+    // 앞 페이지 남은 공간 + 종이 사이 틈(32px) + 새 페이지 위 여백(1in) + (MORE)·(CONT'D) 줄
+    const rows = (this.info.more ? 1 : 0) + (this.info.contd ? 1 : 0);
+    return remainingPx(this.info.usedRows) + 32 + INCH_PX + rows * LINE_PX;
   }
   toDOM() {
     const el = document.createElement("div");
@@ -99,6 +117,9 @@ class PageEndWidget extends WidgetType {
   }
   eq(other: PageEndWidget) {
     return other.usedRows === this.usedRows && other.total === this.total;
+  }
+  get estimatedHeight() {
+    return remainingPx(this.usedRows);
   }
   toDOM() {
     const el = document.createElement("div");

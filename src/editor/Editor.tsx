@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import type { EditorState, Extension, Text } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, redo, undo } from "@codemirror/commands";
-import { highlightSelectionMatches, openSearchPanel, searchKeymap } from "@codemirror/search";
+import { openSearchPanel, searchKeymap } from "@codemirror/search";
 import { paperTheme } from "./theme";
 import {
   characterNames,
@@ -276,7 +276,6 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
 
     const extensions: Extension = [
       history(),
-      highlightSelectionMatches(),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "false", lang: "ko" }),
       placeholder("여기에 시나리오를 쓰세요…"),

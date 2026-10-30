@@ -427,6 +427,11 @@ body {
   pointer-events: none;
 }
 
+/* 씬헤딩은 왼쪽에 씬 번호(세 자리까지)가 있으므로, 이름표를 그만큼 더 왼쪽에서 끝낸다. */
+.app:not(.hide-scene-numbers) .paper .cm-line.sl-scene.sl-current::before {
+  width: 0.65in;
+}
+
 .app.hide-current-line .paper .cm-line.sl-current::before {
   display: none;
 }

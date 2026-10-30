@@ -25,7 +25,6 @@ export const paperTheme = EditorView.theme({
   },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
     { backgroundColor: "var(--selection)" },
-  ".cm-selectionMatch": { backgroundColor: "var(--match)" },
   ".cm-placeholder": { color: "var(--muted)" },
   ".cm-panels": {
     backgroundColor: "var(--chrome)",

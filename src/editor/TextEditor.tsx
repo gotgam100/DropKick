@@ -6,7 +6,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, placeholder } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, redo, undo } from "@codemirror/commands";
-import { highlightSelectionMatches, openSearchPanel, searchKeymap } from "@codemirror/search";
+import { openSearchPanel, searchKeymap } from "@codemirror/search";
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
@@ -33,7 +33,6 @@ const textTheme = EditorView.theme({
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--caret)", borderLeftWidth: "2px" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground":
     { backgroundColor: "var(--selection)" },
-  ".cm-selectionMatch": { backgroundColor: "var(--match)" },
   ".cm-placeholder": { color: "var(--muted)" },
   ".cm-panels": { backgroundColor: "var(--chrome)", color: "var(--ink)" },
 });
@@ -66,7 +65,6 @@ export const TextEditor = forwardRef<TextEditorHandle, Props>(function TextEdito
   const extensions: Extension = [
     history(),
     drawSelection(),
-    highlightSelectionMatches(),
     EditorView.lineWrapping,
     EditorView.contentAttributes.of({ spellcheck: "false", lang: "ko" }),
     placeholder("여기에 쓰세요…"),
