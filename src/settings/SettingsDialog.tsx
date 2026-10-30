@@ -4,6 +4,16 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { isDefaultPreset, type DocPreset } from "../project/presets";
 import { LINE_STYLES, STYLE_LABELS, type LineStyle } from "../editor/styles";
 import {
+  APP_SHORTCUT_IDS,
+  APP_SHORTCUT_LABELS,
+  DEFAULT_APP_SHORTCUTS,
+  checkAppShortcut,
+  comboFromEvent,
+  formatCombo,
+  normalizeCombo,
+  type AppShortcutId,
+} from "./appShortcuts";
+import {
   DEFAULT_SETTINGS,
   DEFAULT_STYLE_SHORTCUTS,
   DEFAULT_NEXT_STYLE_RULES,
@@ -97,6 +107,44 @@ export function SettingsDialog({
   const patch = (partial: Partial<AppSettings>) => {
     onChangeSettings({ ...settings, ...partial });
   };
+
+  // 앱 단축키: "바꾸기"를 누른 뒤 원하는 키를 누르면 지정된다.
+  const [recording, setRecording] = useState<AppShortcutId | null>(null);
+  const [shortcutError, setShortcutError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!recording) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (["Meta", "Control", "Alt", "Shift"].includes(e.key)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        setRecording(null);
+        setShortcutError(null);
+        return;
+      }
+      const combo = comboFromEvent(e);
+      if (!combo) {
+        setShortcutError("⌘를 누른 채 글자나 숫자 키를 눌러 주세요.");
+        return;
+      }
+      const problem = checkAppShortcut(
+        recording,
+        combo,
+        settings.appShortcuts,
+        Object.values(settings.styleShortcuts ?? DEFAULT_STYLE_SHORTCUTS),
+      );
+      if (problem) {
+        setShortcutError(problem);
+        return;
+      }
+      patch({ appShortcuts: { ...settings.appShortcuts, [recording]: normalizeCombo(combo) } });
+      setRecording(null);
+      setShortcutError(null);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recording, settings]);
 
   // 추가한 프리셋 JSON 파일로 내보내기
   const handleExportPresets = async () => {
@@ -367,6 +415,51 @@ export function SettingsDialog({
                     onClick={() => patch({ styleShortcuts: DEFAULT_STYLE_SHORTCUTS })}
                   >
                     단축키 기본값(⌘1~⌘7)으로 복원
+                  </button>
+                </div>
+              </div>
+
+              <div className="settings-item">
+                <div className="settings-item-label">
+                  <strong>화면 단축키</strong>
+                  <span>"바꾸기"를 누른 뒤 원하는 키(⌘와 함께)를 누르세요. 취소는 Esc입니다.</span>
+                </div>
+                <div className="settings-shortcuts-list">
+                  {APP_SHORTCUT_IDS.map((id) => (
+                    <div key={id} className="settings-shortcut-row">
+                      <div className="settings-shortcut-label">
+                        <span className="settings-style-pill">{APP_SHORTCUT_LABELS[id]}</span>
+                      </div>
+                      <div className="settings-shortcut-input-wrap">
+                        <kbd className="settings-kbd">
+                          {recording === id ? "키를 누르세요…" : formatCombo(settings.appShortcuts[id])}
+                        </kbd>
+                        <button
+                          type="button"
+                          className="settings-btn-inline"
+                          onClick={() => {
+                            setShortcutError(null);
+                            setRecording(recording === id ? null : id);
+                          }}
+                        >
+                          {recording === id ? "취소" : "바꾸기"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {shortcutError && <p className="settings-shortcut-error" role="alert">{shortcutError}</p>}
+                <div className="settings-item-action-row">
+                  <button
+                    type="button"
+                    className="settings-btn-inline"
+                    onClick={() => {
+                      setRecording(null);
+                      setShortcutError(null);
+                      patch({ appShortcuts: DEFAULT_APP_SHORTCUTS });
+                    }}
+                  >
+                    화면 단축키 기본값으로 복원
                   </button>
                 </div>
               </div>

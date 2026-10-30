@@ -3,6 +3,9 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { StandaloneSettingsWindow } from "./settings/StandaloneSettingsWindow";
 import { StandaloneGuideWindow } from "./guide/StandaloneGuideWindow";
+import { installContextMenu } from "./contextMenu";
+
+installContextMenu();
 
 const params = new URLSearchParams(window.location.search);
 const aux = params.get("aux");

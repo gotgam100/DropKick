@@ -841,11 +841,7 @@ export function StructureBoardView({
                   선택 해제
                 </button>
               </div>
-            ) : (
-              <p className="structure-drawer-hint">
-                클릭해 여러 씬을 한꺼번에 옮기거나, 카드의 씬을 ⌘+드래그해 다른 카드에 복제할 수 있습니다
-              </p>
-            )}
+            ) : null}
           </div>
 
           <div className="structure-drawer-list">

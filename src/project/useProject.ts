@@ -17,6 +17,7 @@ import { confirm, message, open, save } from "@tauri-apps/plugin-dialog";
 import type { EditorHandle } from "../editor/Editor";
 import type { TextEditorHandle } from "../editor/TextEditor";
 import type { ScriptLine } from "../editor/lineStyles";
+import type { ScriptNote } from "../editor/notes";
 import { isLineStyle } from "../editor/styles";
 import { fromFountain, toFountain } from "../fountain/fountain";
 import { FONT_PATHS, type FontFiles } from "../pdf/fonts";
@@ -299,7 +300,13 @@ export function useProject(
       setSaveStatus((s) => ({ ...s, state: "saving" }));
       try {
         const token = editor.captureSaveState();
-        const manifest = { ...start.manifest, title: projectTitleFromPath(path), lastOpened: activeRef.current };
+        const notes = editor.getNotes();
+        const manifest = {
+          ...start.manifest,
+          title: projectTitleFromPath(path),
+          lastOpened: activeRef.current,
+          ...(notes.length > 0 ? { notes } : { notes: undefined }),
+        };
         const texts = new Map(start.texts);
         texts.set(manifest.mainScript, currentScriptText());
         const changed = new Set<string>([manifest.mainScript]);
@@ -354,6 +361,19 @@ export function useProject(
     [editorRef, refresh],
   );
 
+  const setNotes = useCallback(
+    (notes: ScriptNote[]) => {
+      const current = sessionRef.current;
+      sessionRef.current = {
+        ...current,
+        manifest: { ...current.manifest, notes: notes.length > 0 ? notes : undefined },
+        treeChanged: true,
+      };
+      refresh();
+    },
+    [refresh],
+  );
+
   /** 다른 이름으로 저장 = 새 폴더에 모든 문서를 저장 */
   const saveAs = useCallback(async (): Promise<boolean> => {
     const current = sessionRef.current;
@@ -387,6 +407,7 @@ export function useProject(
       const loaded = await loadProject(tauriFs, path);
       const { titlePage, lines } = scriptLinesOf(loaded.texts.get(loaded.manifest.mainScript) ?? "");
       editorRef.current?.load(lines);
+      editorRef.current?.setNotes(loaded.manifest.notes ?? []);
       setScriptDirty(false);
       const reopen = loaded.manifest.lastOpened && findNode(loaded.manifest.tree, loaded.manifest.lastOpened);
       setSession(
@@ -795,6 +816,7 @@ export function useProject(
 
       const { titlePage, lines } = scriptLinesOf(content.script);
       editorRef.current?.load(lines.length > 0 ? lines : [{ style: "action", text: "" }]);
+      editorRef.current?.setNotes(sessionRef.current.manifest.notes ?? []);
       setScriptDirty(true);
       const current = sessionRef.current;
       const restored = restoreSettings(current.manifest.tree, current.texts, content.docs);
@@ -1061,6 +1083,7 @@ export function useProject(
           const texts = new Map(recovery.texts);
           const { lines } = scriptLinesOf(texts.get(recovery.manifest.mainScript) ?? "");
           editorRef.current?.load(lines.length > 0 ? lines : [{ style: "action", text: "" }]);
+          editorRef.current?.setNotes(recovery.manifest.notes ?? []);
           sessionRef.current = newSession(null, recovery.manifest, texts, recovery.titlePage, false);
           setActiveDocId(recovery.manifest.mainScript);
           refresh();
@@ -1155,6 +1178,8 @@ export function useProject(
     restoreRevision,
     deleteRevision,
     treeDirty,
+    /** 메모를 붙이거나 고치거나 지웠다: 프로젝트 파일에 저장해야 하는 변경으로 표시한다 */
+    setNotes,
     setScriptDirty,
     setDocText,
     openDoc,

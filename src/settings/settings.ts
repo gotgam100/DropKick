@@ -2,6 +2,7 @@
  * DropKick 앱 설정 관리 (로컬 저장소에 보관)
  */
 import type { LineStyle } from "../editor/styles";
+import { DEFAULT_APP_SHORTCUTS, parseAppShortcuts, type AppShortcuts } from "./appShortcuts";
 
 export type ThemeMode = "system" | "light" | "dark";
 export type ZoomPercent = 80 | 100 | 120 | 150;
@@ -53,6 +54,8 @@ export type AppSettings = {
   openLastProjectOnStart: boolean;
   /** 문장 스타일별 단축키 (숫자/문자 1자리, 기본 1~7) */
   styleShortcuts: StyleShortcuts;
+  /** 사이드바·통계·화면 나누기·가이드 단축키 */
+  appShortcuts: AppShortcuts;
   /** 줄 끝에서 Enter를 눌렀을 때 다음 스타일 규칙 */
   nextStyleOnEnter: NextStyleRules;
 };
@@ -73,6 +76,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   backupKeepCount: 30,
   openLastProjectOnStart: true,
   styleShortcuts: DEFAULT_STYLE_SHORTCUTS,
+  appShortcuts: DEFAULT_APP_SHORTCUTS,
   nextStyleOnEnter: DEFAULT_NEXT_STYLE_RULES,
 };
 
@@ -127,6 +131,7 @@ export function loadSettings(): AppSettings {
       openLastProjectOnStart:
         typeof p.openLastProjectOnStart === "boolean" ? p.openLastProjectOnStart : true,
       styleShortcuts,
+      appShortcuts: parseAppShortcuts(p.appShortcuts),
       nextStyleOnEnter,
     };
   } catch {

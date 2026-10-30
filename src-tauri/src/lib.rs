@@ -355,18 +355,19 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
+    // 스타일·보기·가이드 단축키는 설정에서 바꿀 수 있어서, 메뉴가 아니라 화면(JS)에서 처리한다.
     let style_menu = Submenu::with_items(
         app,
         "스타일",
         true,
         &[
-            &item("style:scene", "씬헤딩", Some("CmdOrCtrl+1"))?,
-            &item("style:action", "액션", Some("CmdOrCtrl+2"))?,
-            &item("style:character", "인물", Some("CmdOrCtrl+3"))?,
-            &item("style:parenthetical", "괄호지문", Some("CmdOrCtrl+4"))?,
-            &item("style:dialogue", "대사", Some("CmdOrCtrl+5"))?,
-            &item("style:subheader", "서브 헤더", Some("CmdOrCtrl+6"))?,
-            &item("style:transition", "전환", Some("CmdOrCtrl+7"))?,
+            &item("style:scene", "씬헤딩", None)?,
+            &item("style:action", "액션", None)?,
+            &item("style:character", "인물", None)?,
+            &item("style:parenthetical", "괄호지문", None)?,
+            &item("style:dialogue", "대사", None)?,
+            &item("style:subheader", "서브 헤더", None)?,
+            &item("style:transition", "전환", None)?,
         ],
     )?;
 
@@ -387,12 +388,8 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "보기",
         true,
         &[
-            &item(
-                "toggle_scenes",
-                "사이드바 보기/숨기기",
-                Some("CmdOrCtrl+Alt+1"),
-            )?,
-            &item("toggle_stats", "통계 보기/숨기기", Some("CmdOrCtrl+Alt+2"))?,
+            &item("toggle_scenes", "사이드바 보기/숨기기", None)?,
+            &item("toggle_stats", "통계 보기/숨기기", None)?,
             &PredefinedMenuItem::separator(app)?,
             &zoom_menu,
         ],
@@ -414,7 +411,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "도움말",
         true,
         &[
-            &item("open_guide", "시나리오 작성 가이드", Some("CmdOrCtrl+Shift+/"))?,
+            &item("open_guide", "시나리오 작성 가이드", None)?,
         ],
     )?;
 

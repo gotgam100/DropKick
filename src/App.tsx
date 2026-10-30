@@ -6,9 +6,10 @@ import { fromFountain } from "./fountain/fountain";
 import { Editor, type EditorHandle, type EditorInfo } from "./editor/Editor";
 import { TextEditor, type TextEditorHandle } from "./editor/TextEditor";
 import { LINE_STYLES, STYLE_LABELS, shortcutFor } from "./editor/styles";
+import { formatCombo, shortcutForEvent } from "./settings/appShortcuts";
 import { useProject } from "./project/useProject";
 import { findNode, findParent, folderNamed } from "./project/tree";
-import { BLANK_SCRIPT_LINES, DOC_TYPE_LABELS, walkDocs, type DocNode } from "./project/model";
+import { BLANK_SCRIPT_LINES, DOC_TYPE_LABELS, newId, walkDocs, type DocNode } from "./project/model";
 import { DEFAULT_PRESETS, isDefaultPreset, loadPresets, savePresets, type DocPreset } from "./project/presets";
 import {
   DEFAULT_SETTINGS,
@@ -30,6 +31,7 @@ import { TitlePageDialog } from "./titlepage/TitlePageDialog";
 import { RenameCharacterDialog } from "./panels/RenameCharacterDialog";
 import { RevisionView, type Snapshot } from "./revisions/RevisionView";
 import { NewRevisionDialog } from "./revisions/NewRevisionDialog";
+import { NoteDialog } from "./editor/NoteDialog";
 import { nextRevisionName, settingsDocs } from "./revisions/revisions";
 import { useUpdater } from "./update/useUpdater";
 import { StatsPanel } from "./panels/StatsPanel";
@@ -149,6 +151,16 @@ function App() {
   const [renamingCharacter, setRenamingCharacter] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; key: number } | null>(null);
   const [newRevisionOpen, setNewRevisionOpen] = useState(false);
+  /** 열려 있는 메모 창. id가 없으면 새 메모 */
+  const [noteDialog, setNoteDialog] = useState<{
+    id: string | null;
+    from: number;
+    to: number;
+    quote: string;
+    text: string;
+    /** 메모를 붙인 글이 화면에서 차지하는 곳 */
+    anchor: { top: number; bottom: number; left: number; right: number } | null;
+  } | null>(null);
   const [presets, setPresets] = useState<DocPreset[]>(() => loadPresets());
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -194,6 +206,9 @@ function App() {
     }
     return null;
   })();
+
+  // 툴바의 '3막 구조/스크립트' 버튼은 지금 선택한 화면의 반대쪽을 보여 준다.
+  const boardFocused = structureIndex === focusedIndex;
 
   const docTarget = useCallback(
     (id: string): PaneTarget => (id === mainScriptId ? { kind: "script" } : { kind: "doc", id }),
@@ -332,6 +347,14 @@ function App() {
     [applyPanes, setPresetModal],
   );
 
+  /** 툴바의 '스크립트' 버튼: 원고 화면을 보이게 한다 (구조 보드는 덮어쓰지 않는다) */
+  const goToScript = useCallback(() => {
+    setPresetModal(null);
+    applyPanes(
+      revealScript(paneRef.current, (t) => t.kind === "doc" && findNode(treeRef.current, t.id)?.type === "structure"),
+    );
+  }, [applyPanes, setPresetModal]);
+
   const findCharacter = useCallback(
     (name: string) => {
       setTreeFilter(name);
@@ -392,21 +415,39 @@ function App() {
     };
   }, [toggleSidebar, toggleStats, handleOpenSettings, handleOpenGuide]);
 
-  // 가이드 단축키 (⌘? 또는 ⌘/)
+  // 메모: 우클릭 메뉴의 '메모'나 밑줄 친 글을 누르면 창을 연다.
+  const openNote = useCallback((id: string) => {
+    const note = editorRef.current?.getNotes().find((n) => n.id === id);
+    if (note) {
+      setNoteDialog({ id, from: note.from, to: note.to, quote: note.quote, text: note.text, anchor: editorRef.current?.rectOf(note.from, note.to) ?? null });
+    }
+  }, []);
+
+  useEffect(() => {
+    const onAdd = () => {
+      const picked = editorRef.current?.selection();
+      if (picked) {
+        setNoteDialog({ id: null, from: picked.from, to: picked.to, quote: picked.text, text: "", anchor: editorRef.current?.rectOf(picked.from, picked.to) ?? null });
+      }
+    };
+    window.addEventListener("dropkick:add-note", onAdd);
+    return () => window.removeEventListener("dropkick:add-note", onAdd);
+  }, []);
+
+  // 앱 단축키 (사이드바, 통계, 화면 나누기, 가이드). 설정에서 바꾼 값을 누를 때마다 읽는다.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === "/" || e.key === "?")) {
-        e.preventDefault();
-        handleOpenGuide();
-      } else if (e.metaKey && e.altKey && e.code === "Digit3") {
-        // 화면 나누기 (⌥⌘3). ⌥를 누르면 글자가 바뀌므로 key가 아니라 code로 본다.
-        e.preventDefault();
-        toggleSplit();
-      }
+      const id = shortcutForEvent(e, loadSettings().appShortcuts);
+      if (!id) return;
+      e.preventDefault();
+      if (id === "toggleSidebar") toggleSidebar();
+      else if (id === "toggleStats") toggleStats();
+      else if (id === "toggleSplit") toggleSplit();
+      else handleOpenGuide();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [handleOpenGuide, toggleSplit]);
+  }, [handleOpenGuide, toggleSidebar, toggleStats, toggleSplit]);
 
   // 원고로 돌아오면 원고에 커서를 두고, 누른 씬이 있으면 그리로 이동한다.
   useEffect(() => {
@@ -542,7 +583,17 @@ function App() {
     [focusedShown.kind, presetModal, project, setPresetModal, setShowSidebar],
   );
 
-  /** 3막 구조 보드를 원고 곁에 열기(이미 있으면 열고, 없으면 '개요' 폴더 안에 새로 만든다) */
+  /** 나누지 않은 상태에서는 지금 화면을 보드로 바꾸고, 나눈 상태에서는 원고 곁에 연다. */
+  const showBoard = useCallback(
+    (id: string) => {
+      const s = paneRef.current;
+      const target: PaneTarget = { kind: "doc", id };
+      applyPanes(s.split ? openBesideScript(s, target) : showInPane(s, 0, target));
+    },
+    [applyPanes],
+  );
+
+  /** 3막 구조 보드를 열기(이미 있으면 열고, 없으면 '개요' 폴더 안에 새로 만든다) */
   const handleOpenOrCreateStructure = useCallback(
     (forceNew = false) => {
       setPresetMenuPos(null);
@@ -553,16 +604,16 @@ function App() {
           if (existing.name === "3막 구조" || existing.name === "3막 구조(세이브 더 캣)") {
             project.rename(existing.id, "3막 구조 양식");
           }
-          applyPanes(openBesideScript(paneRef.current, { kind: "doc", id: existing.id }));
+          showBoard(existing.id);
           return;
         }
       }
       const targetFolder = folderNamed(project.tree, "개요");
       const id = project.addDoc(targetFolder ?? null, "structure", "3막 구조 양식");
-      applyPanes(openBesideScript(paneRef.current, { kind: "doc", id }));
+      showBoard(id);
       setShowSidebar(true);
     },
-    [applyPanes, project, setPresetModal, setShowSidebar],
+    [project, setPresetModal, setShowSidebar, showBoard],
   );
 
   // 상단 헤더 왼쪽 경로 표시: "프로젝트 이름 - 선택한 폴더 - 문서 이름"
@@ -811,12 +862,12 @@ function App() {
             type="button"
             className={showSidebar ? "style-button active" : "style-button"}
             aria-pressed={showSidebar}
-            title="사이드바 보기/숨기기 (⌥⌘1)"
+            title={`사이드바 보기/숨기기 (${formatCombo(settings.appShortcuts.toggleSidebar)})`}
             onMouseDown={(e) => e.preventDefault()}
             onClick={toggleSidebar}
           >
             <span className="style-name">사이드바</span>
-            <kbd>⌥⌘1</kbd>
+            <kbd>{formatCombo(settings.appShortcuts.toggleSidebar)}</kbd>
           </button>
           <button
             type="button"
@@ -853,12 +904,7 @@ function App() {
               </button>
             </span>
           ) : focusedShown.kind === "stats" ? (
-            <span className="stylebar-doc">
-              통계
-              <button type="button" className="style-button" onClick={() => openTarget({ kind: "script" })}>
-                ← {scriptName}
-              </button>
-            </span>
+            <span className="stylebar-doc">통계</span>
           ) : isScript ? (
             LINE_STYLES.map((style) => (
               <button
@@ -890,7 +936,7 @@ function App() {
                 key="guide-btn"
                 type="button"
                 className={guideOpen ? "style-button active" : "style-button"}
-                title="시나리오 작성 가이드 (⌘?)"
+                title={`시나리오 작성 가이드 (${formatCombo(settings.appShortcuts.openGuide)})`}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={handleOpenGuide}
               >
@@ -912,39 +958,39 @@ function App() {
         <div className="toolbar-right">
           <button
             type="button"
-            className={structureIndex !== null ? "style-button active" : "style-button"}
-            aria-pressed={structureIndex !== null}
-            title={
-              structureIndex !== null
-                ? "3막 구조 화면 닫기"
-                : "원고 옆에 3막 구조 보드 열기 (세이브 더 캣 15단계)"
-            }
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => (structureIndex !== null ? dismissPane(structureIndex) : handleOpenOrCreateStructure(false))}
-          >
-            <span className="style-name">3막 구조</span>
-          </button>
-          <button
-            type="button"
             className={split ? "style-button active" : "style-button"}
             aria-pressed={split}
-            title="화면 나누기 켜기/끄기 (⌥⌘3)"
+            title={`화면 나누기 켜기/끄기 (${formatCombo(settings.appShortcuts.toggleSplit)})`}
             onMouseDown={(e) => e.preventDefault()}
             onClick={toggleSplit}
           >
             <span className="style-name">화면 나누기</span>
-            <kbd>⌥⌘3</kbd>
+            <kbd>{formatCombo(settings.appShortcuts.toggleSplit)}</kbd>
+          </button>
+          <button
+            type="button"
+            className={boardFocused ? "style-button active" : "style-button"}
+            aria-pressed={boardFocused}
+            title={
+              boardFocused
+                ? "원고 화면으로 돌아가기"
+                : "3막 구조 보드 열기 (세이브 더 캣 15단계)"
+            }
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => (boardFocused ? goToScript() : handleOpenOrCreateStructure(false))}
+          >
+            <span className="style-name">{boardFocused ? "스크립트" : "3막 구조"}</span>
           </button>
           <button
             type="button"
             className={showStats ? "style-button active" : "style-button"}
             aria-pressed={showStats}
-            title="통계 보기/숨기기 (⌥⌘2)"
+            title={`통계 보기/숨기기 (${formatCombo(settings.appShortcuts.toggleStats)})`}
             onMouseDown={(e) => e.preventDefault()}
             onClick={toggleStats}
           >
             <span className="style-name">통계</span>
-            <kbd>⌥⌘2</kbd>
+            <kbd>{formatCombo(settings.appShortcuts.toggleStats)}</kbd>
           </button>
         </div>
       </nav>
@@ -1014,6 +1060,8 @@ function App() {
                     onInfo={setInfo}
                     onDirtyChange={project.setScriptDirty}
                     onAnalysis={setAnalysis}
+                    onNotesChange={project.setNotes}
+                    onNoteOpen={openNote}
                   />
                 </article>
               </main>
@@ -1221,6 +1269,29 @@ function App() {
           </div>,
           document.body,
         )}
+
+      {noteDialog && (
+        <NoteDialog
+          quote={noteDialog.quote}
+          anchor={noteDialog.anchor}
+          initialText={noteDialog.text}
+          isNew={noteDialog.id === null}
+          onClose={() => {
+            setNoteDialog(null);
+            editorRef.current?.focus();
+          }}
+          onSave={(text) =>
+            editorRef.current?.saveNote({
+              id: noteDialog.id ?? newId("note"),
+              from: noteDialog.from,
+              to: noteDialog.to,
+              quote: noteDialog.quote,
+              text,
+            })
+          }
+          onDelete={() => noteDialog.id && editorRef.current?.removeNote(noteDialog.id)}
+        />
+      )}
 
       {newRevisionOpen && (
         <NewRevisionDialog

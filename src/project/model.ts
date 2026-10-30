@@ -13,6 +13,7 @@
  */
 import { toFountain } from "../fountain/fountain";
 import type { ScriptLine } from "../editor/lineStyles";
+import { parseNotes, type ScriptNote } from "../editor/notes";
 
 export const PROJECT_EXTENSION = ".dropkick";
 export const MANIFEST_FILE = "project.json";
@@ -48,6 +49,8 @@ export type ProjectManifest = {
   lastOpened?: string;
   /** 수정고 목록 (오래된 것부터) */
   revisions?: RevisionMeta[];
+  /** 원고에 붙인 메모 (src/editor/notes.ts) */
+  notes?: ScriptNote[];
 };
 
 export const DOC_TYPE_LABELS: Record<DocType, string> = {
@@ -173,6 +176,8 @@ export function parseManifest(text: string): ProjectManifest {
       ).map((r) => ({ ...r, note: typeof r.note === "string" ? r.note : "" }))
     : undefined;
 
+  const notes = parseNotes(data.notes);
+
   return {
     format: MANIFEST_FORMAT,
     version: 1,
@@ -181,6 +186,7 @@ export function parseManifest(text: string): ProjectManifest {
     tree,
     lastOpened: typeof data.lastOpened === "string" && ids.has(data.lastOpened) ? data.lastOpened : undefined,
     ...(revisions && revisions.length > 0 ? { revisions } : {}),
+    ...(notes.length > 0 ? { notes } : {}),
   };
 }
 

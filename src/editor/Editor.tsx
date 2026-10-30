@@ -16,6 +16,7 @@ import {
   type ScriptLine,
 } from "./lineStyles";
 import { scriptEditing } from "./scriptView";
+import { notesOf, restoreNotes, scriptNotes, setNotesEffect, type ScriptNote } from "./notes";
 import { currentPage, pageBreaks, paginationField, totalPages } from "./pageBreaks";
 import { analyzeScript, type ScriptAnalysis } from "../analysis/analyze";
 import type { LineStyle } from "./styles";
@@ -50,6 +51,16 @@ export type EditorHandle = {
   focus: () => void;
   /** 그 줄로 커서를 옮기고 화면 위쪽에 보이게 한다. */
   goToLine: (line: number) => void;
+  /** 지금 고른 글 (고른 게 없으면 null) */
+  selection: () => { from: number; to: number; text: string } | null;
+  /** 글 범위가 화면에서 차지하는 곳 (메모 창을 그 글 밖에 띄우려고 쓴다) */
+  rectOf: (from: number, to: number) => { top: number; bottom: number; left: number; right: number } | null;
+  getNotes: () => ScriptNote[];
+  /** 저장해 둔 메모를 지금 글에 맞춰 붙인다. */
+  setNotes: (notes: ScriptNote[]) => void;
+  /** 메모를 새로 붙이거나(같은 id가 없으면) 내용을 고친다. */
+  saveNote: (note: ScriptNote) => void;
+  removeNote: (id: string) => void;
   /** 인물 이름 일괄 바꾸기. apply가 false면 바꿀 곳 수만 센다. (한 번의 ⌘Z로 되돌릴 수 있다) */
   renameCharacter: (
     oldKey: string,
@@ -66,6 +77,10 @@ type Props = {
   onDirtyChange: (dirty: boolean) => void;
   /** 페이지를 다시 계산할 때마다 (입력이 멈췄을 때) 분석 결과를 알린다. */
   onAnalysis: (analysis: ScriptAnalysis) => void;
+  /** 메모를 붙이거나 고치거나 지웠을 때 (글을 쓰다 밀린 위치는 알리지 않는다) */
+  onNotesChange: (notes: ScriptNote[]) => void;
+  /** 메모가 붙은 글을 눌렀을 때 */
+  onNoteOpen: (id: string) => void;
 };
 
 type Snapshot = { doc: Text; styles: readonly LineStyle[] };
@@ -107,7 +122,7 @@ function sameAs(state: EditorState, saved: Snapshot): boolean {
 }
 
 export const Editor = forwardRef<EditorHandle, Props>(function Editor(
-  { initialLines, onInfo, onDirtyChange, onAnalysis },
+  { initialLines, onInfo, onDirtyChange, onAnalysis, onNotesChange, onNoteOpen },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -122,6 +137,17 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
   onInfoRef.current = onInfo;
   onDirtyRef.current = onDirtyChange;
   onAnalysisRef.current = onAnalysis;
+  const onNotesRef = useRef(onNotesChange);
+  const onNoteOpenRef = useRef(onNoteOpen);
+  onNotesRef.current = onNotesChange;
+  onNoteOpenRef.current = onNoteOpen;
+
+  function dispatchNotes(notes: ScriptNote[]) {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: setNotesEffect.of(notes) });
+    onNotesRef.current(notesOf(view.state));
+  }
 
   function publishAnalysis(state: EditorState) {
     const { pagination } = state.field(paginationField);
@@ -189,6 +215,40 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
     focus() {
       viewRef.current?.focus();
     },
+    selection() {
+      const view = viewRef.current;
+      if (!view) return null;
+      const { from, to } = view.state.selection.main;
+      return from < to ? { from, to, text: view.state.sliceDoc(from, to) } : null;
+    },
+    rectOf(from, to) {
+      const view = viewRef.current;
+      if (!view) return null;
+      const a = view.coordsAtPos(from);
+      const b = view.coordsAtPos(to, -1) ?? a;
+      if (!a || !b) return null;
+      return { top: Math.min(a.top, b.top), bottom: Math.max(a.bottom, b.bottom), left: Math.min(a.left, b.left), right: Math.max(a.right, b.right) };
+    },
+    getNotes() {
+      const view = viewRef.current;
+      return view ? notesOf(view.state) : [];
+    },
+    setNotes(notes) {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({ effects: setNotesEffect.of(restoreNotes(view.state.doc.toString(), notes)) });
+    },
+    saveNote(note) {
+      const view = viewRef.current;
+      if (!view) return;
+      const current = notesOf(view.state);
+      const exists = current.some((n) => n.id === note.id);
+      dispatchNotes(exists ? current.map((n) => (n.id === note.id ? { ...n, text: note.text } : n)) : [...current, note]);
+    },
+    removeNote(id) {
+      const view = viewRef.current;
+      if (view) dispatchNotes(notesOf(view.state).filter((n) => n.id !== id));
+    },
     renameCharacter(oldKey, newName, everywhere, otherNames, apply) {
       const view = viewRef.current;
       if (!view) return { characterLines: 0, textHits: 0 };
@@ -221,6 +281,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
       EditorView.contentAttributes.of({ spellcheck: "false", lang: "ko" }),
       placeholder("여기에 시나리오를 쓰세요…"),
       scriptEditing(),
+      scriptNotes((id) => onNoteOpenRef.current(id)),
       pageBreaks(),
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
       paperTheme,
@@ -257,5 +318,5 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return <div className="editor-host" ref={hostRef} />;
+  return <div className="editor-host" data-script-editor ref={hostRef} />;
 });

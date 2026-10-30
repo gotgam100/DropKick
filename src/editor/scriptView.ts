@@ -152,14 +152,9 @@ const styleDecorations = ViewPlugin.fromClass(
 const styleKeymap = keymap.of([
   { key: "Enter", run: insertScriptNewline },
   { key: "Tab", run: cycleLineStyle(1), shift: cycleLineStyle(-1) },
-  ...LINE_STYLES.map((style, i) => ({
-    key: `Mod-${i + 1}`,
-    run: setStyle(style),
-    preventDefault: true,
-  })),
 ]);
 
-// 사용자가 설정에서 지정한 스타일 단축키(⌘+숫자/키)를 실시간 반영
+// 스타일 단축키(⌘+숫자/키): 기본은 ⌘1~⌘7이고, 설정에서 바꾼 값을 실시간 반영한다.
 const dynamicShortcutHandler = EditorView.domEventHandlers({
   keydown(e, view) {
     if (e.metaKey || e.ctrlKey) {
