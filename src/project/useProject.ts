@@ -838,7 +838,7 @@ export function useProject(
     [refresh],
   );
 
-  // ---------- PDF ----------
+  // ---------- PDF & Word ----------
 
   /** PDF로 내보내기. source를 주면(예: 수정고) 그 원고를, 없으면 지금 원고를 내보낸다. */
   const exportPdf = useCallback(async (source?: { name: string; script: string }) => {
@@ -860,6 +860,28 @@ export function useProject(
       await invoke("write_binary", bytes, { headers: { path: encodeURIComponent(path) } });
     } catch (error) {
       await showError("PDF를 만들지 못했습니다.", error);
+    }
+  }, [editorRef]);
+
+  /** Word(.docx)로 내보내기 */
+  const exportDocx = useCallback(async (source?: { name: string; script: string }) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const chosen = await save({
+      defaultPath: `${sessionTitle(sessionRef.current)}${source ? ` ${source.name}` : ""}.docx`,
+      filters: [{ name: "Word 문서", extensions: ["docx"] }],
+    });
+    if (!chosen) return;
+    const path = /\.docx$/i.test(chosen) ? chosen : `${chosen}.docx`;
+    try {
+      const { buildDocx } = await import("../docx/buildDocx");
+      const doc = source
+        ? scriptLinesOf(source.script)
+        : { titlePage: sessionRef.current.titlePage, lines: editor.getLines() };
+      const bytes = await buildDocx(doc);
+      await invoke("write_binary", bytes, { headers: { path: encodeURIComponent(path) } });
+    } catch (error) {
+      await showError("Word 문서를 만들지 못했습니다.", error);
     }
   }, [editorRef]);
 
@@ -907,6 +929,8 @@ export function useProject(
           return runExclusive(saveAs);
         case "export_pdf":
           return runExclusive(() => exportPdf());
+        case "export_docx":
+          return runExclusive(() => exportDocx());
         case "open_project_location":
           return runExclusive(async () => {
             const path = sessionRef.current.path;
@@ -997,6 +1021,7 @@ export function useProject(
   }, [
     confirmDiscard,
     editorRef,
+    exportDocx,
     exportPdf,
     importFountain,
     newProject,
@@ -1123,6 +1148,8 @@ export function useProject(
     prepareToClose: confirmDiscard,
     revisions: session.manifest.revisions ?? [],
     exportRevisionPdf: (name: string, script: string) => runExclusive(() => exportPdf({ name, script })),
+    exportRevisionDocx: (name: string, script: string) => runExclusive(() => exportDocx({ name, script })),
+    exportDocx: () => runExclusive(() => exportDocx()),
     createRevision,
     loadRevision,
     restoreRevision,

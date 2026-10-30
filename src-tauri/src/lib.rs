@@ -306,6 +306,16 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
+    let export_menu = Submenu::with_items(
+        app,
+        "내보내기",
+        true,
+        &[
+            &item("export_pdf", "PDF로 내보내기…", Some("CmdOrCtrl+P"))?,
+            &item("export_docx", "Word (.docx)로 내보내기…", None)?,
+        ],
+    )?;
+
     let file_menu = Submenu::with_items(
         app,
         "파일",
@@ -321,7 +331,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item("open_project_location", "프로젝트 위치 열기", None)?,
             &item("open_backups", "백업 폴더 보기", None)?,
             &PredefinedMenuItem::separator(app)?,
-            &item("export_pdf", "PDF로 내보내기…", Some("CmdOrCtrl+P"))?,
+            &export_menu,
             &PredefinedMenuItem::separator(app)?,
             &item("close", "창 닫기", Some("CmdOrCtrl+W"))?,
         ],
