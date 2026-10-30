@@ -2,7 +2,6 @@
  * DropKick 앱 설정 관리 (로컬 저장소에 보관)
  */
 import type { LineStyle } from "../editor/styles";
-import { DEFAULT_AI_SETTINGS, parseAiSettings, type AiSettings } from "../ai/models";
 import { DEFAULT_APP_SHORTCUTS, parseAppShortcuts, type AppShortcuts } from "./appShortcuts";
 
 export type ThemeMode = "system" | "light" | "dark";
@@ -57,8 +56,6 @@ export type AppSettings = {
   styleShortcuts: StyleShortcuts;
   /** 사이드바·통계·화면 나누기·가이드 단축키 */
   appShortcuts: AppShortcuts;
-  /** AI 기능 설정 (API 키는 여기가 아니라 맥 키체인에 있다) */
-  ai: AiSettings;
   /** 줄 끝에서 Enter를 눌렀을 때 다음 스타일 규칙 */
   nextStyleOnEnter: NextStyleRules;
 };
@@ -80,7 +77,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   openLastProjectOnStart: true,
   styleShortcuts: DEFAULT_STYLE_SHORTCUTS,
   appShortcuts: DEFAULT_APP_SHORTCUTS,
-  ai: DEFAULT_AI_SETTINGS,
   nextStyleOnEnter: DEFAULT_NEXT_STYLE_RULES,
 };
 
@@ -136,7 +132,6 @@ export function loadSettings(): AppSettings {
         typeof p.openLastProjectOnStart === "boolean" ? p.openLastProjectOnStart : true,
       styleShortcuts,
       appShortcuts: parseAppShortcuts(p.appShortcuts),
-      ai: parseAiSettings(p.ai),
       nextStyleOnEnter,
     };
   } catch {

@@ -32,9 +32,6 @@ import { RenameCharacterDialog } from "./panels/RenameCharacterDialog";
 import { RevisionView, type Snapshot } from "./revisions/RevisionView";
 import { NewRevisionDialog } from "./revisions/NewRevisionDialog";
 import { NoteDialog } from "./editor/NoteDialog";
-import { AskAiDialog } from "./ai/AskAiDialog";
-import type { ScriptLine } from "./editor/lineStyles";
-import { lineIndexAt } from "./ai/context";
 import { nextRevisionName, settingsDocs } from "./revisions/revisions";
 import { useUpdater } from "./update/useUpdater";
 import { StatsPanel } from "./panels/StatsPanel";
@@ -417,34 +414,6 @@ function App() {
       unlisten?.();
     };
   }, [toggleSidebar, toggleStats, handleOpenSettings, handleOpenGuide]);
-
-  /** 열려 있는 'AI에게 묻기' 창 */
-  const [askDialog, setAskDialog] = useState<{
-    from: number;
-    to: number;
-    quote: string;
-    anchor: { top: number; bottom: number; left: number; right: number } | null;
-    lines: ScriptLine[];
-    lineIndex: number;
-  } | null>(null);
-
-  useEffect(() => {
-    const onAsk = () => {
-      const picked = editorRef.current?.selection();
-      if (!picked) return;
-      const lines = editorRef.current?.getLines() ?? [];
-      setAskDialog({
-        from: picked.from,
-        to: picked.to,
-        quote: picked.text,
-        anchor: editorRef.current?.rectOf(picked.from, picked.to) ?? null,
-        lines,
-        lineIndex: lineIndexAt(lines, picked.from),
-      });
-    };
-    window.addEventListener("dropkick:ask-ai", onAsk);
-    return () => window.removeEventListener("dropkick:ask-ai", onAsk);
-  }, []);
 
   // 메모: 우클릭 메뉴의 '메모'나 밑줄 친 글을 누르면 창을 연다.
   const openNote = useCallback((id: string) => {
@@ -1300,31 +1269,6 @@ function App() {
           </div>,
           document.body,
         )}
-
-      {askDialog && (
-        <AskAiDialog
-          quote={askDialog.quote}
-          anchor={askDialog.anchor}
-          lines={askDialog.lines}
-          lineIndex={askDialog.lineIndex}
-          ai={settings.ai}
-          onConsent={() =>
-            setSettings((prev) => {
-              const next = { ...prev, ai: { ...prev.ai, consented: true } };
-              saveSettings(next);
-              return next;
-            })
-          }
-          onOpenSettings={handleOpenSettings}
-          onSaveAsNote={(text) =>
-            editorRef.current?.saveNote({ id: newId("note"), from: askDialog.from, to: askDialog.to, quote: askDialog.quote, text })
-          }
-          onClose={() => {
-            setAskDialog(null);
-            editorRef.current?.focus();
-          }}
-        />
-      )}
 
       {noteDialog && (
         <NoteDialog
