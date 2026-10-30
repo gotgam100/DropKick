@@ -19,7 +19,7 @@
 source ~/.cargo/env   # 터미널에서 cargo를 못 찾을 때 먼저
 npm install
 npm run tauri dev     # 개발용 앱 실행 (Rust 코드를 고치면 자동으로 다시 켜진다)
-npm test              # vitest. 현재 109개, 모두 통과해야 한다
+npm test              # vitest. 현재 153개, 모두 통과해야 한다
 npx tsc --noEmit      # 타입 검사
 (cd src-tauri && cargo build)   # Rust만 빌드
 ```
@@ -41,6 +41,7 @@ npx tsc --noEmit      # 타입 검사
 | `src/revisions/` | 수정고(1고, 2고…) 보관·비교·되돌리기 |
 | `src/titlepage/` | 표지 |
 | `src/update/` | 자동 업데이트 확인 |
+| `src/split/` | 화면 나누기(좌우 두 화면). `paneTargets.ts`(두 화면에 무엇을 보여줄지 규칙, 순수 함수), `PaneHeader.tsx`(화면 위 선택줄), `SplitDivider.tsx`(경계선 끌기), `useElementWidth.ts`. 원고 편집기는 하나뿐이라 원고·같은 문서는 한 화면에만 열린다 |
 | `src-tauri/src/lib.rs` | Rust 명령(파일 읽기/쓰기, 휴지통, 백업 정리 등), 메뉴, `.dropkick` 열기 |
 | `samples/` | 테스트용 한글 원고 (`short-5p.fountain`, `long-100p.fountain`) |
 | `design/` | 앱 아이콘 원본 (`app-icon-1024.png` → `npx tauri icon`으로 `src-tauri/icons` 생성, 생성 후 `android/`, `ios/` 폴더는 지운다) |

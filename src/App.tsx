@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -33,6 +33,27 @@ import { NewRevisionDialog } from "./revisions/NewRevisionDialog";
 import { nextRevisionName, settingsDocs } from "./revisions/revisions";
 import { useUpdater } from "./update/useUpdater";
 import { StatsPanel } from "./panels/StatsPanel";
+import {
+  INITIAL_PANES,
+  closePane,
+  normalizePanes,
+  openBesideScript,
+  paneShowing,
+  parsePanes,
+  revealScript,
+  sameTarget,
+  scriptPane,
+  serializePanes,
+  setSplit,
+  showInPane,
+  swapPanes,
+  type PaneIndex,
+  type PaneState,
+  type PaneTarget,
+} from "./split/paneTargets";
+import { PaneHeader } from "./split/PaneHeader";
+import { SplitDivider } from "./split/SplitDivider";
+import { useElementWidth } from "./split/useElementWidth";
 import "./App.css";
 import "./panels/panels.css";
 
@@ -70,9 +91,47 @@ function usePanelSetting(key: string, initial: boolean) {
   return [open, toggle, setOpen] as const;
 }
 
+const PANES_KEY = "dropkick.panes";
+/** 원고 용지 폭(8.5in)과 양옆 여백. 화면이 이보다 좁으면 용지를 줄여서 보여준다. */
+const PAPER_FIT_WIDTH = 8.5 * 96 + 32;
+
+function loadPaneState(): PaneState {
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(PANES_KEY);
+  } catch {
+    // 읽지 못하면 처음 상태로 시작한다.
+  }
+  // 문서·수정고 id는 프로젝트마다 달라서 기억하지 않고, 원고·통계만 복원한다.
+  return normalizePanes(parsePanes(raw), { docIds: new Set(), revisionIds: new Set(), mainScriptId: "" });
+}
+
+type PresetModalState = {
+  initial: DocPreset | null;
+  draft?: { name: string; body: string; icon?: string; docType?: "character" | "memo" };
+};
+
 function App() {
   const editorRef = useRef<EditorHandle>(null);
-  const textEditorRef = useRef<TextEditorHandle>(null);
+  const textRefs = [useRef<TextEditorHandle>(null), useRef<TextEditorHandle>(null)];
+  const [paneState, setPaneState] = useState<PaneState>(loadPaneState);
+  // 이벤트 안에서 바로 이어 쓸 수 있도록 최신 값을 따로 들고 있는다.
+  const paneRef = useRef(paneState);
+  paneRef.current = paneState;
+  // 프로젝트 쪽은 "글 편집기 하나"로 알고 있으므로, 지금 포커스가 있는 화면의 편집기로 연결해 준다.
+  const textEditorRef = useRef<TextEditorHandle | null>(null);
+  if (!textEditorRef.current) {
+    const focused = () => textRefs[paneRef.current.focus].current;
+    textEditorRef.current = {
+      undo: () => focused()?.undo(),
+      redo: () => focused()?.redo(),
+      find: () => focused()?.find(),
+      focus: () => focused()?.focus(),
+    };
+  }
+  const panesAreaRef = useRef<HTMLDivElement>(null);
+  const scriptPaneRef = useRef<HTMLDivElement>(null);
+  const scriptPaneWidth = useElementWidth(scriptPaneRef);
   const [info, setInfo] = useState<EditorInfo>({
     lines: 0,
     chars: 0,
@@ -89,7 +148,6 @@ function App() {
   const [editingTitlePage, setEditingTitlePage] = useState(false);
   const [renamingCharacter, setRenamingCharacter] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; key: number } | null>(null);
-  const [openRevisionId, setOpenRevisionId] = useState<string | null>(null);
   const [newRevisionOpen, setNewRevisionOpen] = useState(false);
   const [presets, setPresets] = useState<DocPreset[]>(() => loadPresets());
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
@@ -99,17 +157,145 @@ function App() {
     return localStorage.getItem(GUIDE_SEEN_KEY) !== "true";
   });
   const [presetMenuPos, setPresetMenuPos] = useState<{ x: number; y: number } | null>(null);
-  const [presetModal, setPresetModal] = useState<{
-    initial: DocPreset | null;
-    draft?: { name: string; body: string; icon?: string; docType?: "character" | "memo" };
-  } | null>(null);
+  const [presetModal, setPresetModalState] = useState<PresetModalState | null>(null);
+  // 프리셋 편집 화면은 열 때 포커스가 있던 화면을 덮는다.
+  const presetPaneRef = useRef<PaneIndex>(0);
+  const setPresetModal = useCallback((value: PresetModalState | null) => {
+    if (value) presetPaneRef.current = paneRef.current.split ? paneRef.current.focus : 0;
+    setPresetModalState(value);
+  }, []);
   const [showSidebar, toggleSidebar, setShowSidebar] = usePanelSetting("dropkick.panel.scenes", true);
-  const [showStats, toggleStats, setShowStats] = usePanelSetting("dropkick.panel.stats", false);
   const project = useProject(editorRef, textEditorRef, BLANK_SCRIPT_LINES);
-  const openRevision = project.revisions.find((r) => r.id === openRevisionId) ?? null;
-  const isScript = project.activeDoc.id === project.mainScriptId && !openRevision && !presetModal;
-  const isStructure = !isScript && !openRevision && !presetModal && project.activeDoc.type === "structure";
   const scriptName = findNode(project.tree, project.mainScriptId)?.name ?? "스크립트";
+
+  // ---------- 화면 나누기 ----------
+  const { openDoc, mainScriptId } = project;
+  const split = paneState.split;
+  const focusedIndex: PaneIndex = split ? paneState.focus : 0;
+  const presetPane: PaneIndex | null = presetModal ? (split ? presetPaneRef.current : 0) : null;
+  /** 한 화면에 실제로 보이는 것 (프리셋 편집 화면이 덮고 있으면 그것) */
+  type Shown = PaneTarget | { kind: "preset" };
+  const shownIn = (index: PaneIndex): Shown => (presetPane === index ? { kind: "preset" } : paneState.panes[index]);
+  const focusedShown = shownIn(focusedIndex);
+  const focusedRevision =
+    focusedShown.kind === "revision" ? project.revisions.find((r) => r.id === focusedShown.id) ?? null : null;
+  const focusedDocNode =
+    focusedShown.kind === "doc" ? (findNode(project.tree, focusedShown.id) as DocNode | null) : null;
+  const isScript = focusedShown.kind === "script";
+  const isStructure = focusedDocNode?.type === "structure";
+  const openRevision = focusedRevision;
+  const scriptIndex = scriptPane(paneState);
+  const scriptVisible = scriptIndex !== null;
+  const showStats = paneShowing(paneState, { kind: "stats" }) !== null;
+  const structureIndex = (() => {
+    for (const i of split ? [0, 1] : [0]) {
+      const t = paneState.panes[i];
+      if (t.kind === "doc" && findNode(project.tree, t.id)?.type === "structure") return i as PaneIndex;
+    }
+    return null;
+  })();
+
+  const docTarget = useCallback(
+    (id: string): PaneTarget => (id === mainScriptId ? { kind: "script" } : { kind: "doc", id }),
+    [mainScriptId],
+  );
+
+  /** 화면 상태를 바꾸고, 포커스가 있는 화면이 문서면 프로젝트의 '열린 문서'도 맞춘다. */
+  const applyPanes = useCallback(
+    (next: PaneState) => {
+      paneRef.current = next;
+      setPaneState(next);
+      const t = next.panes[next.split ? next.focus : 0];
+      if (t.kind === "script") openDoc(mainScriptId);
+      else if (t.kind === "doc") openDoc(t.id);
+    },
+    [mainScriptId, openDoc],
+  );
+
+  /** 포커스가 있는 화면에 연다. 다른 화면이 이미 열고 있으면 그 화면으로 포커스만 옮긴다. */
+  const openTarget = useCallback(
+    (target: PaneTarget) => {
+      const s = paneRef.current;
+      const at = paneShowing(s, target);
+      applyPanes(at !== null ? { ...s, focus: at } : showInPane(s, s.split ? s.focus : 0, target));
+    },
+    [applyPanes],
+  );
+
+  const focusPane = useCallback(
+    (index: PaneIndex) => {
+      const s = paneRef.current;
+      if (!s.split || s.focus === index) return;
+      applyPanes({ ...s, focus: index });
+    },
+    [applyPanes],
+  );
+
+  /** 화면 하나를 치운다: 나눠 놓았으면 그 화면을 닫고, 아니면 원고로 돌아간다. */
+  const dismissPane = useCallback(
+    (index: PaneIndex) => {
+      const s = paneRef.current;
+      applyPanes(s.split ? closePane(s, index) : showInPane(s, 0, { kind: "script" }));
+    },
+    [applyPanes],
+  );
+
+  const toggleSplit = useCallback(() => {
+    const s = paneRef.current;
+    if (s.split) return applyPanes(setSplit(s, false));
+    const board = walkDocs(project.tree).find((d) => d.type === "structure");
+    const second: PaneTarget | undefined =
+      s.panes[0].kind === "script" && board ? { kind: "doc", id: board.id } : undefined;
+    applyPanes(setSplit(s, true, second));
+  }, [applyPanes, project.tree]);
+
+  const toggleStats = useCallback(() => {
+    const s = paneRef.current;
+    const at = paneShowing(s, { kind: "stats" });
+    if (at !== null) dismissPane(at);
+    else applyPanes(openBesideScript(s, { kind: "stats" }));
+  }, [applyPanes, dismissPane]);
+
+  const setRatio = useCallback((ratio: number) => setPaneState((s) => ({ ...s, ratio })), []);
+
+  // 설정 기억
+  useEffect(() => {
+    try {
+      localStorage.setItem(PANES_KEY, serializePanes(paneState));
+    } catch {
+      // 저장하지 못해도 동작에는 문제없다.
+    }
+  }, [paneState]);
+
+  // 문서나 수정고가 사라지면 그 화면은 원고로 돌린다.
+  useEffect(() => {
+    const valid = {
+      docIds: new Set(walkDocs(project.tree).map((d) => d.id)),
+      revisionIds: new Set(project.revisions.map((r) => r.id)),
+      mainScriptId,
+    };
+    setPaneState((s) => {
+      const next = normalizePanes(s, valid);
+      paneRef.current = next;
+      return next;
+    });
+  }, [project.tree, project.revisions, mainScriptId]);
+
+  // 프로젝트 쪽에서 열린 문서가 바뀌면(새 문서 만들기 등) 포커스가 있는 화면에 보여준다.
+  const activeDocId = project.activeDoc.id;
+  const lastActiveDocId = useRef(activeDocId);
+  useEffect(() => {
+    if (lastActiveDocId.current === activeDocId) return;
+    lastActiveDocId.current = activeDocId;
+    const s = paneRef.current;
+    const target = docTarget(activeDocId);
+    const index = s.split ? s.focus : 0;
+    if (sameTarget(s.panes[index], target)) return;
+    const at = paneShowing(s, target);
+    const next = at !== null ? { ...s, focus: at } : showInPane(s, index, target);
+    paneRef.current = next;
+    setPaneState(next);
+  }, [activeDocId, docTarget]);
 
   const updateSettings = useCallback((next: AppSettings) => {
     setSettings(next);
@@ -127,22 +313,23 @@ function App() {
 
   const currentScene = useMemo(() => sceneAtLine(analysis.scenes, info.line), [analysis.scenes, info.line]);
 
-  // 씬을 누르면: 원고를 열고 그 씬으로 이동
-  const { openDoc, mainScriptId } = project;
+  const treeRef = useRef(project.tree);
+  treeRef.current = project.tree;
+
+  // 씬을 누르면: 원고를 (가려져 있으면 띄워서) 그 씬으로 이동
   const pendingLineRef = useRef<number | null>(null);
   const goToLine = useCallback(
     (line: number) => {
-      setOpenRevisionId(null);
       setPresetModal(null);
-      if (isScript) {
-        editorRef.current?.goToLine(line);
-        return;
-      }
+      const alreadyVisible = scriptPane(paneRef.current) !== null;
       // 원고 화면이 보인 다음 이동한다. (아래 useEffect)
-      pendingLineRef.current = line;
-      openDoc(mainScriptId);
+      if (!alreadyVisible) pendingLineRef.current = line;
+      applyPanes(
+        revealScript(paneRef.current, (t) => t.kind === "doc" && findNode(treeRef.current, t.id)?.type === "structure"),
+      );
+      if (alreadyVisible) editorRef.current?.goToLine(line);
     },
-    [isScript, mainScriptId, openDoc],
+    [applyPanes, setPresetModal],
   );
 
   const findCharacter = useCallback(
@@ -211,22 +398,26 @@ function App() {
       if ((e.metaKey || e.ctrlKey) && (e.key === "/" || e.key === "?")) {
         e.preventDefault();
         handleOpenGuide();
+      } else if (e.metaKey && e.altKey && e.code === "Digit3") {
+        // 화면 나누기 (⌥⌘3). ⌥를 누르면 글자가 바뀌므로 key가 아니라 code로 본다.
+        e.preventDefault();
+        toggleSplit();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [handleOpenGuide]);
+  }, [handleOpenGuide, toggleSplit]);
 
   // 원고로 돌아오면 원고에 커서를 두고, 누른 씬이 있으면 그리로 이동한다.
   useEffect(() => {
-    if (!isScript) return;
+    if (!scriptVisible) return;
     const line = pendingLineRef.current;
     pendingLineRef.current = null;
     const go = () => (line !== null ? editorRef.current?.goToLine(line) : editorRef.current?.focus());
     // 숨겨져 있던 원고가 다시 보이면 높이 계산이 한 박자 늦으므로, 조금 뒤에 한 번 더 맞춘다.
     const timers = [setTimeout(go, 0), setTimeout(go, 120)];
     return () => timers.forEach(clearTimeout);
-  }, [isScript]);
+  }, [scriptVisible]);
 
   // 개발용: 주소에 ?sample=short 또는 ?sample=long 을 붙이면 테스트 원고를 연다.
   useEffect(() => {
@@ -284,11 +475,9 @@ function App() {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  // 지금 열린 인물 설정 문서의 원고 속 정보
-  const activeCharacter =
-    project.activeDoc.type === "character"
-      ? analysis.characters.find((c) => c.name === characterKey(project.activeDoc.name)) ?? null
-      : undefined;
+  // 인물 설정 문서의 원고 속 정보 (인물 설정 문서가 아니면 undefined)
+  const characterInfoOf = (doc: DocNode) =>
+    doc.type === "character" ? analysis.characters.find((c) => c.name === characterKey(doc.name)) ?? null : undefined;
 
   // 트리 작업 알림은 2.5초 뒤 사라진다.
   const { treeUndo, dismissTreeUndo } = project;
@@ -334,13 +523,13 @@ function App() {
   /** 프리셋 메뉴에서 프리셋을 눌렀을 때: 빈 문서가 열려 있으면 거기에 적용하고, 아니면 새 문서를 만든다. */
   const handleSelectPreset = useCallback(
     (preset: DocPreset) => {
+      const wasPresetOpen = Boolean(presetModal);
       setPresetMenuPos(null);
       setPresetModal(null);
-      if (!isScript && !openRevision && !presetModal && project.activeText.trim() === "") {
+      if (focusedShown.kind === "doc" && !wasPresetOpen && project.activeText.trim() === "") {
         project.applyPresetToDoc(project.activeDoc.id, preset);
         return;
       }
-      setOpenRevisionId(null);
       const targetFolder =
         preset.docType === "character"
           ? folderNamed(project.tree, "인물 설정") ?? folderNamed(project.tree, "인물")
@@ -350,40 +539,41 @@ function App() {
       project.addDocWithPreset(targetFolder ?? null, preset);
       setShowSidebar(true);
     },
-    [isScript, openRevision, presetModal, project, setShowSidebar],
+    [focusedShown.kind, presetModal, project, setPresetModal, setShowSidebar],
   );
 
-  /** 3막 구조 보드 열기(이미 있으면 열고, 없으면 '개요' 폴더 안에 새로 만든다) */
+  /** 3막 구조 보드를 원고 곁에 열기(이미 있으면 열고, 없으면 '개요' 폴더 안에 새로 만든다) */
   const handleOpenOrCreateStructure = useCallback(
     (forceNew = false) => {
       setPresetMenuPos(null);
       setPresetModal(null);
-      setOpenRevisionId(null);
       if (!forceNew) {
         const existing = walkDocs(project.tree).find((d) => d.type === "structure");
         if (existing) {
           if (existing.name === "3막 구조" || existing.name === "3막 구조(세이브 더 캣)") {
             project.rename(existing.id, "3막 구조 양식");
           }
-          project.openDoc(existing.id);
+          applyPanes(openBesideScript(paneRef.current, { kind: "doc", id: existing.id }));
           return;
         }
       }
       const targetFolder = folderNamed(project.tree, "개요");
-      project.addDoc(targetFolder ?? null, "structure", "3막 구조 양식");
+      const id = project.addDoc(targetFolder ?? null, "structure", "3막 구조 양식");
+      applyPanes(openBesideScript(paneRef.current, { kind: "doc", id }));
       setShowSidebar(true);
     },
-    [project, setShowSidebar],
+    [applyPanes, project, setPresetModal, setShowSidebar],
   );
 
   // 상단 헤더 왼쪽 경로 표시: "프로젝트 이름 - 선택한 폴더 - 문서 이름"
   const headerPathLabel = useMemo(() => {
-    if (presetModal) {
+    if (presetModal && focusedShown.kind === "preset") {
       return `${project.title} - 프리셋 - ${presetModal.initial ? presetModal.initial.name : "새 프리셋 만들기"}`;
     }
     if (openRevision) {
       return `${project.title} - 수정고 - ${openRevision.name}`;
     }
+    if (focusedShown.kind === "stats") return `${project.title} - 통계`;
     const folders: string[] = [];
     let curId: string | null = project.activeDoc.id;
     while (curId) {
@@ -393,7 +583,7 @@ function App() {
       curId = parent.id;
     }
     return [project.title, ...folders, project.activeDoc.name].join(" - ");
-  }, [openRevision, presetModal, project.activeDoc.id, project.activeDoc.name, project.title, project.tree]);
+  }, [focusedShown.kind, openRevision, presetModal, project.activeDoc.id, project.activeDoc.name, project.title, project.tree]);
 
   const handleFullResetApp = useCallback(async () => {
     const ok = await project.resetToInitialState();
@@ -402,12 +592,11 @@ function App() {
     setSettings(DEFAULT_SETTINGS);
     setPresets(DEFAULT_PRESETS);
     setShowSidebar(true);
-    setShowStats(false);
-    setOpenRevisionId(null);
+    applyPanes(INITIAL_PANES);
     setPresetModal(null);
     setSettingsOpen(false);
     setNotice({ text: "프로그램을 처음 상태로 초기화했습니다.", key: Date.now() });
-  }, [project, setShowSidebar, setShowStats]);
+  }, [applyPanes, project, setPresetModal, setShowSidebar]);
 
   // 보조 창(설정, 가이드 등)과의 이벤트 동기화
   useEffect(() => {
@@ -447,6 +636,158 @@ function App() {
   }, [project, handleFullResetApp]);
 
   const zoomStyle = settings.zoom !== 100 ? { zoom: settings.zoom / 100 } : undefined;
+  // 화면을 나누면 원고 화면이 좁아지므로, 용지가 잘리지 않게 그 폭에 맞춰 줄여서 보여준다.
+  // (줄 바꿈은 용지 기준이라 화면 비율만 바뀌고 페이지 계산은 그대로다)
+  const scriptZoom =
+    split && scriptPaneWidth > 0
+      ? Math.max(0.4, Math.min(settings.zoom / 100, (scriptPaneWidth - 32) / (PAPER_FIT_WIDTH - 32)))
+      : settings.zoom / 100;
+  const scriptZoomStyle = scriptZoom !== 1 ? { zoom: scriptZoom } : undefined;
+
+  const paneStyle = (index: PaneIndex): CSSProperties =>
+    split
+      ? { order: index * 2, flex: `${index === 0 ? paneState.ratio : 1 - paneState.ratio} 1 0` }
+      : { order: 0, flex: "1 1 0" };
+
+  const renderHeader = (index: PaneIndex) => (
+    <PaneHeader
+      index={index}
+      target={paneState.panes[index]}
+      focused={focusedIndex === index}
+      tree={project.tree}
+      mainScriptId={mainScriptId}
+      revisions={project.revisions}
+      onChange={(target) => {
+        if (presetPane === index) setPresetModal(null);
+        applyPanes(showInPane(paneRef.current, index, target));
+      }}
+      onSwap={() => applyPanes(swapPanes(paneRef.current))}
+      onClose={() => dismissPane(index)}
+    />
+  );
+
+  /** 원고가 아닌 화면의 내용 (원고는 위에서 항상 살려 둔다) */
+  const renderContent = (index: PaneIndex, shown: Exclude<typeof focusedShown, { kind: "script" }>) => {
+    if (shown.kind === "preset" && presetModal) {
+      return (
+        <PresetEditorView
+          key={presetModal.initial?.id ?? "new"}
+          initial={presetModal.initial}
+          draft={presetModal.draft}
+          canDelete={presets.length > 2 || (presetModal.initial ? !isDefaultPreset(presetModal.initial.id) : true)}
+          onSave={(savedPreset) => {
+            const exists = presets.some((p) => p.id === savedPreset.id);
+            const next = exists
+              ? presets.map((p) => (p.id === savedPreset.id ? savedPreset : p))
+              : [...presets, savedPreset];
+            updatePresets(next);
+            setNotice({
+              text: exists
+                ? `"${savedPreset.name}" 프리셋을 저장했습니다.`
+                : `"${savedPreset.name}" 프리셋을 추가했습니다.`,
+              key: Date.now(),
+            });
+          }}
+          onDelete={(id) => {
+            const target = presets.find((p) => p.id === id);
+            const next = presets.filter((p) => p.id !== id);
+            updatePresets(next.length > 0 ? next : loadPresets());
+            if (target) {
+              setNotice({ text: `"${target.name}" 프리셋을 지웠습니다.`, key: Date.now() });
+            }
+          }}
+          onClose={() => setPresetModal(null)}
+        />
+      );
+    }
+    if (shown.kind === "revision") {
+      const meta = project.revisions.find((r) => r.id === shown.id);
+      if (!meta) return null;
+      return (
+        <RevisionView
+          meta={meta}
+          revisions={project.revisions}
+          load={project.loadRevision}
+          current={currentSnapshot}
+          onRestore={async () => {
+            if (await project.restoreRevision(meta, revisionStats())) {
+              dismissPane(index);
+              setNotice({ text: `"${meta.name}"로 되돌렸습니다. 되돌리기 전 상태는 수정고에 보관했습니다.`, key: Date.now() });
+            }
+          }}
+          onExportPdf={(script) => project.exportRevisionPdf(meta.name, script)}
+          onDelete={async () => {
+            if (await project.deleteRevision(meta)) dismissPane(index);
+          }}
+        />
+      );
+    }
+    if (shown.kind === "stats") {
+      return (
+        <StatsPanel
+          analysis={analysis}
+          currentSceneLine={currentScene?.line ?? null}
+          onSelectScene={goToLine}
+          onSelectCharacter={findCharacter}
+          hasProfile={(name) => characterDocs.has(characterKey(name))}
+          onOpenProfile={openProfile}
+          onRenameCharacter={setRenamingCharacter}
+        />
+      );
+    }
+    if (shown.kind !== "doc") return null;
+    const doc = findNode(project.tree, shown.id) as DocNode | null;
+    if (!doc) return null;
+    const text = project.docTexts.get(doc.id) ?? "";
+    if (doc.type === "structure") {
+      return (
+        <StructureBoardView
+          text={text}
+          scenes={analysis.scenes}
+          totalPages={analysis.pages}
+          runtimeMinutes={analysis.runtimeMinutes}
+          onChange={(nextText) => project.setDocText(doc.id, nextText)}
+          onSelectScene={goToLine}
+        />
+      );
+    }
+    const character = characterInfoOf(doc);
+    return (
+      <main className="text-desk">
+        {character !== undefined && (
+          <div className="character-info">
+            {character ? (
+              <>
+                <span className="muted">원고에서</span>
+                <span>
+                  대사 <strong>{numberFormat.format(character.speeches)}</strong>회
+                </span>
+                <span>
+                  <strong>{numberFormat.format(character.dialogueChars)}</strong>자
+                </span>
+                <span>
+                  씬 <strong>{character.scenes}</strong>개
+                </span>
+                <span>
+                  첫 등장 <strong>#{character.firstScene}</strong>
+                </span>
+                <button type="button" onClick={() => findCharacter(character.name)}>
+                  등장 씬 찾기
+                </button>
+              </>
+            ) : (
+              <span className="muted">
+                원고에 "{doc.name}"(이)라는 인물 이름이 아직 없습니다. 문서 이름을 원고의 인물 이름과 같게 하면 연결됩니다.
+              </span>
+            )}
+          </div>
+        )}
+        <article className="text-page" style={zoomStyle}>
+          <TextEditor ref={textRefs[index]} docId={doc.id} text={text} onChange={project.setDocText} />
+        </article>
+      </main>
+    );
+  };
 
   return (
     <div
@@ -462,7 +803,7 @@ function App() {
 
       {/* 도구모음: 아래 사이드바 / 원고 / 통계와 같은 세 칸으로 나눈다. */}
       <nav
-        className={`toolbar${showSidebar ? " with-sidebar" : ""}${showStats ? " with-stats" : ""}`}
+        className={`toolbar${showSidebar ? " with-sidebar" : ""}`}
         aria-label="도구모음"
       >
         <div className="toolbar-left">
@@ -497,7 +838,7 @@ function App() {
         </div>
 
         <div className="toolbar-center" aria-label="문장 스타일">
-          {presetModal ? (
+          {focusedShown.kind === "preset" && presetModal ? (
             <span className="stylebar-doc">
               프리셋 · {presetModal.initial ? `${presetModal.initial.name} 편집` : "새 프리셋 만들기"}
               <button type="button" className="style-button" onClick={() => setPresetModal(null)}>
@@ -507,7 +848,14 @@ function App() {
           ) : openRevision ? (
             <span className="stylebar-doc">
               수정고 · {openRevision.name}
-              <button type="button" className="style-button" onClick={() => setOpenRevisionId(null)}>
+              <button type="button" className="style-button" onClick={() => openTarget({ kind: "script" })}>
+                ← {scriptName}
+              </button>
+            </span>
+          ) : focusedShown.kind === "stats" ? (
+            <span className="stylebar-doc">
+              통계
+              <button type="button" className="style-button" onClick={() => openTarget({ kind: "script" })}>
                 ← {scriptName}
               </button>
             </span>
@@ -551,9 +899,9 @@ function App() {
             )
           ) : (
             <span className="stylebar-doc">
-              {DOC_TYPE_LABELS[project.activeDoc.type]} · {project.activeDoc.name}
-              {!isStructure && (
-                <button type="button" className="style-button" onClick={() => openDoc(mainScriptId)}>
+              {focusedDocNode ? `${DOC_TYPE_LABELS[focusedDocNode.type]} · ${focusedDocNode.name}` : ""}
+              {!isStructure && !split && (
+                <button type="button" className="style-button" onClick={() => openTarget({ kind: "script" })}>
                   ← {scriptName}
                 </button>
               )}
@@ -564,12 +912,28 @@ function App() {
         <div className="toolbar-right">
           <button
             type="button"
-            className={isStructure ? "style-button active" : "style-button"}
-            title={isStructure ? `${scriptName} 화면으로 돌아가기` : "3막 구조 보드 (세이브 더 캣 15단계)"}
+            className={structureIndex !== null ? "style-button active" : "style-button"}
+            aria-pressed={structureIndex !== null}
+            title={
+              structureIndex !== null
+                ? "3막 구조 화면 닫기"
+                : "원고 옆에 3막 구조 보드 열기 (세이브 더 캣 15단계)"
+            }
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => (isStructure ? openDoc(mainScriptId) : handleOpenOrCreateStructure(false))}
+            onClick={() => (structureIndex !== null ? dismissPane(structureIndex) : handleOpenOrCreateStructure(false))}
           >
-            <span className="style-name">{isStructure ? "스크립트" : "3막 구조"}</span>
+            <span className="style-name">3막 구조</span>
+          </button>
+          <button
+            type="button"
+            className={split ? "style-button active" : "style-button"}
+            aria-pressed={split}
+            title="화면 나누기 켜기/끄기 (⌥⌘3)"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={toggleSplit}
+          >
+            <span className="style-name">화면 나누기</span>
+            <kbd>⌥⌘3</kbd>
           </button>
           <button
             type="button"
@@ -599,26 +963,22 @@ function App() {
             filter={treeFilter}
             onFilterChange={setTreeFilter}
             onOpenDoc={(id) => {
-              setOpenRevisionId(null);
               setPresetModal(null);
-              project.openDoc(id);
+              openTarget(docTarget(id));
             }}
             onSelectScene={goToLine}
             onAdd={(kind, parentId) => {
               setPresetModal(null);
-              setOpenRevisionId(null);
               if (kind === "folder") return project.addFolder(parentId);
               if (kind === "structure") return project.addDoc(parentId, "structure");
               return project.addDoc(parentId, kind === "character" ? "character" : "memo");
             }}
             presets={presets}
             onAddPreset={(preset, parentId) => {
-              setOpenRevisionId(null);
               setPresetModal(null);
               return project.addDocWithPreset(parentId, preset);
             }}
             onCreatePreset={() => {
-              setOpenRevisionId(null);
               setPresetModal({ initial: null });
             }}
             onRename={project.rename}
@@ -626,141 +986,59 @@ function App() {
             onMove={project.move}
             onSetIcon={project.setIcon}
             revisions={project.revisions}
-            openRevisionId={openRevisionId}
+            openRevisionId={focusedRevision?.id ?? null}
             onOpenRevision={(id) => {
               setPresetModal(null);
-              setOpenRevisionId(id);
+              openTarget({ kind: "revision", id });
             }}
             onNewRevision={() => setNewRevisionOpen(true)}
           />
         )}
 
-        {/* 원고 에디터는 항상 살려 두고(되돌리기 기록, 분석 유지) 다른 문서를 볼 때만 숨긴다. */}
-        <main className="desk" hidden={!isScript}>
-          <article className="paper" style={zoomStyle}>
-            <Editor
-              ref={editorRef}
-              initialLines={BLANK_SCRIPT_LINES}
-              onInfo={setInfo}
-              onDirtyChange={project.setScriptDirty}
-              onAnalysis={setAnalysis}
-            />
-          </article>
-        </main>
+        <div className="panes" ref={panesAreaRef}>
+          {/* 원고 에디터는 항상 살려 두고(되돌리기 기록, 분석 유지) 화면에 없을 때만 숨긴다. */}
+          <div
+            className={`pane${split && focusedIndex === scriptIndex ? " pane-focused" : ""}`}
+            ref={scriptPaneRef}
+            hidden={!scriptVisible || presetPane === scriptIndex}
+            style={paneStyle(scriptIndex ?? 0)}
+            onPointerDownCapture={() => scriptIndex !== null && focusPane(scriptIndex)}
+          >
+            {split && scriptIndex !== null && renderHeader(scriptIndex)}
+            <div className="pane-body">
+              <main className="desk">
+                <article className="paper" style={scriptZoomStyle}>
+                  <Editor
+                    ref={editorRef}
+                    initialLines={BLANK_SCRIPT_LINES}
+                    onInfo={setInfo}
+                    onDirtyChange={project.setScriptDirty}
+                    onAnalysis={setAnalysis}
+                  />
+                </article>
+              </main>
+            </div>
+          </div>
 
-        {openRevision && (
-          <RevisionView
-            meta={openRevision}
-            revisions={project.revisions}
-            load={project.loadRevision}
-            current={currentSnapshot}
-            onRestore={async () => {
-              if (await project.restoreRevision(openRevision, revisionStats())) {
-                setOpenRevisionId(null);
-                setNotice({ text: `"${openRevision.name}"로 되돌렸습니다. 되돌리기 전 상태는 수정고에 보관했습니다.`, key: Date.now() });
-              }
-            }}
-            onExportPdf={(script) => project.exportRevisionPdf(openRevision.name, script)}
-            onDelete={async () => {
-              if (await project.deleteRevision(openRevision)) setOpenRevisionId(null);
-            }}
-          />
-        )}
-
-        {presetModal && (
-          <PresetEditorView
-            key={presetModal.initial?.id ?? "new"}
-            initial={presetModal.initial}
-            draft={presetModal.draft}
-            canDelete={presets.length > 2 || (presetModal.initial ? !isDefaultPreset(presetModal.initial.id) : true)}
-            onSave={(savedPreset) => {
-              const exists = presets.some((p) => p.id === savedPreset.id);
-              const next = exists
-                ? presets.map((p) => (p.id === savedPreset.id ? savedPreset : p))
-                : [...presets, savedPreset];
-              updatePresets(next);
-              setNotice({
-                text: exists
-                  ? `"${savedPreset.name}" 프리셋을 저장했습니다.`
-                  : `"${savedPreset.name}" 프리셋을 추가했습니다.`,
-                key: Date.now(),
-              });
-            }}
-            onDelete={(id) => {
-              const target = presets.find((p) => p.id === id);
-              const next = presets.filter((p) => p.id !== id);
-              updatePresets(next.length > 0 ? next : loadPresets());
-              if (target) {
-                setNotice({ text: `"${target.name}" 프리셋을 지웠습니다.`, key: Date.now() });
-              }
-            }}
-            onClose={() => setPresetModal(null)}
-          />
-        )}
-
-        {isStructure && (
-          <StructureBoardView
-            text={project.activeText}
-            scenes={analysis.scenes}
-            totalPages={analysis.pages}
-            runtimeMinutes={analysis.runtimeMinutes}
-            onChange={(nextText) => project.setDocText(project.activeDoc.id, nextText)}
-            onSelectScene={goToLine}
-          />
-        )}
-
-        {!isScript && !openRevision && !presetModal && !isStructure && (
-          <main className="text-desk">
-            {activeCharacter !== undefined && (
-              <div className="character-info">
-                {activeCharacter ? (
-                  <>
-                    <span className="muted">원고에서</span>
-                    <span>
-                      대사 <strong>{numberFormat.format(activeCharacter.speeches)}</strong>회
-                    </span>
-                    <span>
-                      <strong>{numberFormat.format(activeCharacter.dialogueChars)}</strong>자
-                    </span>
-                    <span>
-                      씬 <strong>{activeCharacter.scenes}</strong>개
-                    </span>
-                    <span>
-                      첫 등장 <strong>#{activeCharacter.firstScene}</strong>
-                    </span>
-                    <button type="button" onClick={() => findCharacter(activeCharacter.name)}>
-                      등장 씬 찾기
-                    </button>
-                  </>
-                ) : (
-                  <span className="muted">
-                    원고에 "{project.activeDoc.name}"(이)라는 인물 이름이 아직 없습니다. 문서 이름을 원고의 인물 이름과 같게 하면 연결됩니다.
-                  </span>
-                )}
+          {([0, 1] as const).map((index) => {
+            if (index === 1 && !split) return null;
+            const shown = shownIn(index);
+            if (shown.kind === "script") return null;
+            return (
+              <div
+                key={`pane-${index}`}
+                className={`pane${split && focusedIndex === index ? " pane-focused" : ""}`}
+                style={paneStyle(index)}
+                onPointerDownCapture={() => focusPane(index)}
+              >
+                {split && renderHeader(index)}
+                <div className="pane-body">{renderContent(index, shown)}</div>
               </div>
-            )}
-            <article className="text-page" style={zoomStyle}>
-              <TextEditor
-                ref={textEditorRef}
-                docId={project.activeDoc.id}
-                text={project.activeText}
-                onChange={project.setDocText}
-              />
-            </article>
-          </main>
-        )}
+            );
+          })}
 
-        {showStats && (
-          <StatsPanel
-            analysis={analysis}
-            currentSceneLine={currentScene?.line ?? null}
-            onSelectScene={goToLine}
-            onSelectCharacter={findCharacter}
-            hasProfile={(name) => characterDocs.has(characterKey(name))}
-            onOpenProfile={openProfile}
-            onRenameCharacter={setRenamingCharacter}
-          />
-        )}
+          {split && <SplitDivider ratio={paneState.ratio} containerRef={panesAreaRef} onChange={setRatio} style={{ order: 1 }} />}
+        </div>
       </div>
 
       <footer className="statusbar">
@@ -781,12 +1059,19 @@ function App() {
             <span>글자 {numberFormat.format(info.chars)}</span>
             <span>공백 제외 {numberFormat.format(info.charsNoSpace)}</span>
           </>
-        ) : (
+        ) : focusedDocNode ? (
           <>
-            <span className="status-style">{DOC_TYPE_LABELS[project.activeDoc.type]}</span>
-            <span className="status-scene">{project.activeDoc.name}</span>
+            <span className="status-style">{DOC_TYPE_LABELS[focusedDocNode.type]}</span>
+            <span className="status-scene">{focusedDocNode.name}</span>
             <span className="status-spacer" />
             <span>공백 제외 {numberFormat.format(docChars)}자</span>
+          </>
+        ) : (
+          <>
+            <span className="status-style">
+              {focusedShown.kind === "stats" ? "통계" : focusedShown.kind === "revision" ? "수정고" : "프리셋"}
+            </span>
+            <span className="status-spacer" />
           </>
         )}
         <span className={`status-save status-save-${project.saveStatus.state}`} title="저장된 프로젝트는 입력을 멈추면 자동으로 저장됩니다.">
@@ -912,7 +1197,7 @@ function App() {
               >
                 + 새 프리셋 만들기…
               </button>
-              {!isScript && !openRevision && !presetModal && project.activeDoc.type !== "structure" && project.activeText.trim() !== "" && (
+              {focusedDocNode && !isStructure && project.activeText.trim() !== "" && (
                 <button
                   type="button"
                   role="menuitem"
