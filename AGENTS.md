@@ -19,7 +19,7 @@
 source ~/.cargo/env   # 터미널에서 cargo를 못 찾을 때 먼저
 npm install
 npm run tauri dev     # 개발용 앱 실행 (Rust 코드를 고치면 자동으로 다시 켜진다)
-npm test              # vitest. 현재 153개, 모두 통과해야 한다
+npm test              # vitest. 현재 166개, 모두 통과해야 한다
 npx tsc --noEmit      # 타입 검사
 (cd src-tauri && cargo build)   # Rust만 빌드
 ```
@@ -30,7 +30,7 @@ npx tsc --noEmit      # 타입 검사
 
 | 위치 | 내용 |
 |---|---|
-| `src/editor/` | 원고 편집기. `styles.ts`(6가지 줄 스타일), `lineStyles.ts`(줄마다 스타일 저장, 실행 취소, 씬 번호, 인물 이름 일괄 바꾸기), `scriptView.ts`(화면 꾸미기, 단축키, 인물 이름 자동 완성), `pageBreaks.ts`(화면 속 페이지 나눔), `Editor.tsx`, `TextEditor.tsx`(일반 문서, Markdown), `ScriptPreview.tsx`(읽기 전용) |
+| `src/editor/` | 원고 편집기. `styles.ts`(6가지 줄 스타일), `lineStyles.ts`(줄마다 스타일 저장, 실행 취소, 씬 번호, 인물 이름 일괄 바꾸기), `scriptView.ts`(화면 꾸미기, 단축키, 인물 이름 자동 완성), `pageBreaks.ts`(화면 속 페이지 나눔), `notes.ts`(원고 메모: 밑줄·위치 따라가기, project.json의 `notes`에 저장), `NoteDialog.tsx`, `Editor.tsx`, `TextEditor.tsx`(일반 문서, Markdown), `ScriptPreview.tsx`(읽기 전용) |
 | `src/layout/` | **페이지 계산의 기준.** `metrics.ts`(글자 폭, 줄 바꿈), `paginate.ts`(페이지 나누기), `sceneNumbers.ts` |
 | `src/pdf/` | PDF 만들기 (pdf-lib). 화면과 같은 페이지 계산을 쓴다 |
 | `src/docx/` | Word(.docx) 만들기 (docx, MIT). 할리우드 표준 들여쓰기와 표지 포함 |
@@ -40,6 +40,7 @@ npx tsc --noEmit      # 타입 검사
 | `src/panels/` | 왼쪽 프로젝트 트리, 찾기, 오른쪽 통계, 인물 이름 바꾸기 창 |
 | `src/revisions/` | 수정고(1고, 2고…) 보관·비교·되돌리기 |
 | `src/titlepage/` | 표지 |
+| `src/contextMenu.ts` | 우클릭 메뉴(잘라내기/복사/붙이기/전체 선택, 원고에서는 + 메모). 맥 기본 메뉴는 쓰지 않는다 |
 | `src/update/` | 자동 업데이트 확인 |
 | `src/split/` | 화면 나누기(좌우 두 화면). `paneTargets.ts`(두 화면에 무엇을 보여줄지 규칙, 순수 함수), `PaneHeader.tsx`(화면 위 선택줄), `SplitDivider.tsx`(경계선 끌기), `useElementWidth.ts`. 원고 편집기는 하나뿐이라 원고·같은 문서는 한 화면에만 열린다 |
 | `src-tauri/src/lib.rs` | Rust 명령(파일 읽기/쓰기, 휴지통, 백업 정리 등), 메뉴, `.dropkick` 열기 |
@@ -108,4 +109,4 @@ npx tsc --noEmit      # 타입 검사
    - 키체인 허용 창이 뜨면 사용자가 직접 누른다. 비밀번호를 대신 다루지 않는다.
 4. 앱은 `releases/latest/download/latest.json`을 보고 업데이트한다. **업데이트 서명 열쇠를 잃어버리면 기존 사용자에게 업데이트를 보낼 수 없다.**
 
-현재 배포 버전: **0.3.0** (2026-10-29).
+현재 배포 버전: **0.4.0** (2026-10-31).
