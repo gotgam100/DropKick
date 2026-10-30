@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { isDefaultPreset, type DocPreset } from "../project/presets";
 import { LINE_STYLES, STYLE_LABELS, type LineStyle } from "../editor/styles";
+import { AiSettingsSection } from "./AiSettingsSection";
 import {
   APP_SHORTCUT_IDS,
   APP_SHORTCUT_LABELS,
@@ -22,7 +23,7 @@ import {
   type ThemeMode,
 } from "./settings";
 
-type TabId = "view" | "writing" | "shortcuts" | "backup" | "reset";
+type TabId = "view" | "writing" | "shortcuts" | "ai" | "backup" | "reset";
 
 type Props = {
   settings: AppSettings;
@@ -249,6 +250,15 @@ export function SettingsDialog({
               onClick={() => setTab("shortcuts")}
             >
               단축키 · 줄바꿈
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "ai"}
+              className={tab === "ai" ? "active" : ""}
+              onClick={() => setTab("ai")}
+            >
+              AI
             </button>
             <button
               type="button"
@@ -513,6 +523,8 @@ export function SettingsDialog({
               </div>
             </div>
           )}
+
+          {tab === "ai" && <AiSettingsSection settings={settings} patch={patch} />}
 
           {tab === "backup" && (
             <div className="settings-section">

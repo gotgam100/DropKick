@@ -35,6 +35,11 @@ export function installContextMenu(): void {
             text: "메모",
             action: () => window.dispatchEvent(new CustomEvent("dropkick:add-note")),
           },
+          {
+            id: "ask-ai",
+            text: "AI에게 묻기…",
+            action: () => window.dispatchEvent(new CustomEvent("dropkick:ask-ai")),
+          },
           { item: "Separator" },
         );
       }

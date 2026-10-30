@@ -1,3 +1,5 @@
+mod ai;
+
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -435,6 +437,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PendingOpens::default())
+        .manage(ai::AiState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .menu(build_menu)
@@ -452,6 +455,12 @@ pub fn run() {
             let _ = app.emit("menu", event.id().0.clone());
         })
         .invoke_handler(tauri::generate_handler![
+            ai::ai_has_key,
+            ai::ai_set_key,
+            ai::ai_delete_key,
+            ai::ai_test,
+            ai::ai_ask,
+            ai::ai_cancel,
             read_script,
             write_script,
             write_binary,
