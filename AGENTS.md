@@ -33,6 +33,7 @@ npx tsc --noEmit      # 타입 검사
 | `src/editor/` | 원고 편집기. `styles.ts`(6가지 줄 스타일), `lineStyles.ts`(줄마다 스타일 저장, 실행 취소, 씬 번호, 인물 이름 일괄 바꾸기), `scriptView.ts`(화면 꾸미기, 단축키, 인물 이름 자동 완성), `pageBreaks.ts`(화면 속 페이지 나눔), `Editor.tsx`, `TextEditor.tsx`(일반 문서, Markdown), `ScriptPreview.tsx`(읽기 전용) |
 | `src/layout/` | **페이지 계산의 기준.** `metrics.ts`(글자 폭, 줄 바꿈), `paginate.ts`(페이지 나누기), `sceneNumbers.ts` |
 | `src/pdf/` | PDF 만들기 (pdf-lib). 화면과 같은 페이지 계산을 쓴다 |
+| `src/docx/` | Word(.docx) 만들기 (docx, MIT). 할리우드 표준 들여쓰기와 표지 포함 |
 | `src/fountain/` | Fountain 형식 읽기/쓰기 |
 | `src/analysis/` | 통계(페이지, 러닝타임, 인물별 대사량, 씬 길이) |
 | `src/project/` | 프로젝트 모델(`model.ts`), 트리 편집(`tree.ts`), 저장/불러오기(`projectIO.ts`, `tauriFs.ts`), 전체 상태(`useProject.ts`: 자동 저장, 복구, 백업, 메뉴 처리) |
