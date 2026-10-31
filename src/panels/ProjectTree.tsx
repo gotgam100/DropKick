@@ -27,6 +27,11 @@ type Props = {
   onFilterChange: (value: string) => void;
   onOpenDoc: (id: string) => void;
   onSelectScene: (line: number) => void;
+  /** 원고에 붙인 메모 (글 순서대로) */
+  notes?: { id: string; quote: string; text: string }[];
+  onOpenNote?: (id: string) => void;
+  /** 씬을 끌어 다른 씬 앞(null이면 맨 끝)으로 옮겼을 때 */
+  onMoveScene?: (fromLine: number, beforeLine: number | null) => void;
   onAdd: (kind: NewKind, parentId: string | null) => string | null;
   presets?: DocPreset[];
   onAddPreset?: (preset: DocPreset, parentId: string | null) => string | null;
@@ -78,6 +83,9 @@ export function ProjectTree(props: Props) {
     onFilterChange,
     onOpenDoc,
     onSelectScene,
+    onMoveScene,
+    notes = [],
+    onOpenNote,
     onAdd,
     presets,
     onAddPreset,
@@ -92,6 +100,7 @@ export function ProjectTree(props: Props) {
     onNewRevision,
   } = props;
   const [revisionsOpen, setRevisionsOpen] = useState(true);
+  const [notesOpen, setNotesOpen] = useState(true);
 
   // 폴더는 처음에 닫혀 있고, 펼친 폴더만 기억한다. 스크립트는 처음에 펼쳐 둔다.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -112,6 +121,16 @@ export function ProjectTree(props: Props) {
     position: DropPosition | null;
   } | null>(null);
   const pressRef = useRef<{ id: string; name: string; x: number; y: number } | null>(null);
+  // 씬 끌어서 순서 바꾸기
+  const [sceneDrag, setSceneDrag] = useState<{
+    line: number;
+    name: string;
+    x: number;
+    y: number;
+    over: number | null;
+    position: "before" | "after" | null;
+  } | null>(null);
+  const scenePressRef = useRef<{ line: number; name: string; x: number; y: number } | null>(null);
   const suppressClickRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -294,6 +313,66 @@ export function ProjectTree(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drag, onMove]);
 
+  // 씬을 끌어 순서 바꾸기: 놓을 자리는 눈에 보이는 씬 목록에서 정한다.
+  useEffect(() => {
+    const targetAt = (x: number, y: number, dragging: number) => {
+      const el = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-scene-line]");
+      if (!el) return null;
+      const line = Number(el.dataset.sceneLine);
+      if (line === dragging) return null;
+      const rect = el.getBoundingClientRect();
+      return { line, position: (y - rect.top) / rect.height < 0.5 ? ("before" as const) : ("after" as const) };
+    };
+    const handleMove = (e: PointerEvent) => {
+      const press = scenePressRef.current;
+      if (!press) return;
+      if (!sceneDrag && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 5) return;
+      const target = targetAt(e.clientX, e.clientY, press.line);
+      setSceneDrag({
+        line: press.line,
+        name: press.name,
+        x: e.clientX,
+        y: e.clientY,
+        over: target?.line ?? null,
+        position: target?.position ?? null,
+      });
+      const list = listRef.current;
+      if (list) {
+        const rect = list.getBoundingClientRect();
+        if (e.clientY < rect.top + 28) list.scrollTop -= 10;
+        else if (e.clientY > rect.bottom - 28) list.scrollTop += 10;
+      }
+    };
+    const handleUp = () => {
+      const press = scenePressRef.current;
+      scenePressRef.current = null;
+      if (!press || !sceneDrag) return;
+      if (sceneDrag.over !== null && sceneDrag.position) {
+        const list = shown.scenes;
+        const index = list.findIndex((sc) => sc.line === sceneDrag.over);
+        const before = sceneDrag.position === "before" ? list[index]?.line : list[index + 1]?.line;
+        onMoveScene?.(sceneDrag.line, before ?? null);
+      }
+      suppressClickRef.current = true;
+      setTimeout(() => (suppressClickRef.current = false), 0);
+      setSceneDrag(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && scenePressRef.current) {
+        scenePressRef.current = null;
+        setSceneDrag(null);
+      }
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [sceneDrag, shown.scenes, onMoveScene]);
+
   // ---------- 그리기 ----------
 
   const renderName = (node: ProjectNode) =>
@@ -338,11 +417,22 @@ export function ProjectTree(props: Props) {
         <button
           key={scene.line}
           type="button"
-          className="tree-row tree-scene"
+          data-scene-line={scene.line}
+          className={`tree-row tree-scene${sceneDrag?.line === scene.line ? " dragging" : ""}${
+            sceneDrag?.over === scene.line && sceneDrag.position ? ` drop-${sceneDrag.position}` : ""
+          }`}
           style={{ paddingLeft: 12 + depth * 14 }}
           aria-current={activeDocId === mainScriptId && scene.line === currentSceneLine}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => onSelectScene(scene.line)}
+          onPointerDown={(e) => {
+            // 검색으로 걸러진 목록에서는 순서를 바꾸지 않는다. (보이지 않는 씬 사이로 옮기게 되므로)
+            if (e.button !== 0 || query !== "" || !onMoveScene || scene.number <= 0) return;
+            scenePressRef.current = { line: scene.line, name: scene.heading, x: e.clientX, y: e.clientY };
+          }}
+          onClick={() => {
+            if (suppressClickRef.current) return;
+            onSelectScene(scene.line);
+          }}
           title={`${scene.heading}\n${scene.page}페이지 · 길이 ${formatEighths(scene.eighths)}${scene.characters.length ? ` · ${scene.characters.join(", ")}` : ""}`}
         >
           <span className="scene-number">#{scene.number}.</span>
@@ -540,6 +630,42 @@ export function ProjectTree(props: Props) {
               ))}
           </div>
         )}
+        {!query && notes.length > 0 && onOpenNote && (
+          <div className="tree-revisions">
+            <div
+              className="tree-row tree-section"
+              role="treeitem"
+              aria-expanded={notesOpen}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setNotesOpen((v) => !v)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
+              <span className="tree-toggle">
+                <Chevron open={notesOpen} />
+              </span>
+              <span className="tree-name">원고 메모</span>
+              <span className="tree-meta">{notes.length}</span>
+            </div>
+            {notesOpen &&
+              notes.map((n) => (
+                <button
+                  key={n.id}
+                  type="button"
+                  className="tree-row tree-note"
+                  style={{ paddingLeft: 26 }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => onOpenNote(n.id)}
+                  title={`"${n.quote}"\n${n.text}`}
+                >
+                  <span className="tree-name">{n.text.split("\n")[0] || "(내용 없음)"}</span>
+                  <span className="tree-meta tree-note-quote">{n.quote.replace(/\s+/g, " ").trim()}</span>
+                </button>
+              ))}
+          </div>
+        )}
       </div>
 
       {menu &&
@@ -606,12 +732,12 @@ export function ProjectTree(props: Props) {
                     aria-haspopup="menu"
                     onMouseEnter={adjustSubmenuPosition}
                   >
-                    <span>프리셋{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}</span>
+                    <span>양식{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}</span>
                     <span className="tree-submenu-arrow" aria-hidden="true">
                       ▸
                     </span>
                     <div ref={submenuRef} className="tree-menu tree-submenu" role="menu">
-                      <div className="preset-menu-section-label">기본 프리셋</div>
+                      <div className="preset-menu-section-label">기본 양식</div>
                       <button
                         type="button"
                         role="menuitem"
@@ -648,7 +774,7 @@ export function ProjectTree(props: Props) {
                       {presets.some((p) => !isDefaultPreset(p.id)) && (
                         <>
                           <hr />
-                          <div className="preset-menu-section-label">추가한 프리셋</div>
+                          <div className="preset-menu-section-label">추가한 양식</div>
                           <div className="preset-custom-scroll">
                             {presets
                               .filter((p) => !isDefaultPreset(p.id))
@@ -683,7 +809,7 @@ export function ProjectTree(props: Props) {
                               onCreatePreset();
                             }}
                           >
-                            + 새 프리셋 만들기…
+                            + 새 양식 만들기…
                           </button>
                         </>
                       )}
@@ -725,6 +851,11 @@ export function ProjectTree(props: Props) {
       {drag && (
         <div className="tree-drag-ghost" style={{ left: drag.x + 12, top: drag.y + 8 }}>
           {drag.name}
+        </div>
+      )}
+      {sceneDrag && (
+        <div className="tree-drag-ghost" style={{ left: sceneDrag.x + 12, top: sceneDrag.y + 8 }}>
+          {sceneDrag.name.replace(/^(?:S#|#)\s*\d+\.?\s*/i, "")}
         </div>
       )}
 

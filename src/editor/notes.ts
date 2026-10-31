@@ -83,6 +83,17 @@ export function restoreNotes(doc: string, notes: readonly ScriptNote[]): ScriptN
   return result;
 }
 
+/** 원고 글의 위치(offset)가 몇 번째 줄(1부터)인지. 줄 사이는 줄바꿈 1글자로 센다. */
+export function lineOfOffset(lineTexts: readonly string[], offset: number): number {
+  let start = 0;
+  for (let i = 0; i < lineTexts.length; i++) {
+    const end = start + lineTexts[i].length;
+    if (offset <= end) return i + 1;
+    start = end + 1;
+  }
+  return Math.max(1, lineTexts.length);
+}
+
 /** 저장 파일에서 읽은 값을 믿지 않고 검사한다. */
 export function parseNotes(value: unknown): ScriptNote[] {
   if (!Array.isArray(value)) return [];

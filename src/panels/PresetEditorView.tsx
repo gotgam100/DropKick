@@ -1,6 +1,6 @@
 /**
- * 프리셋 만들기·편집 전용 문서 화면.
- * 팝업 대화상자 대신 일반 문서처럼 넓은 종이 화면(TextEditor)에서 프리셋 양식을 직접 작성한다.
+ * 양식 만들기·편집 전용 문서 화면.
+ * 팝업 대화상자 대신 일반 문서처럼 넓은 종이 화면(TextEditor)에서 양식을 직접 작성한다.
  */
 import { useState } from "react";
 import { TextEditor } from "../editor/TextEditor";
@@ -13,9 +13,9 @@ import {
 import { IconPickerDialog, SfSymbolIcon } from "./sfSymbols";
 
 type Props = {
-  /** 편집할 기존 프리셋. null이면 새 프리셋 만들기 */
+  /** 편집할 기존 양식. null이면 새 양식 만들기 */
   initial: DocPreset | null;
-  /** '지금 문서를 프리셋으로 저장'할 때 초기값 */
+  /** '지금 문서를 양식으로 저장'할 때 초기값 */
   draft?: { name: string; body: string; icon?: string; docType?: "character" | "memo" | "script" };
   canDelete: boolean;
   onSave: (preset: DocPreset) => void;
@@ -43,7 +43,7 @@ export function PresetEditorView({ initial, draft, canDelete, onSave, onDelete, 
   const [pickingIconAt, setPickingIconAt] = useState<{ x: number; y: number } | null>(null);
 
   const submit = () => {
-    const trimmedName = name.trim() || "새 프리셋";
+    const trimmedName = name.trim() || "새 양식";
     const fallbackDocName = `새 ${trimmedName.replace(/\s*설정$/, "") || "문서"}`;
     if (initial) {
       onSave({
@@ -77,7 +77,7 @@ export function PresetEditorView({ initial, draft, canDelete, onSave, onDelete, 
           <button
             type="button"
             className="preset-icon-button"
-            title="프리셋 아이콘 변경"
+            title="양식 아이콘 변경"
             onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
               setPickingIconAt({ x: rect.left, y: rect.bottom + 6 });
@@ -87,7 +87,7 @@ export function PresetEditorView({ initial, draft, canDelete, onSave, onDelete, 
           </button>
 
           <label className="preset-inline-field">
-            <span>프리셋 이름</span>
+            <span>양식 이름</span>
             <input
               value={name}
               placeholder="예: 장소 설정, 인물 설정"
@@ -153,7 +153,7 @@ export function PresetEditorView({ initial, draft, canDelete, onSave, onDelete, 
             취소
           </button>
           <button type="button" className="primary" onClick={submit}>
-            프리셋 저장
+            양식 저장
           </button>
         </div>
       </div>
@@ -172,7 +172,7 @@ export function PresetEditorView({ initial, draft, canDelete, onSave, onDelete, 
 
       {pickingIconAt && (
         <IconPickerDialog
-          node={{ id: "preset", type: docType, name: name || "프리셋", file: "", icon }}
+          node={{ id: "preset", type: docType, name: name || "양식", file: "", icon }}
           x={pickingIconAt.x}
           y={pickingIconAt.y}
           onApply={(nextIcon) => setIcon(nextIcon ?? (docType === "character" ? "person" : "doc.text"))}

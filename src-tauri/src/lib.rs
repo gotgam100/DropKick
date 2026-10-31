@@ -251,6 +251,36 @@ fn reveal_in_finder(path: String) -> Result<(), String> {
         .map_err(|e| format!("Finder를 열 수 없습니다: {e}"))
 }
 
+/// 파일 메뉴의 "최근 프로젝트 열기" 목록을 새로 채운다.
+#[tauri::command]
+fn set_recent_projects(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
+    let Some(menu) = app.menu() else { return Ok(()) };
+    let Some(tauri::menu::MenuItemKind::Submenu(sub)) = menu.get("recent_projects") else {
+        return Ok(());
+    };
+    let err = |e: tauri::Error| e.to_string();
+    for existing in sub.items().map_err(err)? {
+        sub.remove(&existing).map_err(err)?;
+    }
+    if paths.is_empty() {
+        let none = MenuItem::with_id(&app, "recent_none", "최근 프로젝트 없음", false, None::<&str>)
+            .map_err(err)?;
+        sub.append(&none).map_err(err)?;
+        return Ok(());
+    }
+    for path in &paths {
+        let name = path.rsplit('/').next().unwrap_or(path);
+        let name = name.strip_suffix(".dropkick").unwrap_or(name);
+        let item = MenuItem::with_id(&app, format!("recent:{path}"), name, true, None::<&str>)
+            .map_err(err)?;
+        sub.append(&item).map_err(err)?;
+    }
+    sub.append(&PredefinedMenuItem::separator(&app).map_err(err)?).map_err(err)?;
+    let clear = MenuItem::with_id(&app, "recent_clear", "목록 지우기", true, None::<&str>).map_err(err)?;
+    sub.append(&clear).map_err(err)?;
+    Ok(())
+}
+
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
@@ -296,8 +326,6 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item("open_settings", "설정…", Some("CmdOrCtrl+,"))?,
             &item("check_update", "업데이트 확인…", None)?,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::services(app, Some("서비스"))?,
-            &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::hide(app, Some("DropKick 가리기"))?,
             &PredefinedMenuItem::hide_others(app, Some("기타 가리기"))?,
             &PredefinedMenuItem::show_all(app, Some("모두 보기"))?,
@@ -316,6 +344,14 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
+    let recent_menu = Submenu::with_id_and_items(
+        app,
+        "recent_projects",
+        "최근 프로젝트 열기",
+        true,
+        &[&MenuItem::with_id(app, "recent_none", "최근 프로젝트 없음", false, None::<&str>)?],
+    )?;
+
     let file_menu = Submenu::with_items(
         app,
         "파일",
@@ -323,11 +359,11 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         &[
             &item("new_project", "새 프로젝트", Some("CmdOrCtrl+N"))?,
             &item("open", "프로젝트 열기…", Some("CmdOrCtrl+O"))?,
+            &recent_menu,
             &item("import_fountain", "Fountain 가져오기…", None)?,
             &PredefinedMenuItem::separator(app)?,
             &item("save", "저장", Some("CmdOrCtrl+S"))?,
             &item("save_as", "다른 이름으로 저장…", Some("CmdOrCtrl+Shift+S"))?,
-            &item("new_revision", "새 고로 보관…", Some("CmdOrCtrl+Alt+S"))?,
             &item("open_project_location", "프로젝트 위치 열기", None)?,
             &item("open_backups", "백업 폴더 보기", None)?,
             &PredefinedMenuItem::separator(app)?,
@@ -351,7 +387,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::paste(app, Some("붙이기"))?,
             &PredefinedMenuItem::select_all(app, Some("전체 선택"))?,
             &PredefinedMenuItem::separator(app)?,
-            &item("find", "찾기…", Some("CmdOrCtrl+F"))?,
+            &item("find", "찾기 · 바꾸기…", Some("CmdOrCtrl+F"))?,
         ],
     )?;
 
@@ -429,8 +465,27 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     )
 }
 
+/// 맥이 편집 메뉴에 자동으로 붙이는 항목(받아쓰기, 이모지, 자동 완성, 글쓰기 도구)을 끈다.
+/// 앱이 시작될 때(메뉴가 만들어지기 전에) 설정값으로 알려 줘야 한다.
+#[cfg(target_os = "macos")]
+fn disable_system_edit_menu_extras() {
+    use objc2_foundation::{ns_string, NSUserDefaults};
+    let defaults = NSUserDefaults::standardUserDefaults();
+    for key in [
+        ns_string!("NSDisabledDictationMenuItem"),
+        ns_string!("NSDisabledCharacterPaletteMenuItem"),
+    ] {
+        defaults.setBool_forKey(true, key);
+    }
+    defaults.setBool_forKey(false, ns_string!("NSAutoFillHeuristicControllerEnabled"));
+}
+
+#[cfg(not(target_os = "macos"))]
+fn disable_system_edit_menu_extras() {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    disable_system_edit_menu_extras();
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -466,6 +521,7 @@ pub fn run() {
             reveal_in_finder,
             take_pending_opens,
             quit_app,
+            set_recent_projects,
             open_auxiliary_window
         ])
         .build(tauri::generate_context!())

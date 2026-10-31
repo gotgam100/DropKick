@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { formatEighths, type ScriptAnalysis, type SceneSummary } from "../analysis/analyze";
+import { groupScenesByPlace } from "../analysis/places";
 
 type Props = {
   analysis: ScriptAnalysis;
@@ -29,6 +31,31 @@ export function StatsPanel({
   onRenameCharacter,
 }: Props) {
   const { scenes, characters } = analysis;
+  // 인물 · 장소를 눌러 펼친 씬 목록
+  const [openCharacters, setOpenCharacters] = useState<Set<string>>(new Set());
+  const [openPlaces, setOpenPlaces] = useState<Set<string>>(new Set());
+  const places = groupScenesByPlace(scenes);
+  const toggleIn = (setter: typeof setOpenCharacters, key: string) =>
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const sceneChips = (list: { line: number; number: number }[]) => (
+    <div className="scene-chips">
+      {list.map((sc) => (
+        <button
+          key={sc.line}
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onSelectScene(sc.line)}
+        >
+          #{sc.number}
+        </button>
+      ))}
+    </div>
+  );
   const textTotal = analysis.dialogueChars + analysis.actionChars;
   const dialoguePct = percent(analysis.dialogueChars, textTotal);
   const maxChars = Math.max(1, ...characters.map((c) => c.dialogueChars));
@@ -146,7 +173,43 @@ export function StatsPanel({
                     >
                       이름 바꾸기
                     </button>
+                    <button
+                      type="button"
+                      aria-expanded={openCharacters.has(c.name)}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => toggleIn(setOpenCharacters, c.name)}
+                      title="이 인물이 나오는 씬 보기"
+                    >
+                      {openCharacters.has(c.name) ? "등장 씬 접기" : "등장 씬"}
+                    </button>
                   </div>
+                  {openCharacters.has(c.name) && sceneChips(scenes.filter((sc) => sc.characters.includes(c.name)))}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="stat-section">
+          <h3>장소별 씬</h3>
+          {places.length === 0 ? (
+            <p className="panel-empty">씬헤딩(⌘1)을 쓰면 나타납니다.</p>
+          ) : (
+            <ul className="place-list">
+              {places.map((g) => (
+                <li key={g.place}>
+                  <button
+                    type="button"
+                    className="place-row"
+                    aria-expanded={openPlaces.has(g.place)}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => toggleIn(setOpenPlaces, g.place)}
+                    title="누르면 이 장소가 나오는 씬을 펼칩니다"
+                  >
+                    <span className="bar-label">{g.place}</span>
+                    <span className="bar-value">씬 {g.scenes.length}개</span>
+                  </button>
+                  {openPlaces.has(g.place) && sceneChips(g.scenes)}
                 </li>
               ))}
             </ul>

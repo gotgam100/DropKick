@@ -31,10 +31,12 @@ import { TitlePageDialog } from "./titlepage/TitlePageDialog";
 import { RenameCharacterDialog } from "./panels/RenameCharacterDialog";
 import { RevisionView, type Snapshot } from "./revisions/RevisionView";
 import { NewRevisionDialog } from "./revisions/NewRevisionDialog";
+import { ExportDialog } from "./export/ExportDialog";
 import { NoteDialog } from "./editor/NoteDialog";
 import { nextRevisionName, settingsDocs } from "./revisions/revisions";
 import { useUpdater } from "./update/useUpdater";
 import { StatsPanel } from "./panels/StatsPanel";
+import { lineOfOffset } from "./editor/notes";
 import {
   INITIAL_PANES,
   closePane,
@@ -151,6 +153,7 @@ function App() {
   const [renamingCharacter, setRenamingCharacter] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; key: number } | null>(null);
   const [newRevisionOpen, setNewRevisionOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"pdf" | "docx" | null>(null);
   /** 열려 있는 메모 창. id가 없으면 새 메모 */
   const [noteDialog, setNoteDialog] = useState<{
     id: string | null;
@@ -169,8 +172,9 @@ function App() {
     return localStorage.getItem(GUIDE_SEEN_KEY) !== "true";
   });
   const [presetMenuPos, setPresetMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [moreMenuPos, setMoreMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [presetModal, setPresetModalState] = useState<PresetModalState | null>(null);
-  // 프리셋 편집 화면은 열 때 포커스가 있던 화면을 덮는다.
+  // 양식 편집 화면은 열 때 포커스가 있던 화면을 덮는다.
   const presetPaneRef = useRef<PaneIndex>(0);
   const setPresetModal = useCallback((value: PresetModalState | null) => {
     if (value) presetPaneRef.current = paneRef.current.split ? paneRef.current.focus : 0;
@@ -185,7 +189,7 @@ function App() {
   const split = paneState.split;
   const focusedIndex: PaneIndex = split ? paneState.focus : 0;
   const presetPane: PaneIndex | null = presetModal ? (split ? presetPaneRef.current : 0) : null;
-  /** 한 화면에 실제로 보이는 것 (프리셋 편집 화면이 덮고 있으면 그것) */
+  /** 한 화면에 실제로 보이는 것 (양식 편집 화면이 덮고 있으면 그것) */
   type Shown = PaneTarget | { kind: "preset" };
   const shownIn = (index: PaneIndex): Shown => (presetPane === index ? { kind: "preset" } : paneState.panes[index]);
   const focusedShown = shownIn(focusedIndex);
@@ -263,6 +267,26 @@ function App() {
       s.panes[0].kind === "script" && board ? { kind: "doc", id: board.id } : undefined;
     applyPanes(setSplit(s, true, second));
   }, [applyPanes, project.tree]);
+
+  // ---------- 집중 모드: 툴바, 사이드바, 통계를 숨기고 원고만 보여 준다 ----------
+  const [focusMode, setFocusMode] = useState(false);
+  const beforeFocusRef = useRef<{ sidebar: boolean; panes: PaneState } | null>(null);
+  const toggleFocus = useCallback(() => {
+    const saved = beforeFocusRef.current;
+    if (saved) {
+      beforeFocusRef.current = null;
+      setShowSidebar(saved.sidebar);
+      applyPanes(saved.panes);
+      setFocusMode(false);
+      return;
+    }
+    beforeFocusRef.current = { sidebar: showSidebar, panes: paneRef.current };
+    setPresetModal(null);
+    setPresetMenuPos(null);
+    setShowSidebar(false);
+    applyPanes({ ...INITIAL_PANES, ratio: paneRef.current.ratio });
+    setFocusMode(true);
+  }, [applyPanes, setPresetModal, setShowSidebar, showSidebar]);
 
   const toggleStats = useCallback(() => {
     const s = paneRef.current;
@@ -383,7 +407,7 @@ function App() {
     }
   }, []);
 
-  // 메뉴 처리 (사이드바, 통계, 새 고, 설정, DropKick 정보, 화면 비율)
+  // 메뉴 처리 (사이드바, 통계, 설정, DropKick 정보, 화면 비율)
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
@@ -392,9 +416,10 @@ function App() {
       const id = event.payload;
       if (id === "toggle_scenes") toggleSidebar();
       else if (id === "toggle_stats") toggleStats();
-      else if (id === "new_revision") setNewRevisionOpen(true);
       else if (id === "open_settings") handleOpenSettings();
       else if (id === "about_dropkick") setAboutOpen(true);
+      else if (id === "export_pdf") setExportFormat("pdf");
+      else if (id === "export_docx") setExportFormat("docx");
       else if (id === "open_guide") handleOpenGuide();
       else if (id.startsWith("zoom:")) {
         const z = normalizeZoom(id.slice("zoom:".length));
@@ -423,6 +448,25 @@ function App() {
     }
   }, []);
 
+  // 사이드바 '메모' 목록: 지금 편집기에 붙어 있는 메모를 글 순서대로 (글을 쓰는 중에도 맞게 매번 읽는다)
+  const scriptNotes = (editorRef.current?.getNotes() ?? [])
+    .slice()
+    .sort((a, b) => a.from - b.from)
+    .map(({ id, quote, text }) => ({ id, quote, text }));
+
+  /** 메모 목록에서 메모를 누르면: 원고를 보이게 하고 그 글로 이동해 글을 골라 보여 준다. (창은 열지 않는다) */
+  const goToNoteFromList = useCallback(
+    (id: string) => {
+      const note = editorRef.current?.getNotes().find((n) => n.id === id);
+      if (!note) return;
+      const lineTexts = editorRef.current?.getLines().map((l) => l.text) ?? [];
+      goToLine(lineOfOffset(lineTexts, note.from));
+      // 원고 화면이 보이고 줄 이동이 끝난 뒤에, 메모를 붙인 글을 고른다.
+      setTimeout(() => editorRef.current?.selectNote(id), 120);
+    },
+    [goToLine],
+  );
+
   useEffect(() => {
     const onAdd = () => {
       const picked = editorRef.current?.selection();
@@ -440,14 +484,29 @@ function App() {
       const id = shortcutForEvent(e, loadSettings().appShortcuts);
       if (!id) return;
       e.preventDefault();
-      if (id === "toggleSidebar") toggleSidebar();
+      if (id === "toggleFocus") toggleFocus();
+      // 집중 모드에서는 화면을 바꾸는 단축키를 쓰지 않는다. (끄려면 집중 모드 단축키나 Esc)
+      else if (focusMode) return;
+      else if (id === "toggleSidebar") toggleSidebar();
       else if (id === "toggleStats") toggleStats();
       else if (id === "toggleSplit") toggleSplit();
       else handleOpenGuide();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [handleOpenGuide, toggleSidebar, toggleStats, toggleSplit]);
+  }, [focusMode, handleOpenGuide, toggleFocus, toggleSidebar, toggleStats, toggleSplit]);
+
+  // 집중 모드는 Esc로도 끝낸다. (찾기창·대화상자가 Esc를 먼저 쓰면 그쪽이 우선)
+  useEffect(() => {
+    if (!focusMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector(".dialog-backdrop, .note-backdrop, .cm-panel")) return;
+      toggleFocus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusMode, toggleFocus]);
 
   // 원고로 돌아오면 원고에 커서를 두고, 누른 씬이 있으면 그리로 이동한다.
   useEffect(() => {
@@ -561,7 +620,7 @@ function App() {
     savePresets(next);
   }, []);
 
-  /** 프리셋 메뉴에서 프리셋을 눌렀을 때: 빈 문서가 열려 있으면 거기에 적용하고, 아니면 새 문서를 만든다. */
+  /** 양식 메뉴에서 양식을 눌렀을 때: 빈 문서가 열려 있으면 거기에 적용하고, 아니면 새 문서를 만든다. */
   const handleSelectPreset = useCallback(
     (preset: DocPreset) => {
       const wasPresetOpen = Boolean(presetModal);
@@ -619,7 +678,7 @@ function App() {
   // 상단 헤더 왼쪽 경로 표시: "프로젝트 이름 - 선택한 폴더 - 문서 이름"
   const headerPathLabel = useMemo(() => {
     if (presetModal && focusedShown.kind === "preset") {
-      return `${project.title} - 프리셋 - ${presetModal.initial ? presetModal.initial.name : "새 프리셋 만들기"}`;
+      return `${project.title} - 양식 - ${presetModal.initial ? presetModal.initial.name : "새 양식 만들기"}`;
     }
     if (openRevision) {
       return `${project.title} - 수정고 - ${openRevision.name}`;
@@ -734,8 +793,8 @@ function App() {
             updatePresets(next);
             setNotice({
               text: exists
-                ? `"${savedPreset.name}" 프리셋을 저장했습니다.`
-                : `"${savedPreset.name}" 프리셋을 추가했습니다.`,
+                ? `"${savedPreset.name}" 양식을 저장했습니다.`
+                : `"${savedPreset.name}" 양식을 추가했습니다.`,
               key: Date.now(),
             });
           }}
@@ -744,7 +803,7 @@ function App() {
             const next = presets.filter((p) => p.id !== id);
             updatePresets(next.length > 0 ? next : loadPresets());
             if (target) {
-              setNotice({ text: `"${target.name}" 프리셋을 지웠습니다.`, key: Date.now() });
+              setNotice({ text: `"${target.name}" 양식을 지웠습니다.`, key: Date.now() });
             }
           }}
           onClose={() => setPresetModal(null)}
@@ -842,17 +901,25 @@ function App() {
 
   return (
     <div
-      className={`app${!settings.showSceneNumbers ? " hide-scene-numbers" : ""}${!settings.highlightCurrentLine ? " hide-current-line" : ""}`}
+      className={`app${focusMode ? " focus-mode" : ""}${!settings.showSceneNumbers ? " hide-scene-numbers" : ""}${!settings.highlightCurrentLine ? " hide-current-line" : ""}`}
     >
       <header className="titlebar" data-tauri-drag-region>
         <span className="titlebar-path" title={project.path ?? "아직 저장하지 않았습니다"}>
           {headerPathLabel}
         </span>
         {project.dirty && <span className="doc-dirty">수정됨</span>}
-        <span className="app-name">DropKick!</span>
+        <button
+          type="button"
+          className="app-name"
+          title="DropKick 정보"
+          onClick={() => setAboutOpen(true)}
+        >
+          DropKick!
+        </button>
       </header>
 
       {/* 도구모음: 아래 사이드바 / 원고 / 통계와 같은 세 칸으로 나눈다. */}
+      {!focusMode && (
       <nav
         className={`toolbar${showSidebar ? " with-sidebar" : ""}`}
         aria-label="도구모음"
@@ -867,13 +934,12 @@ function App() {
             onClick={toggleSidebar}
           >
             <span className="style-name">사이드바</span>
-            <kbd>{formatCombo(settings.appShortcuts.toggleSidebar)}</kbd>
           </button>
           <button
             type="button"
             className={presetMenuPos ? "style-button active" : "style-button"}
             aria-expanded={Boolean(presetMenuPos)}
-            title="문서 프리셋 (기본 프리셋 및 추가한 프리셋 선택)"
+            title="문서 양식 (기본 양식 및 추가한 양식 선택)"
             onMouseDown={(e) => e.preventDefault()}
             onClick={(e) => {
               if (presetMenuPos) {
@@ -884,14 +950,14 @@ function App() {
               }
             }}
           >
-            <span className="style-name">프리셋 ▾</span>
+            <span className="style-name">문서 양식 <span className="menu-caret">▼</span></span>
           </button>
         </div>
 
         <div className="toolbar-center" aria-label="문장 스타일">
           {focusedShown.kind === "preset" && presetModal ? (
             <span className="stylebar-doc">
-              프리셋 · {presetModal.initial ? `${presetModal.initial.name} 편집` : "새 프리셋 만들기"}
+              양식 · {presetModal.initial ? `${presetModal.initial.name} 편집` : "새 양식 만들기"}
               <button type="button" className="style-button" onClick={() => setPresetModal(null)}>
                 ← 돌아가기
               </button>
@@ -923,24 +989,23 @@ function App() {
             )).concat(
               <span key="divider" className="toolbar-divider" />,
               <button
-                key="title-page"
+                key="more"
                 type="button"
-                className={project.titlePage ? "style-button" : "style-button muted"}
-                title="표지 편집 (PDF 첫 장)"
+                className={moreMenuPos ? "style-button active" : "style-button"}
+                aria-expanded={Boolean(moreMenuPos)}
+                aria-label="더보기"
+                title="표지, 집중 모드, 작성 가이드"
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setEditingTitlePage(true)}
+                onClick={(e) => {
+                  if (moreMenuPos) {
+                    setMoreMenuPos(null);
+                  } else {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setMoreMenuPos({ x: rect.left, y: rect.bottom + 4 });
+                  }
+                }}
               >
-                <span className="style-name">표지</span>
-              </button>,
-              <button
-                key="guide-btn"
-                type="button"
-                className={guideOpen ? "style-button active" : "style-button"}
-                title={`시나리오 작성 가이드 (${formatCombo(settings.appShortcuts.openGuide)})`}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={handleOpenGuide}
-              >
-                <span className="style-name">📖 가이드</span>
+                <span className="style-name">더보기 <span className="menu-caret">▼</span></span>
               </button>,
             )
           ) : (
@@ -965,7 +1030,6 @@ function App() {
             onClick={toggleSplit}
           >
             <span className="style-name">화면 나누기</span>
-            <kbd>{formatCombo(settings.appShortcuts.toggleSplit)}</kbd>
           </button>
           <button
             type="button"
@@ -990,10 +1054,16 @@ function App() {
             onClick={toggleStats}
           >
             <span className="style-name">통계</span>
-            <kbd>{formatCombo(settings.appShortcuts.toggleStats)}</kbd>
           </button>
         </div>
       </nav>
+      )}
+
+      {focusMode && (
+        <button type="button" className="focus-exit" onClick={toggleFocus}>
+          집중 모드 끝내기 · Esc
+        </button>
+      )}
 
       <div className="workspace">
         {showSidebar && (
@@ -1013,6 +1083,9 @@ function App() {
               openTarget(docTarget(id));
             }}
             onSelectScene={goToLine}
+            onMoveScene={(fromLine, beforeLine) => editorRef.current?.moveScene(fromLine, beforeLine)}
+            notes={scriptNotes}
+            onOpenNote={goToNoteFromList}
             onAdd={(kind, parentId) => {
               setPresetModal(null);
               if (kind === "folder") return project.addFolder(parentId);
@@ -1117,7 +1190,7 @@ function App() {
         ) : (
           <>
             <span className="status-style">
-              {focusedShown.kind === "stats" ? "통계" : focusedShown.kind === "revision" ? "수정고" : "프리셋"}
+              {focusedShown.kind === "stats" ? "통계" : focusedShown.kind === "revision" ? "수정고" : "양식"}
             </span>
             <span className="status-spacer" />
           </>
@@ -1156,17 +1229,62 @@ function App() {
         />
       )}
 
+      {moreMenuPos &&
+        createPortal(
+          <div className="icon-popover-backdrop" onMouseDown={() => setMoreMenuPos(null)}>
+            <div
+              className="tree-menu"
+              role="menu"
+              aria-label="더보기"
+              style={{ left: moreMenuPos.x, top: moreMenuPos.y }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMoreMenuPos(null);
+                  setEditingTitlePage(true);
+                }}
+              >
+                표지 편집 (PDF 첫 장)
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMoreMenuPos(null);
+                  toggleFocus();
+                }}
+              >
+                집중 모드 ({formatCombo(settings.appShortcuts.toggleFocus)})
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMoreMenuPos(null);
+                  handleOpenGuide();
+                }}
+              >
+                시나리오 작성 가이드 ({formatCombo(settings.appShortcuts.openGuide)})
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
+
       {presetMenuPos &&
         createPortal(
           <div className="icon-popover-backdrop" onMouseDown={() => setPresetMenuPos(null)}>
             <div
               className="tree-menu preset-menu"
               role="menu"
-              aria-label="프리셋 메뉴"
+              aria-label="양식 메뉴"
               style={{ left: presetMenuPos.x, top: presetMenuPos.y }}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              <div className="preset-menu-section-label">기본 프리셋</div>
+              <div className="preset-menu-section-label">기본 양식</div>
               <div className="preset-menu-row">
                 <button
                   type="button"
@@ -1201,7 +1319,7 @@ function App() {
               {presets.some((p) => !isDefaultPreset(p.id)) && (
                 <>
                   <hr />
-                  <div className="preset-menu-section-label">추가한 프리셋</div>
+                  <div className="preset-menu-section-label">추가한 양식</div>
                   <div className="preset-custom-scroll">
                     {presets
                       .filter((p) => !isDefaultPreset(p.id))
@@ -1221,7 +1339,7 @@ function App() {
                           <button
                             type="button"
                             className="preset-menu-edit"
-                            title={`"${preset.name}" 프리셋 편집`}
+                            title={`"${preset.name}" 양식 편집`}
                             onClick={() => {
                               setPresetMenuPos(null);
                               setPresetModal({ initial: preset });
@@ -1243,7 +1361,7 @@ function App() {
                   setPresetModal({ initial: null });
                 }}
               >
-                + 새 프리셋 만들기…
+                + 새 양식 만들기…
               </button>
               {focusedDocNode && !isStructure && project.activeText.trim() !== "" && (
                 <button
@@ -1262,7 +1380,7 @@ function App() {
                     });
                   }}
                 >
-                  지금 문서를 프리셋으로 저장…
+                  지금 문서를 양식으로 저장…
                 </button>
               )}
             </div>
@@ -1293,6 +1411,18 @@ function App() {
         />
       )}
 
+      {exportFormat && (
+        <ExportDialog
+          format={exportFormat}
+          scriptName={scriptName}
+          docs={walkDocs(project.tree).filter((d) => d.id !== project.mainScriptId)}
+          onExport={(script, docIds) =>
+            project.exportBundle(exportFormat, { script, docIds })
+          }
+          onClose={() => setExportFormat(null)}
+        />
+      )}
+
       {newRevisionOpen && (
         <NewRevisionDialog
           defaultName={nextRevisionName(project.revisions)}
@@ -1307,11 +1437,7 @@ function App() {
       {settingsOpen && (
         <SettingsDialog
           settings={settings}
-          presets={presets}
           onChangeSettings={updateSettings}
-          onUpdatePresets={updatePresets}
-          onOpenNewPreset={() => setPresetModal({ initial: null })}
-          onEditPreset={(preset) => setPresetModal({ initial: preset })}
           onFullResetApp={handleFullResetApp}
           onClose={() => setSettingsOpen(false)}
         />

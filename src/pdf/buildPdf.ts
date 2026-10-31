@@ -11,6 +11,8 @@ import type { ScriptDocument } from "../fountain/fountain";
 import { KOREAN_SCALE, splitRuns, textColumns } from "../layout/metrics";
 import { PAGE, paginate } from "../layout/paginate";
 
+import type { ExtraSection } from "../export/extras";
+import { drawExtras } from "./extrasPdf";
 import type { FontFiles } from "./fonts";
 
 export { FONT_PATHS, type FontFiles } from "./fonts";
@@ -77,7 +79,15 @@ function drawTitlePage(pdf: PDFDocument, fonts: Fonts, titlePage: string) {
   bottom.forEach((line, i) => drawLine(page, fonts, line, 0, PAGE.linesPerPage - bottom.length + i, false));
 }
 
-export async function buildPdf(doc: ScriptDocument, files: FontFiles): Promise<Uint8Array> {
+/**
+ * doc가 null이면 원고 없이 부록(extras)만 담는다.
+ * extras는 원고 뒤에 문서마다 새 페이지에서 이어 붙는다.
+ */
+export async function buildPdf(
+  doc: ScriptDocument | null,
+  files: FontFiles,
+  extras: ExtraSection[] = [],
+): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
   const [courier, courierBold, korean, koreanBold] = await Promise.all([
@@ -88,16 +98,16 @@ export async function buildPdf(doc: ScriptDocument, files: FontFiles): Promise<U
   ]);
   const fonts: Fonts = { regular: [courier, korean], bold: [courierBold, koreanBold] };
 
-  const title = doc.titlePage ? parseTitlePage(doc.titlePage).get("title")?.join(" ") : undefined;
+  const title = doc?.titlePage ? parseTitlePage(doc.titlePage).get("title")?.join(" ") : undefined;
   if (title) pdf.setTitle(title.replace(/[*_]/g, ""));
   pdf.setCreator("DropKick");
   pdf.setProducer("DropKick (pdf-lib)");
 
-  if (doc.titlePage && doc.titlePage.trim()) drawTitlePage(pdf, fonts, doc.titlePage);
+  if (doc?.titlePage && doc.titlePage.trim()) drawTitlePage(pdf, fonts, doc.titlePage);
 
-  const { pages } = paginate(doc.lines);
+  const { pages } = paginate(doc?.lines ?? []);
   const totalPages = pages.length;
-  for (const p of pages) {
+  for (const p of doc ? pages : []) {
     const page = pdf.addPage([WIDTH, HEIGHT]);
     // 페이지 번호: 1페이지부터, 하단 중앙, '1/20' 형식
     const label = `${p.number}/${totalPages}`;
@@ -129,6 +139,8 @@ export async function buildPdf(doc: ScriptDocument, files: FontFiles): Promise<U
       }
     }
   }
+
+  drawExtras(pdf, { regular: korean, bold: koreanBold }, extras);
 
   return pdf.save();
 }

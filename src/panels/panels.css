@@ -694,7 +694,7 @@
   color: #fff;
 }
 
-/* ---------- 프리셋 메뉴, 우클릭 하위 메뉴, 프리셋 전용 문서 화면 ---------- */
+/* ---------- 양식 메뉴, 우클릭 하위 메뉴, 양식 전용 문서 화면 ---------- */
 
 .tree-submenu-trigger {
   position: relative;
@@ -2042,40 +2042,30 @@ em.minus {
 }
 
 /* 1막, 2막 전반, 2막 후반, 3막 카드 색상 매핑 (상단 타임라인 바와 일치) */
+.beat-card {
+  --phase: var(--border);
+  background: color-mix(in srgb, var(--phase) 12%, var(--paper));
+  border-left-color: var(--phase);
+}
+.beat-card .beat-number {
+  color: var(--phase);
+}
 .beat-card.phase-act-1 {
-  border-left-color: var(--chart-2);
+  --phase: var(--chart-2);
 }
-.beat-card.phase-act-1 .beat-number {
-  color: var(--chart-2);
-}
-
 .beat-card.phase-act-2a {
-  border-left-color: var(--rev-changed);
+  --phase: var(--rev-changed);
 }
-.beat-card.phase-act-2a .beat-number {
-  color: var(--rev-changed);
-}
-
 .beat-card.phase-act-2b {
-  border-left-color: var(--caret);
+  --phase: var(--caret);
 }
-.beat-card.phase-act-2b .beat-number {
-  color: var(--caret);
-}
-
 .beat-card.phase-act-3 {
-  border-left-color: #2aa39a;
-}
-.beat-card.phase-act-3 .beat-number {
-  color: #2aa39a;
+  --phase: #2aa39a;
 }
 
 @media (prefers-color-scheme: dark) {
   .beat-card.phase-act-3 {
-    border-left-color: #4ecdc4;
-  }
-  .beat-card.phase-act-3 .beat-number {
-    color: #4ecdc4;
+    --phase: #4ecdc4;
   }
 }
 
@@ -2729,6 +2719,10 @@ em.minus {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.settings-section + .settings-section {
+  margin-top: 14px;
 }
 
 .settings-item {
@@ -3717,4 +3711,244 @@ body.pane-resizing .pane-body {
   cursor: move;
   user-select: none;
   touch-action: none;
+}
+
+/* ---------- 내보내기 창 ---------- */
+
+.export-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.export-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 5px;
+}
+
+.export-row:hover {
+  background: var(--chrome);
+}
+
+.export-row span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-row em {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-style: normal;
+}
+
+.export-sep {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  padding: 6px 6px 2px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.export-all {
+  border: 0;
+  background: none;
+  color: var(--caret);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ---------- 찾기 · 바꾸기 창 (CodeMirror) ---------- */
+
+/* 원고 아래쪽에 바짝 붙는 줄 대신, 화면 아래에 떠 있는 카드로 보이게 한다. */
+.cm-panels.cm-panels-bottom {
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+  padding: 0 14px 14px;
+}
+
+.cm-search.cm-panel {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: min(430px, 100%);
+  margin-left: auto;
+  padding: 0 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--chrome);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  pointer-events: auto;
+}
+
+.cm-search.cm-panel br {
+  display: none;
+}
+
+.cm-search .cm-textfield {
+  flex: 1 1 100%;
+  width: auto;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+
+/* 제목줄: 여기를 잡고 끌면 창이 움직인다. 닫기 단추도 이 줄에 있다. */
+.cm-search .cm-search-handle {
+  flex: 1 1 100%;
+  margin: 0 -14px 2px;
+  padding: 10px 48px 8px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.cm-search .cm-search-handle:active {
+  cursor: grabbing;
+}
+
+.cm-search .cm-textfield[name="replace"] {
+  margin-top: 4px;
+}
+
+.cm-search .cm-textfield:focus {
+  outline: none;
+  border-color: var(--caret);
+}
+
+.cm-search .cm-button {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  background-image: none;
+  color: var(--ink);
+  font: inherit;
+  cursor: default;
+}
+
+.cm-search .cm-button:hover {
+  background: var(--button-hover);
+}
+
+.cm-search label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+
+/* 정규식은 일반 작가에게 필요 없어서 감춘다. */
+.cm-search label:has(input[name="re"]) {
+  display: none;
+}
+
+.cm-panel.cm-search button[name="close"] {
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  padding: 0;
+  /* CodeMirror 기본 글꼴 규칙이 더 세서 !important로 이긴다. */
+  font-size: 24px !important;
+  line-height: 1;
+  cursor: default;
+}
+
+.cm-panel.cm-search button[name="close"]:hover {
+  background: var(--button-hover);
+  color: var(--ink);
+}
+
+/* 사이드바 메모 목록: 메모 첫 줄, 오른쪽에 붙인 글 */
+.tree-note .tree-note-quote {
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 통계: 장소별 씬, 인물 등장 씬 */
+.place-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.place-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.place-row:hover {
+  background: var(--button-hover);
+}
+
+.scene-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 6px 8px;
+}
+
+.scene-chips button {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: default;
+}
+
+.scene-chips button:hover {
+  border-color: var(--caret);
+  color: var(--caret);
 }

@@ -1,6 +1,6 @@
 import { EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
-import { noteAt, notesField, notesOf, parseNotes, restoreNotes, setNotesEffect, type ScriptNote } from "./notes";
+import { lineOfOffset, noteAt, notesField, notesOf, parseNotes, restoreNotes, setNotesEffect, type ScriptNote } from "./notes";
 
 const make = (doc: string, notes: ScriptNote[]) => {
   const state = EditorState.create({ doc, extensions: [notesField] });
@@ -54,5 +54,16 @@ describe("저장한 메모 맞추기", () => {
   it("망가진 저장값은 걸러 낸다", () => {
     expect(parseNotes([{ id: "a", from: 1, to: 3, quote: "q", text: "t" }, { id: "a" }, null, { id: "b", from: 5, to: 2, quote: "", text: "" }])).toHaveLength(1);
     expect(parseNotes("zzz")).toEqual([]);
+  });
+});
+
+describe("글 위치로 줄 찾기", () => {
+  const lines = ["가나다", "", "라마"];
+  it("줄 사이 줄바꿈을 1글자로 센다", () => {
+    expect(lineOfOffset(lines, 0)).toBe(1);
+    expect(lineOfOffset(lines, 3)).toBe(1);
+    expect(lineOfOffset(lines, 4)).toBe(2);
+    expect(lineOfOffset(lines, 5)).toBe(3);
+    expect(lineOfOffset(lines, 99)).toBe(3);
   });
 });

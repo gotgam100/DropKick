@@ -1,13 +1,13 @@
 /**
- * 문서 프리셋 (기본값: 인물 설정, 사용자가 직접 추가·편집·삭제 가능)
+ * 문서 양식 (기본값: 인물 설정, 사용자가 직접 추가·편집·삭제 가능)
  */
 import { newId } from "./model";
 
 export type DocPreset = {
   id: string;
-  /** 메뉴에 보이는 프리셋 이름 (예: "인물 설정", "장소 설정", "스크립트 양식") */
+  /** 메뉴에 보이는 양식 이름 (예: "인물 설정", "장소 설정", "스크립트 양식") */
   name: string;
-  /** 이 프리셋으로 새 문서를 만들 때 기본 문서 이름 (예: "새 인물", "새 장소", "새 스크립트") */
+  /** 이 양식으로 새 문서를 만들 때 기본 문서 이름 (예: "새 인물", "새 장소", "새 스크립트") */
   defaultDocName: string;
   /** "character"이면 인물 통계 연결, "script"이면 시나리오 원고 형식 */
   docType: "character" | "memo" | "script";
@@ -62,7 +62,7 @@ export function isDefaultPreset(id: string): boolean {
 
 export const DEFAULT_PRESETS: DocPreset[] = [DEFAULT_CHARACTER_PRESET];
 
-/** 프리셋과 문서 이름으로 실제 문서 텍스트를 만든다. */
+/** 양식과 문서 이름으로 실제 문서 텍스트를 만든다. */
 export function formatPresetText(preset: Pick<DocPreset, "body"> & { docType?: string }, docName: string): string {
   const cleaned = extractPresetBody(preset.body);
   if (preset.docType === "script") {
@@ -95,7 +95,7 @@ function isValidPreset(value: unknown): value is DocPreset {
   );
 }
 
-/** 저장된 프리셋 목록을 읽는다. 저장된 것이 없으면 기본값을 돌려준다. */
+/** 저장된 양식 목록을 읽는다. 저장된 것이 없으면 기본값을 돌려준다. */
 export function loadPresets(): DocPreset[] {
   try {
     const raw = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
@@ -135,7 +135,7 @@ export function createCustomPreset(input: {
   icon?: string;
   body: string;
 }): DocPreset {
-  const name = input.name.trim() || "새 프리셋";
+  const name = input.name.trim() || "새 양식";
   const defaultDocName = input.defaultDocName?.trim() || `새 ${name.replace(/\s*설정$/, "") || "문서"}`;
   const docType = input.docType ?? "memo";
   const defaultIcon = docType === "character" ? "person" : docType === "script" ? "film" : "doc.text";

@@ -25,7 +25,7 @@ export const NEW_DOC_NAMES: Record<DocType, string> = {
 /** 일반 문서는 빈 상태로 시작한다. */
 export const MEMO_TEMPLATE = (_name: string) => "";
 
-/** 인물 설정 프리셋 */
+/** 인물 설정 양식 */
 export const CHARACTER_TEMPLATE = (name: string) => `# ${name}
 
 ## 기본 정보

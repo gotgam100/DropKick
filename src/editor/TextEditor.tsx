@@ -7,6 +7,8 @@ import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, placeholder } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, redo, undo } from "@codemirror/commands";
 import { openSearchPanel, searchKeymap } from "@codemirror/search";
+import { koreanSearchPhrases } from "./searchPhrases";
+import { searchPanelDrag } from "./searchPanelDrag";
 import { markdown } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
@@ -64,6 +66,8 @@ export const TextEditor = forwardRef<TextEditorHandle, Props>(function TextEdito
 
   const extensions: Extension = [
     history(),
+    koreanSearchPhrases,
+    searchPanelDrag(),
     drawSelection(),
     EditorView.lineWrapping,
     EditorView.contentAttributes.of({ spellcheck: "false", lang: "ko" }),

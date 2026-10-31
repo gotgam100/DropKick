@@ -16,11 +16,13 @@ import {
   cycleLineStyle,
   insertScriptNewline,
   lineStylesField,
+  sceneHeadingTexts,
   sceneNumbersField,
   setLineStyleEffect,
   setStyle,
   styleAtLine,
 } from "./lineStyles";
+import { knownPlaces, knownTimes, parseHeading } from "../analysis/places";
 import { LINE_STYLES, STYLE_LABELS, type LineStyle } from "./styles";
 import { ELEMENTS } from "../layout/paginate";
 import { textColumns } from "../layout/metrics";
@@ -205,6 +207,41 @@ function characterCompletions(context: CompletionContext) {
   };
 }
 
+// 씬헤딩 줄에서 앞서 쓴 장소(와 시간대)를 자동 완성한다.
+// "내부."나 "외부."는 따지지 않고, 그 뒤에 이어지는 장소 이름으로 찾는다.
+function sceneCompletions(context: CompletionContext) {
+  if (!loadSettings().sceneAutocomplete) return null;
+  const { state, pos } = context;
+  const line = state.doc.lineAt(pos);
+  if (styleAtLine(state, line.number) !== "scene") return null;
+  const typed = state.sliceDoc(line.from, pos);
+  if (!typed.trim()) return null;
+  const headings = sceneHeadingTexts(state, line.number);
+  const parts = parseHeading(typed);
+
+  let from: number;
+  let names: string[];
+  if (parts.time !== null) {
+    // 장소 뒤 " - "를 쓴 다음이면 시간대를 제안한다.
+    from = pos - parts.time.length;
+    names = knownTimes(headings, parts.place);
+  } else {
+    // 내부·외부 다음부터 쓰는 중인 장소 이름을 제안한다.
+    from = pos - parts.place.length;
+    names = knownPlaces(headings);
+  }
+  const typedPart = state.sliceDoc(from, pos);
+  names = names.filter((n) => n !== typedPart);
+  if (names.length === 0) return null;
+  return {
+    from,
+    to: pos,
+    // 자주 쓴 것이 위에 오도록 순서대로 점수를 준다. (안 주면 가나다순으로 섞인다)
+    options: names.map((name, i) => ({ label: name, type: "scene", boost: -i })),
+    validFor: /^[^\n]*$/,
+  };
+}
+
 // lineStylesField는 createScriptState()가 넣어 준다.
 export function scriptEditing(): Extension {
   return [
@@ -214,7 +251,7 @@ export function scriptEditing(): Extension {
     // 자동 완성 창이 열려 있을 때는 Enter가 이름 선택에 쓰이도록, 스타일 키는 그보다 낮게 둔다.
     Prec.high(styleKeymap),
     autocompletion({
-      override: [characterCompletions],
+      override: [characterCompletions, sceneCompletions],
       icons: false,
       defaultKeymap: true,
     }),

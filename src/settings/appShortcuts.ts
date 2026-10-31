@@ -1,17 +1,18 @@
 /**
- * 문서 스타일 말고 앱 전체에서 쓰는 단축키 (사이드바, 통계, 화면 나누기, 가이드).
+ * 문서 스타일 말고 앱 전체에서 쓰는 단축키 (사이드바, 통계, 화면 나누기, 집중 모드, 가이드).
  * 키 조합은 "Alt+Cmd+1"처럼 글자로 저장한다. ⌥를 누르면 글자가 바뀌므로 key가 아니라 code로 읽는다.
  */
 
-export type AppShortcutId = "toggleSidebar" | "toggleStats" | "toggleSplit" | "openGuide";
+export type AppShortcutId = "toggleSidebar" | "toggleStats" | "toggleSplit" | "toggleFocus" | "openGuide";
 export type AppShortcuts = Record<AppShortcutId, string>;
 
-export const APP_SHORTCUT_IDS: readonly AppShortcutId[] = ["toggleSidebar", "toggleStats", "toggleSplit", "openGuide"];
+export const APP_SHORTCUT_IDS: readonly AppShortcutId[] = ["toggleSidebar", "toggleStats", "toggleSplit", "toggleFocus", "openGuide"];
 
 export const APP_SHORTCUT_LABELS: Record<AppShortcutId, string> = {
   toggleSidebar: "사이드바 보기/숨기기",
   toggleStats: "통계 보기/숨기기",
   toggleSplit: "화면 나누기 켜기/끄기",
+  toggleFocus: "집중 모드 켜기/끄기",
   openGuide: "시나리오 작성 가이드",
 };
 
@@ -19,6 +20,7 @@ export const DEFAULT_APP_SHORTCUTS: AppShortcuts = {
   toggleSidebar: "Alt+Cmd+1",
   toggleStats: "Alt+Cmd+2",
   toggleSplit: "Alt+Cmd+3",
+  toggleFocus: "Shift+Cmd+F",
   openGuide: "Shift+Cmd+/",
 };
 

@@ -15,7 +15,13 @@ import {
   AlignmentType,
   convertInchesToTwip,
   LineRuleType,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  type FileChild,
 } from "docx";
+import type { ExtraBlock, ExtraSection } from "../export/extras";
 import type { ScriptDocument } from "../fountain/fountain";
 import { numberScenes, sceneHeadingText } from "../layout/sceneNumbers";
 import { toUpperLatin } from "../layout/metrics";
@@ -43,8 +49,71 @@ function parseTitlePage(text: string): Map<string, string[]> {
   return fields;
 }
 
-export async function buildDocx(doc: ScriptDocument): Promise<Uint8Array> {
-  const paragraphs: Paragraph[] = [];
+const EXTRA_SIZE = 21; // 10.5pt
+const EXTRA_FONT = { name: FONT_PRIMARY, eastAsia: FONT_ASIAN };
+
+/** 줄바꿈이 있는 글을 줄마다 TextRun으로 나눈다. */
+function extraRuns(text: string, bold = false, size = EXTRA_SIZE): TextRun[] {
+  return text.split("\n").map(
+    (line, i) => new TextRun({ text: line, bold, size, font: EXTRA_FONT, break: i > 0 ? 1 : undefined }),
+  );
+}
+
+function extraBlockToChildren(block: ExtraBlock): FileChild[] {
+  switch (block.kind) {
+    case "heading":
+      return [
+        new Paragraph({
+          keepNext: true,
+          spacing: { before: 280, after: 120 },
+          children: extraRuns(block.text, true, block.level === 2 ? 26 : 23),
+        }),
+      ];
+    case "paragraph":
+      return [new Paragraph({ spacing: { after: 120, line: 340 }, children: extraRuns(block.text) })];
+    case "bullet":
+      return [
+        new Paragraph({
+          indent: { left: 360, hanging: 240 },
+          spacing: { after: 60, line: 340 },
+          children: [new TextRun({ text: "- ", size: EXTRA_SIZE, font: EXTRA_FONT }), ...extraRuns(block.text)],
+        }),
+      ];
+    case "table": {
+      const cell = (text: string, width: number, header: boolean) =>
+        new TableCell({
+          width: { size: width, type: WidthType.PERCENTAGE },
+          margins: { top: 60, bottom: 60, left: 100, right: 100 },
+          shading: header ? { fill: "EEEEEE" } : undefined,
+          children: [new Paragraph({ children: extraRuns(text, header) })],
+        });
+      return [
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows: [
+            new TableRow({
+              tableHeader: true,
+              cantSplit: true,
+              children: block.header.map((h, i) => cell(h, block.widths[i], true)),
+            }),
+            ...block.rows.map(
+              (row) => new TableRow({ children: row.map((c, i) => cell(c, block.widths[i], false)) }),
+            ),
+          ],
+        }),
+        new Paragraph({ text: "" }),
+      ];
+    }
+  }
+}
+
+/**
+ * doc가 null이면 원고 없이 부록(extras)만 담는다.
+ * extras는 원고 뒤에 문서마다 새 페이지에서 이어 붙는다.
+ */
+export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraSection[] = []): Promise<Uint8Array> {
+  const doc: ScriptDocument = docOrNull ?? { titlePage: null, lines: [] };
+  const paragraphs: FileChild[] = [];
 
   // ---------- 1. 표지 (Title Page) ----------
   if (doc.titlePage && doc.titlePage.trim()) {
@@ -320,6 +389,18 @@ export async function buildDocx(doc: ScriptDocument): Promise<Uint8Array> {
         break;
       }
     }
+  }
+
+  // ---------- 3. 부록 (다른 문서) ----------
+  for (const section of extras) {
+    paragraphs.push(
+      new Paragraph({
+        pageBreakBefore: true,
+        spacing: { after: 200 },
+        children: extraRuns(section.title, true, 36),
+      }),
+    );
+    for (const block of section.blocks) paragraphs.push(...extraBlockToChildren(block));
   }
 
   // US Letter: 폭 8.5인치, 높이 11인치

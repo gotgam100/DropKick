@@ -43,6 +43,7 @@ import {
   type RevisionStats,
 } from "../revisions/revisions";
 import type { RevisionMeta } from "./model";
+import { buildExtraSection, type ExtraSection } from "../export/extras";
 import { DEFAULT_CHARACTER_PRESET, formatPresetText, loadPresets, type DocPreset } from "./presets";
 import { loadSettings } from "../settings/settings";
 import { createDefaultStructureBoard, serializeStructureBoard } from "../structure/structureModel";
@@ -61,6 +62,9 @@ import {
 
 const SCRIPT_FILTERS = [{ name: "Fountain 시나리오", extensions: ["fountain", "spmd", "txt"] }];
 const LAST_KEY = "dropkick.last";
+
+/** 내보내기 창에서 고른 내용: 원고를 담을지, 뒤에 붙일 다른 문서들 */
+type ExportBundle = { script: boolean; extras: ExtraSection[] };
 /** 입력을 멈추고 이만큼 지나면 자동 저장 */
 const AUTOSAVE_DELAY = 3000;
 /** 자동 저장 때는 이 간격마다 한 번만 백업을 남긴다 (직접 저장은 매번) */
@@ -109,6 +113,36 @@ function rememberLast(last: Last | null) {
   } catch {
     // 저장소를 못 써도 앱 동작에는 문제없다.
   }
+}
+
+const RECENTS_KEY = "dropkick.recents";
+const RECENTS_MAX = 10;
+
+function readRecents(): string[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? "[]");
+    return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 파일 메뉴의 "최근 프로젝트 열기"에 목록을 알린다. */
+function syncRecentMenu(paths: string[]) {
+  if (isTauri()) invoke("set_recent_projects", { paths }).catch(() => {});
+}
+
+function writeRecents(paths: string[]) {
+  try {
+    localStorage.setItem(RECENTS_KEY, JSON.stringify(paths));
+  } catch {
+    // 저장소를 못 써도 앱 동작에는 문제없다.
+  }
+  syncRecentMenu(paths);
+}
+
+function addRecent(path: string) {
+  writeRecents([path, ...readRecents().filter((p) => p !== path)].slice(0, RECENTS_MAX));
 }
 
 function readLast(): Last | null {
@@ -276,6 +310,7 @@ export function useProject(
       sessionRef.current = next;
       if (openDoc) setActiveDocId(openDoc);
       rememberLast(next.path ? { kind: "project", path: next.path } : null);
+      if (next.path) addRecent(next.path);
       refresh();
     },
     [refresh],
@@ -347,6 +382,7 @@ export function useProject(
           treeChanged: !treeUnchanged,
         };
         rememberLast({ kind: "project", path });
+        addRecent(path);
         refresh();
         setSaveStatus({ state: "saved", at: new Date() });
         if (!start.path) writeRecovery(null);
@@ -478,6 +514,7 @@ export function useProject(
     if (!(await confirmDiscard())) return false;
     await writeRecovery(null);
     rememberLast(null);
+    writeRecents([]);
     const { manifest, texts } = createProject("제목 없음");
     const { titlePage, lines } = scriptLinesOf(texts.get(manifest.mainScript) ?? "");
     editorRef.current?.load(lines);
@@ -555,7 +592,7 @@ export function useProject(
   /**
    * 새 문서를 폴더 안에 만들고 연다. 만든 문서의 id를 돌려준다.
    * - memo: 빈 일반 문서
-   * - character: 인물 설정 프리셋 (name을 주면 그 이름으로)
+   * - character: 인물 설정 양식 (name을 주면 그 이름으로)
    * - structure: 3막 구조 보드 (세이브 더 캣 15단계)
    */
   const addDoc = useCallback(
@@ -582,7 +619,7 @@ export function useProject(
     [updateTree],
   );
 
-  /** 프리셋으로 새 문서를 폴더 안에 만들고 연다. */
+  /** 양식으로 새 문서를 폴더 안에 만들고 연다. */
   const addDocWithPreset = useCallback(
     (parentId: string | null, preset: DocPreset, name?: string) => {
       const current = sessionRef.current;
@@ -607,7 +644,7 @@ export function useProject(
     [updateTree],
   );
 
-  /** 이미 열려 있는 일반 문서에 프리셋 양식을 적용한다. */
+  /** 이미 열려 있는 일반 문서에 양식을 적용한다. */
   const applyPresetToDoc = useCallback(
     (docId: string, preset: DocPreset) => {
       const current = sessionRef.current;
@@ -622,7 +659,7 @@ export function useProject(
         const defaultIcon = node.type === "character" ? "person" : "doc.text";
         nextTree = setNodeIcon(nextTree, docId, preset.icon === defaultIcon ? undefined : preset.icon);
       }
-      updateTree(nextTree, { texts }, `"${node.name}"에 "${preset.name}" 프리셋을 적용했습니다`);
+      updateTree(nextTree, { texts }, `"${node.name}"에 "${preset.name}" 양식을 적용했습니다`);
     },
     [updateTree],
   );
@@ -863,11 +900,11 @@ export function useProject(
   // ---------- PDF & Word ----------
 
   /** PDF로 내보내기. source를 주면(예: 수정고) 그 원고를, 없으면 지금 원고를 내보낸다. */
-  const exportPdf = useCallback(async (source?: { name: string; script: string }) => {
+  const exportPdf = useCallback(async (source?: { name: string; script: string }, bundle?: ExportBundle) => {
     const editor = editorRef.current;
     if (!editor) return;
     const chosen = await save({
-      defaultPath: `${sessionTitle(sessionRef.current)}${source ? ` ${source.name}` : ""}.pdf`,
+      defaultPath: `${sessionTitle(sessionRef.current)}${source ? ` ${source.name}` : ""}${bundle?.script === false ? " 문서" : ""}.pdf`,
       filters: [{ name: "PDF", extensions: ["pdf"] }],
     });
     if (!chosen) return;
@@ -875,10 +912,12 @@ export function useProject(
     try {
       // PDF 만드는 코드는 필요할 때만 불러온다. (앱 시작을 가볍게)
       const { buildPdf } = await import("../pdf/buildPdf");
-      const doc = source
-        ? scriptLinesOf(source.script)
-        : { titlePage: sessionRef.current.titlePage, lines: editor.getLines() };
-      const bytes = await buildPdf(doc, await loadFonts());
+      const doc = bundle?.script === false
+        ? null
+        : source
+          ? scriptLinesOf(source.script)
+          : { titlePage: sessionRef.current.titlePage, lines: editor.getLines() };
+      const bytes = await buildPdf(doc, await loadFonts(), bundle?.extras);
       await invoke("write_binary", bytes, { headers: { path: encodeURIComponent(path) } });
     } catch (error) {
       await showError("PDF를 만들지 못했습니다.", error);
@@ -886,21 +925,23 @@ export function useProject(
   }, [editorRef]);
 
   /** Word(.docx)로 내보내기 */
-  const exportDocx = useCallback(async (source?: { name: string; script: string }) => {
+  const exportDocx = useCallback(async (source?: { name: string; script: string }, bundle?: ExportBundle) => {
     const editor = editorRef.current;
     if (!editor) return;
     const chosen = await save({
-      defaultPath: `${sessionTitle(sessionRef.current)}${source ? ` ${source.name}` : ""}.docx`,
+      defaultPath: `${sessionTitle(sessionRef.current)}${source ? ` ${source.name}` : ""}${bundle?.script === false ? " 문서" : ""}.docx`,
       filters: [{ name: "Word 문서", extensions: ["docx"] }],
     });
     if (!chosen) return;
     const path = /\.docx$/i.test(chosen) ? chosen : `${chosen}.docx`;
     try {
       const { buildDocx } = await import("../docx/buildDocx");
-      const doc = source
-        ? scriptLinesOf(source.script)
-        : { titlePage: sessionRef.current.titlePage, lines: editor.getLines() };
-      const bytes = await buildDocx(doc);
+      const doc = bundle?.script === false
+        ? null
+        : source
+          ? scriptLinesOf(source.script)
+          : { titlePage: sessionRef.current.titlePage, lines: editor.getLines() };
+      const bytes = await buildDocx(doc, bundle?.extras);
       await invoke("write_binary", bytes, { headers: { path: encodeURIComponent(path) } });
     } catch (error) {
       await showError("Word 문서를 만들지 못했습니다.", error);
@@ -933,6 +974,20 @@ export function useProject(
     const handleMenu = (id: string) => {
       const isScript = activeRef.current === sessionRef.current.manifest.mainScript;
       const active = isScript ? editorRef.current : textEditorRef.current;
+      if (id.startsWith("recent:")) {
+        const path = id.slice("recent:".length);
+        return runExclusive(async () => {
+          if (!(await confirmDiscard())) return;
+          try {
+            await openProjectAt(path);
+          } catch (error) {
+            // 지워지거나 옮겨진 프로젝트는 목록에서 뺀다.
+            writeRecents(readRecents().filter((p) => p !== path));
+            await showError("프로젝트를 열지 못했습니다. 목록에서 뺐습니다.", error);
+          }
+        });
+      }
+      if (id === "recent_clear") return writeRecents([]);
       if (id.startsWith("style:")) {
         const style = id.slice("style:".length);
         if (isScript && isLineStyle(style)) editorRef.current?.setStyle(style);
@@ -949,10 +1004,6 @@ export function useProject(
           return runExclusive(saveCurrent);
         case "save_as":
           return runExclusive(saveAs);
-        case "export_pdf":
-          return runExclusive(() => exportPdf());
-        case "export_docx":
-          return runExclusive(() => exportDocx());
         case "open_project_location":
           return runExclusive(async () => {
             const path = sessionRef.current.path;
@@ -1064,6 +1115,7 @@ export function useProject(
     startupHandledRef.current = true;
 
     (async () => {
+      syncRecentMenu(readRecents());
       // Finder에서 프로젝트를 더블클릭해 앱이 켜진 경우: 그 프로젝트를 연다.
       const pending = await invoke<string[]>("take_pending_opens").catch(() => [] as string[]);
       if (pending.length > 0) {
@@ -1172,7 +1224,19 @@ export function useProject(
     revisions: session.manifest.revisions ?? [],
     exportRevisionPdf: (name: string, script: string) => runExclusive(() => exportPdf({ name, script })),
     exportRevisionDocx: (name: string, script: string) => runExclusive(() => exportDocx({ name, script })),
-    exportDocx: () => runExclusive(() => exportDocx()),
+    /** 내보내기 창에서 고른 내용으로 PDF나 Word 파일을 만든다. */
+    exportBundle: (format: "pdf" | "docx", selection: { script: boolean; docIds: string[] }) =>
+      runExclusive(() => {
+        const session = sessionRef.current;
+        const nodes = new Map(walkDocs(session.manifest.tree).map((n) => [n.id, n]));
+        const extras = selection.docIds.flatMap((id) => {
+          const node = nodes.get(id);
+          if (!node || node.id === session.manifest.mainScript) return [];
+          return [buildExtraSection(node.type, node.name, session.texts.get(id) ?? "")];
+        });
+        const bundle = { script: selection.script, extras };
+        return format === "pdf" ? exportPdf(undefined, bundle) : exportDocx(undefined, bundle);
+      }),
     createRevision,
     loadRevision,
     restoreRevision,

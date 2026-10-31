@@ -1,7 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
-import { isDefaultPreset, type DocPreset } from "../project/presets";
 import { LINE_STYLES, STYLE_LABELS, type LineStyle } from "../editor/styles";
 import {
   APP_SHORTCUT_IDS,
@@ -22,15 +19,11 @@ import {
   type ThemeMode,
 } from "./settings";
 
-type TabId = "view" | "writing" | "shortcuts" | "backup" | "reset";
+type TabId = "view" | "writing" | "shortcuts" | "backup";
 
 type Props = {
   settings: AppSettings;
-  presets: DocPreset[];
   onChangeSettings: (next: AppSettings) => void;
-  onUpdatePresets: (next: DocPreset[]) => void;
-  onOpenNewPreset: () => void;
-  onEditPreset: (preset: DocPreset) => void;
   onFullResetApp: () => Promise<void>;
   onClose: () => void;
   isStandalone?: boolean;
@@ -38,20 +31,14 @@ type Props = {
 
 export function SettingsDialog({
   settings,
-  presets,
   onChangeSettings,
-  onUpdatePresets,
-  onOpenNewPreset,
-  onEditPreset,
   onFullResetApp,
   onClose,
   isStandalone,
 }: Props) {
   const [tab, setTab] = useState<TabId>("view");
   const [confirmResetAll, setConfirmResetAll] = useState(false);
-  const [presetNotice, setPresetNotice] = useState<string | null>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const dragRef = useRef<{
     startX: number;
@@ -59,8 +46,6 @@ export function SettingsDialog({
     posX: number;
     posY: number;
   } | null>(null);
-
-  const customPresets = presets.filter((p) => !isDefaultPreset(p.id));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -146,67 +131,7 @@ export function SettingsDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording, settings]);
 
-  // 추가한 프리셋 JSON 파일로 내보내기
-  const handleExportPresets = async () => {
-    if (customPresets.length === 0) {
-      setPresetNotice("내보낼 추가 프리셋이 없습니다.");
-      return;
-    }
-    try {
-      // 맥 앱 창에서는 브라우저식 다운로드가 되지 않아, 저장 위치를 직접 고르게 한다.
-      const chosen = await save({
-        defaultPath: "DropKick-프리셋-백업.json",
-        filters: [{ name: "프리셋 백업", extensions: ["json"] }],
-      });
-      if (!chosen) return;
-      const path = /\.json$/i.test(chosen) ? chosen : `${chosen}.json`;
-      await invoke("write_script", { path, contents: JSON.stringify(customPresets, null, 2) });
-      setPresetNotice(`추가한 프리셋 ${customPresets.length}개를 파일로 내보냈습니다.`);
-    } catch {
-      setPresetNotice("파일을 저장하지 못했습니다.");
-    }
-  };
-
-  // 프리셋 JSON 파일 가져오기
-  const handleImportPresetsFile = async (file: File) => {
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      if (!Array.isArray(parsed)) {
-        setPresetNotice("올바른 프리셋 파일 형식이 아닙니다.");
-        return;
-      }
-      const valid = parsed.filter(
-        (p): p is DocPreset =>
-          Boolean(p) &&
-          typeof p === "object" &&
-          typeof p.id === "string" &&
-          !isDefaultPreset(p.id) &&
-          typeof p.name === "string" &&
-          typeof p.body === "string",
-      );
-      if (valid.length === 0) {
-        setPresetNotice("가져올 수 있는 프리셋이 없습니다.");
-        return;
-      }
-      const byId = new Map(presets.map((p) => [p.id, p]));
-      for (const item of valid) {
-        byId.set(item.id, {
-          id: item.id,
-          name: item.name,
-          defaultDocName: item.defaultDocName || `새 ${item.name}`,
-          docType: item.docType === "character" ? "character" : item.docType === "script" ? "script" : "memo",
-          icon: item.icon || (item.docType === "character" ? "person" : item.docType === "script" ? "film" : "doc.text"),
-          body: item.body,
-        });
-      }
-      onUpdatePresets(Array.from(byId.values()));
-      setPresetNotice(`프리셋 ${valid.length}개를 가져왔습니다.`);
-    } catch {
-      setPresetNotice("파일을 읽지 못했습니다.");
-    }
-  };
-
+  // 추가한 양식 JSON 파일로 내보내기
   const content = (
     <div
       className={`dialog settings-dialog ${isStandalone ? "settings-standalone-dialog" : ""}`}
@@ -257,16 +182,7 @@ export function SettingsDialog({
               className={tab === "backup" ? "active" : ""}
               onClick={() => setTab("backup")}
             >
-              저장 · 백업
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "reset"}
-              className={tab === "reset" ? "active" : ""}
-              onClick={() => setTab("reset")}
-            >
-              프리셋 · 초기화
+              저장 · 초기화
             </button>
           </div>
         </header>
@@ -353,6 +269,18 @@ export function SettingsDialog({
                   type="checkbox"
                   checked={settings.characterAutocomplete}
                   onChange={(e) => patch({ characterAutocomplete: e.target.checked })}
+                />
+              </label>
+
+              <label className="settings-toggle-row">
+                <div className="settings-item-label">
+                  <strong>씬헤딩(장소) 자동 완성</strong>
+                  <span>씬헤딩(⌘1)을 입력할 때 앞에서 쓴 장소를 자동으로 추천합니다.</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.sceneAutocomplete}
+                  onChange={(e) => patch({ sceneAutocomplete: e.target.checked })}
                 />
               </label>
 
@@ -599,79 +527,12 @@ export function SettingsDialog({
             </div>
           )}
 
-          {tab === "reset" && (
+          {tab === "backup" && (
             <div className="settings-section">
               <div className="settings-item">
                 <div className="settings-item-label">
-                  <strong>추가한 프리셋 관리 ({customPresets.length}개)</strong>
-                  <span>
-                    기본 프리셋(<code>3막 구조 양식</code>, <code>인물 양식</code>) 외에 직접 만든 프리셋을 관리하고 백업 파일로 내보내거나 가져올 수 있습니다.
-                  </span>
-                </div>
-                {customPresets.length > 0 && (
-                  <div className="settings-preset-list">
-                    {customPresets.map((p) => (
-                      <div key={p.id} className="settings-preset-row">
-                        <span>{p.name}</span>
-                        <div className="settings-preset-row-actions">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onClose();
-                              onEditPreset(p);
-                            }}
-                          >
-                            편집
-                          </button>
-                          <button
-                            type="button"
-                            className="danger"
-                            onClick={() =>
-                              onUpdatePresets(presets.filter((item) => item.id !== p.id))
-                            }
-                          >
-                            삭제
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="settings-inline-actions">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenNewPreset();
-                    }}
-                  >
-                    + 새 프리셋 만들기…
-                  </button>
-                  <button type="button" onClick={handleExportPresets}>
-                    프리셋 파일로 내보내기…
-                  </button>
-                  <button type="button" onClick={() => fileInputRef.current?.click()}>
-                    프리셋 파일 가져오기…
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".json,application/json"
-                    hidden
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleImportPresetsFile(f);
-                      e.target.value = "";
-                    }}
-                  />
-                </div>
-                {presetNotice && <p className="settings-sub-notice">{presetNotice}</p>}
-              </div>
-
-              <div className="settings-item">
-                <div className="settings-item-label">
                   <strong>설정값만 기본값으로 되돌리기</strong>
-                  <span>추가한 프리셋과 프로젝트는 그대로 두고, 화면·저장 설정만 기본값으로 되돌립니다.</span>
+                  <span>추가한 양식과 프로젝트는 그대로 두고, 화면·저장 설정만 기본값으로 되돌립니다.</span>
                 </div>
                 <div className="settings-inline-actions">
                   <button type="button" onClick={() => onChangeSettings(DEFAULT_SETTINGS)}>
@@ -685,7 +546,7 @@ export function SettingsDialog({
                   <strong>프로그램 전체 초기화</strong>
                   <span>
                     프로그램을 처음 다운로드받아 열었을 때의 상태로 완전히 초기화합니다.
-                    모든 설정, 추가한 프리셋, 최근 열었던 프로젝트 기록이 초기화되고 새 프로젝트로 시작합니다.
+                    모든 설정, 추가한 양식, 최근 열었던 프로젝트 기록이 초기화되고 새 프로젝트로 시작합니다.
                     (내 맥에 이미 저장해 둔 <code>.dropkick</code> 프로젝트 파일 자체는 지워지지 않습니다.)
                   </span>
                 </div>

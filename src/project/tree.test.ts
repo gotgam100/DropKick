@@ -139,7 +139,7 @@ describe("저장할 파일 경로", () => {
     expect(walkDocs(planFiles(tree)).map((d) => d.file)).toEqual(["A-B- 메모.md", "A-B- 메모 2.md"]);
   });
 
-  it("기본 프리셋으로 인물 양식이 들어 있고 사용자 프리셋을 만들 수 있다", () => {
+  it("기본 양식으로 인물 양식이 들어 있고 사용자 양식을 만들 수 있다", () => {
     expect(loadPresets()[0]?.name).toBe("인물 양식");
     expect(formatPresetText(DEFAULT_CHARACTER_PRESET, "민재")).toBe(CHARACTER_TEMPLATE("민재"));
     const custom = createCustomPreset({

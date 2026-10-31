@@ -143,7 +143,11 @@ body {
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.02em;
-  pointer-events: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
 }
 
 .doc-dirty {
@@ -237,6 +241,7 @@ body {
   border-color: var(--border);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   font-weight: 600;
+  color: var(--caret);
 }
 
 .style-button kbd {
@@ -272,12 +277,39 @@ body {
 .paper .pb-bottom,
 .paper .cm-page-end {
   position: relative;
+  /* 종이 폭 전체를 종이색으로 덮어, 드래그 선택 색이 페이지 아래 여백과 번호까지 칠하지 않게 한다. */
+  margin: 0 -1in 0 -1.5in;
+  background: var(--paper);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/*
+ * 선택 색은 맥의 웹뷰(WebKit)가 칠하는 경우도 있어서, 종이색 덮개를 위에 한 장 더 올린다.
+ * 번호는 덮개보다 위에 둔다.
+ */
+.paper .pb-bottom::before,
+.paper .cm-page-end::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--paper);
+  pointer-events: none;
+}
+
+.paper .pb-number-bottom::selection,
+.paper .pb-bottom ::selection,
+.paper .cm-page-end ::selection {
+  background: transparent;
 }
 
 .paper .pb-number-bottom {
+  z-index: 2;
+  -webkit-user-select: none;
   position: absolute;
   bottom: 0.5in;
-  left: 2.75in;
+  left: 4.25in;
   transform: translateX(-50%);
   font-family: var(--font-script);
   font-size: var(--script-size);
@@ -501,4 +533,48 @@ body {
 
 .status-spacer {
   flex: 1;
+}
+
+.menu-caret {
+  font-size: 11px;
+  margin-left: 2px;
+}
+
+/* ---------- 집중 모드 ---------- */
+
+.focus-exit {
+  position: fixed;
+  top: 48px;
+  right: 16px;
+  z-index: 40;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--chrome);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  /* 켜자마자 잠깐 보여 주고, 이후에는 마우스를 올릴 때만 보인다. */
+  opacity: 0;
+  animation: focus-hint 4s ease forwards;
+  transition: opacity 0.2s ease;
+}
+
+@keyframes focus-hint {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.focus-exit:hover,
+.focus-exit:focus-visible {
+  opacity: 1;
+}
+
+.focus-mode .titlebar {
+  opacity: 0.5;
 }

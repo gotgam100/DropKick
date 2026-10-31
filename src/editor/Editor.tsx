@@ -3,6 +3,8 @@ import type { EditorState, Extension, Text } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, redo, undo } from "@codemirror/commands";
 import { openSearchPanel, searchKeymap } from "@codemirror/search";
+import { koreanSearchPhrases } from "./searchPhrases";
+import { searchPanelDrag } from "./searchPanelDrag";
 import { paperTheme } from "./theme";
 import {
   characterNames,
@@ -15,6 +17,7 @@ import {
   setStyle,
   type ScriptLine,
 } from "./lineStyles";
+import { sceneMoveSpec } from "./sceneMove";
 import { scriptEditing } from "./scriptView";
 import { notesOf, restoreNotes, scriptNotes, setNotesEffect, type ScriptNote } from "./notes";
 import { currentPage, pageBreaks, paginationField, totalPages } from "./pageBreaks";
@@ -51,11 +54,18 @@ export type EditorHandle = {
   focus: () => void;
   /** 그 줄로 커서를 옮기고 화면 위쪽에 보이게 한다. */
   goToLine: (line: number) => void;
+  /**
+   * 씬 하나를 다른 씬헤딩 앞(null이면 맨 끝)으로 옮긴다. 한 번의 ⌘Z로 되돌릴 수 있다.
+   * 옮긴 게 없으면 false.
+   */
+  moveScene: (fromLine: number, beforeLine: number | null) => boolean;
   /** 지금 고른 글 (고른 게 없으면 null) */
   selection: () => { from: number; to: number; text: string } | null;
   /** 글 범위가 화면에서 차지하는 곳 (메모 창을 그 글 밖에 띄우려고 쓴다) */
   rectOf: (from: number, to: number) => { top: number; bottom: number; left: number; right: number } | null;
   getNotes: () => ScriptNote[];
+  /** 메모가 붙은 글을 골라 화면 가운데에 보이게 한다. (메모를 찾았으면 true) */
+  selectNote: (id: string) => boolean;
   /** 저장해 둔 메모를 지금 글에 맞춰 붙인다. */
   setNotes: (notes: ScriptNote[]) => void;
   /** 메모를 새로 붙이거나(같은 id가 없으면) 내용을 고친다. */
@@ -233,6 +243,18 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
       const view = viewRef.current;
       return view ? notesOf(view.state) : [];
     },
+    selectNote(id) {
+      const view = viewRef.current;
+      if (!view) return false;
+      const note = notesOf(view.state).find((n) => n.id === id);
+      if (!note) return false;
+      view.dispatch({
+        selection: { anchor: note.from, head: note.to },
+        effects: EditorView.scrollIntoView(note.from, { y: "center" }),
+      });
+      view.focus();
+      return true;
+    },
     setNotes(notes) {
       const view = viewRef.current;
       if (!view) return;
@@ -258,6 +280,22 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
       }
       return { characterLines: result.characterLines, textHits: result.textHits };
     },
+    moveScene(fromLine, beforeLine) {
+      const view = viewRef.current;
+      if (!view) return false;
+      const move = sceneMoveSpec(view.state, fromLine, beforeLine);
+      if (!move) return false;
+      const notes = notesOf(view.state);
+      view.dispatch(move.spec);
+      // 옮겨진 글 안의 메모는 글을 보고 다시 붙인다.
+      view.dispatch({ effects: setNotesEffect.of(restoreNotes(view.state.doc.toString(), notes)) });
+      const heading = view.state.doc.line(move.headingLine);
+      view.dispatch({
+        selection: { anchor: heading.from },
+        effects: EditorView.scrollIntoView(heading.from, { y: "center" }),
+      });
+      return true;
+    },
     goToLine(lineNumber) {
       const view = viewRef.current;
       if (!view) return;
@@ -276,6 +314,8 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
 
     const extensions: Extension = [
       history(),
+      koreanSearchPhrases,
+      searchPanelDrag(),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "false", lang: "ko" }),
       placeholder("여기에 시나리오를 쓰세요…"),

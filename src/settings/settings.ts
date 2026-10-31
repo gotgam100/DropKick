@@ -44,6 +44,8 @@ export type AppSettings = {
   defaultContact: string;
   /** 인물 이름 자동 완성 */
   characterAutocomplete: boolean;
+  /** 씬헤딩(장소) 자동 완성 */
+  sceneAutocomplete: boolean;
   /** 원고 왼쪽 S# 씬 번호 표시 */
   showSceneNumbers: boolean;
   /** 자동 저장 간격 (밀리초, 0이면 자동 저장 끄기) */
@@ -71,6 +73,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultAuthor: "",
   defaultContact: "",
   characterAutocomplete: true,
+  sceneAutocomplete: true,
   showSceneNumbers: true,
   autosaveDelayMs: 3000,
   backupKeepCount: 30,
@@ -125,6 +128,7 @@ export function loadSettings(): AppSettings {
       defaultContact: typeof p.defaultContact === "string" ? p.defaultContact : "",
       characterAutocomplete:
         typeof p.characterAutocomplete === "boolean" ? p.characterAutocomplete : true,
+      sceneAutocomplete: typeof p.sceneAutocomplete === "boolean" ? p.sceneAutocomplete : true,
       showSceneNumbers: typeof p.showSceneNumbers === "boolean" ? p.showSceneNumbers : true,
       autosaveDelayMs,
       backupKeepCount,
@@ -150,7 +154,7 @@ export function saveSettings(settings: AppSettings): void {
 }
 
 /**
- * 프로그램을 처음 다운로드받아 연 상태로 모든 로컬 설정·프리셋·열었던 프로젝트 기록을 초기화한다.
+ * 프로그램을 처음 다운로드받아 연 상태로 모든 로컬 설정·양식·열었던 프로젝트 기록을 초기화한다.
  */
 export function clearAllAppStorage(): void {
   try {

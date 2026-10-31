@@ -19,7 +19,7 @@
 source ~/.cargo/env   # 터미널에서 cargo를 못 찾을 때 먼저
 npm install
 npm run tauri dev     # 개발용 앱 실행 (Rust 코드를 고치면 자동으로 다시 켜진다)
-npm test              # vitest. 현재 166개, 모두 통과해야 한다
+npm test              # vitest. 현재 189개, 모두 통과해야 한다
 npx tsc --noEmit      # 타입 검사
 (cd src-tauri && cargo build)   # Rust만 빌드
 ```
@@ -30,12 +30,13 @@ npx tsc --noEmit      # 타입 검사
 
 | 위치 | 내용 |
 |---|---|
-| `src/editor/` | 원고 편집기. `styles.ts`(6가지 줄 스타일), `lineStyles.ts`(줄마다 스타일 저장, 실행 취소, 씬 번호, 인물 이름 일괄 바꾸기), `scriptView.ts`(화면 꾸미기, 단축키, 인물 이름 자동 완성), `pageBreaks.ts`(화면 속 페이지 나눔), `notes.ts`(원고 메모: 밑줄·위치 따라가기, project.json의 `notes`에 저장), `NoteDialog.tsx`, `Editor.tsx`, `TextEditor.tsx`(일반 문서, Markdown), `ScriptPreview.tsx`(읽기 전용) |
+| `src/editor/` | 원고 편집기. `styles.ts`(7가지 줄 스타일), `lineStyles.ts`(줄마다 스타일 저장, 실행 취소, 씬 번호, 인물 이름 일괄 바꾸기), `scriptView.ts`(화면 꾸미기, 단축키, 인물 이름 자동 완성), `pageBreaks.ts`(화면 속 페이지 나눔), `sceneMove.ts`(사이드바에서 씬을 끌어 순서 바꾸기: 글과 줄 스타일을 한 번에 옮기고 ⌘Z로 되돌림), `searchPhrases.ts`(찾기·바꾸기 창 한국어), `searchPanelDrag.ts`(그 창을 끌어 옮기기), `notes.ts`(원고 메모: 밑줄·위치 따라가기, project.json의 `notes`에 저장), `NoteDialog.tsx`, `Editor.tsx`, `TextEditor.tsx`(일반 문서, Markdown), `ScriptPreview.tsx`(읽기 전용) |
 | `src/layout/` | **페이지 계산의 기준.** `metrics.ts`(글자 폭, 줄 바꿈), `paginate.ts`(페이지 나누기), `sceneNumbers.ts` |
 | `src/pdf/` | PDF 만들기 (pdf-lib). 화면과 같은 페이지 계산을 쓴다 |
 | `src/docx/` | Word(.docx) 만들기 (docx, MIT). 할리우드 표준 들여쓰기와 표지 포함 |
+| `src/export/` | 내보내기 창(`ExportDialog.tsx`)과, 원고 말고 함께 담을 문서(인물 설정, 메모, 3막 구조 표)를 PDF·Word 공통 조각으로 바꾸는 `extras.ts`. PDF 그리기는 `src/pdf/extrasPdf.ts`, Word는 `buildDocx.ts` |
 | `src/fountain/` | Fountain 형식 읽기/쓰기 |
-| `src/analysis/` | 통계(페이지, 러닝타임, 인물별 대사량, 씬 길이) |
+| `src/analysis/` | 통계(페이지, 러닝타임, 인물별 대사량, 씬 길이, 장소별 씬 `places.ts`) |
 | `src/project/` | 프로젝트 모델(`model.ts`), 트리 편집(`tree.ts`), 저장/불러오기(`projectIO.ts`, `tauriFs.ts`), 전체 상태(`useProject.ts`: 자동 저장, 복구, 백업, 메뉴 처리) |
 | `src/panels/` | 왼쪽 프로젝트 트리, 찾기, 오른쪽 통계, 인물 이름 바꾸기 창 |
 | `src/revisions/` | 수정고(1고, 2고…) 보관·비교·되돌리기 |
@@ -50,7 +51,7 @@ npx tsc --noEmit      # 타입 검사
 ## 4. 꼭 지켜야 할 규칙
 
 ### 원고 형식
-- 줄 스타일 6가지: 씬헤딩, 액션(지문), 인물, 괄호지문, 대사, 전환. 단축키 ⌘1–⌘6.
+- 줄 스타일 7가지: 씬헤딩, 액션(지문), 인물, 괄호지문, 대사, 서브헤더, 전환. 단축키 기본 ⌘1–⌘7 (설정에서 바꿀 수 있다).
 - 인물 이름 앞에 `@` 같은 기호를 **화면에 보이지 않는다** (Fountain 파일에만 쓴다).
 - 액션 다음 액션은 빈 줄 없이 붙는다. 씬 번호(S#1, S#2…)는 자동으로 매긴다.
 - Fountain 저장: 빈 씬헤딩은 `.`, 빈 전환은 `>`로 써서 스타일을 잃지 않게 한다.

@@ -7,6 +7,7 @@ import {
   cycleLineStyle,
   insertScriptNewline,
   renameCharacter,
+  sceneHeadings,
   sceneNumbersField,
   scriptLines,
   setStyle,
@@ -295,5 +296,21 @@ describe("인물 이름 일괄 바꾸기", () => {
     ]);
     const result = renameCharacter(s, "WILL", "Edward", true);
     expect([result.characterLines, result.textHits]).toEqual([1, 1]);
+  });
+});
+
+describe("씬헤딩 자동 완성용 목록", () => {
+  it("자주 쓴 장소부터, 중복 없이, 손으로 쓴 번호는 뗀다", () => {
+    const state = createScriptState([
+      { style: "scene", text: "내부. 체육관 - 밤" },
+      { style: "action", text: "a" },
+      { style: "scene", text: "S#2. 외부. 골목 - 낮" },
+      { style: "scene", text: "내부. 체육관 - 밤" },
+      { style: "scene", text: "내부. 사무실 - 낮" },
+      { style: "scene", text: "" },
+    ]);
+    expect(sceneHeadings(state)).toEqual(["내부. 체육관 - 밤", "내부. 사무실 - 낮", "외부. 골목 - 낮"]);
+    // 지금 쓰는 줄은 빼고 센다 (이제 모두 한 번씩이라 나중에 쓴 것부터)
+    expect(sceneHeadings(state, 4)).toEqual(["내부. 사무실 - 낮", "외부. 골목 - 낮", "내부. 체육관 - 밤"]);
   });
 });
