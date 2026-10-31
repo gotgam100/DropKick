@@ -66,15 +66,28 @@ spctl --assess --type open --context context:primary-signature --verbose "$DMG"
 echo "▶ 자동 업데이트 파일 (공증된 앱으로 다시 묶고 서명)"
 OUT=dist-release/$VERSION
 rm -rf "$OUT" && mkdir -p "$OUT"
-UPDATE_NAME="DropKick_${VERSION}_universal.app.tar.gz"
+# 이름이 소문자로 시작하면 GitHub 릴리즈 파일 목록(이름순)에서 설치용 dmg가 맨 위에 보인다.
+UPDATE_NAME="updater-DropKick_${VERSION}_universal.app.tar.gz"
 COPYFILE_DISABLE=1 tar -czf "$OUT/$UPDATE_NAME" -C "$BUNDLE/macos" DropKick.app
 npx tauri signer sign --app-version "$VERSION" "$OUT/$UPDATE_NAME" >/dev/null
 cp "$DMG" "$OUT/DropKick_${VERSION}_universal.dmg"
 node scripts/make-latest-json.mjs "$VERSION" "$OUT/$UPDATE_NAME.sig" "$UPDATE_NAME" "$NOTES" "$OUT/latest.json"
 
+# 릴리즈 화면 설명 맨 위에 설치 안내를 붙인다. (앱의 업데이트 알림에는 이 안내 없이 바뀐 점만 나간다)
+BODY="$OUT/release-body.md"
+{
+  echo "**설치하려면 \`DropKick_${VERSION}_universal.dmg\`를 받으세요.**"
+  echo
+  echo "> \`latest.json\`과 \`updater-\` 로 시작하는 파일은 앱의 자동 업데이트가 쓰는 파일이라 받지 않아도 됩니다."
+  echo
+  echo "---"
+  echo
+  cat "$NOTES"
+} > "$BODY"
+
 if [[ $PUBLISH == 1 ]]; then
   echo "▶ GitHub Release 올리기: $RELEASE_REPO v$VERSION"
-  gh release create "v$VERSION" --repo "$RELEASE_REPO" --title "DropKick $VERSION" --notes-file "$NOTES" \
+  gh release create "v$VERSION" --repo "$RELEASE_REPO" --title "DropKick $VERSION" --notes-file "$BODY" \
     "$OUT/DropKick_${VERSION}_universal.dmg" "$OUT/$UPDATE_NAME" "$OUT/$UPDATE_NAME.sig" "$OUT/latest.json"
   echo "✅ 완료: https://github.com/$RELEASE_REPO/releases/tag/v$VERSION"
 else
