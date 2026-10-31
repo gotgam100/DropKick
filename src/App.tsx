@@ -708,21 +708,28 @@ function App() {
     setNotice({ text: "프로그램을 처음 상태로 초기화했습니다.", key: Date.now() });
   }, [applyPanes, project, setPresetModal, setShowSidebar]);
 
-  // 보조 창(설정, 가이드 등)과의 이벤트 동기화
+  // 보조 창(설정, 가이드 등)과의 이벤트 동기화.
+  // 이벤트를 받을 때마다 최신 함수를 쓰도록 ref에 담아 두고, 구독은 한 번만 한다.
+  const auxHandlersRef = useRef({ project, handleFullResetApp });
+  auxHandlersRef.current = { project, handleFullResetApp };
   useEffect(() => {
     if (!isTauri()) return;
+    let disposed = false;
+    const unlistens: (() => void)[] = [];
+    const keep = (pending: Promise<() => void>) =>
+      pending.then((fn) => {
+        if (disposed) fn();
+        else unlistens.push(fn);
+      });
 
-    let unlistens: (() => void)[] = [];
-
-    Promise.all([
+    keep(
       listen<AppSettings>("settings-changed", (event) => {
         setSettings(event.payload);
       }),
-      listen<DocPreset[]>("presets-changed", (event) => {
-        setPresets(event.payload);
-      }),
+    );
+    keep(
       listen<{ title: string; fountainText: string }>("load-sample-project", async (event) => {
-        const ok = await project.newProjectWithScript(event.payload.title, event.payload.fountainText);
+        const ok = await auxHandlersRef.current.project.newProjectWithScript(event.payload.title, event.payload.fountainText);
         if (ok) {
           setNotice({
             text: `예시 스크립트 "${event.payload.title}"(으)로 새 프로젝트를 시작했습니다.`,
@@ -730,20 +737,18 @@ function App() {
           });
         }
       }),
-      listen<{ initial: DocPreset | null }>("open-preset-editor", (event) => {
-        setPresetModal({ initial: event.payload.initial });
-      }),
+    );
+    keep(
       listen("app-reset", () => {
-        handleFullResetApp();
+        auxHandlersRef.current.handleFullResetApp();
       }),
-    ]).then((fns) => {
-      unlistens = fns;
-    });
+    );
 
     return () => {
+      disposed = true;
       unlistens.forEach((fn) => fn());
     };
-  }, [project, handleFullResetApp]);
+  }, []);
 
   const zoomStyle = settings.zoom !== 100 ? { zoom: settings.zoom / 100 } : undefined;
   // 화면을 나누면 원고 화면이 좁아지므로, 용지가 잘리지 않게 그 폭에 맞춰 줄여서 보여준다.

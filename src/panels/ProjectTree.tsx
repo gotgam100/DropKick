@@ -594,7 +594,7 @@ export function ProjectTree(props: Props) {
               <button
                 type="button"
                 className="tree-plus"
-                title="지금 원고를 새 고로 보관 (⌥⌘S)"
+                title="지금 원고를 새 고로 보관"
                 aria-label="새 고로 보관"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={(e) => {

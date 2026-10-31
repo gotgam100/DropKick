@@ -64,8 +64,6 @@ export type AppSettings = {
 
 const STORAGE_KEY = "dropkick.settings.v1";
 
-export const ZOOM_OPTIONS: readonly ZoomPercent[] = [80, 100, 120, 150];
-
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
   zoom: 100,

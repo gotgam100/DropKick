@@ -26,7 +26,7 @@ export const DEFAULT_APP_SHORTCUTS: AppShortcuts = {
 
 /** 메뉴나 편집기가 이미 쓰고 있어서 지정할 수 없는 조합 */
 const RESERVED = new Set([
-  "Cmd+N", "Cmd+O", "Cmd+S", "Shift+Cmd+S", "Alt+Cmd+S", "Cmd+W", "Cmd+P", "Cmd+F", "Cmd+Q", "Cmd+,",
+  "Cmd+N", "Cmd+O", "Cmd+S", "Shift+Cmd+S", "Cmd+W", "Cmd+P", "Cmd+F", "Cmd+Q", "Cmd+,",
   "Cmd+Z", "Shift+Cmd+Z", "Cmd+X", "Cmd+C", "Cmd+V", "Cmd+A", "Cmd+H", "Cmd+M",
 ]);
 

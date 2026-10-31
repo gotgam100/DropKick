@@ -260,7 +260,6 @@ function newSession(path: string | null, manifest: ProjectManifest, texts: Map<s
   };
 }
 
-export type ProjectState = ReturnType<typeof useProject>;
 
 export function useProject(
   editorRef: RefObject<EditorHandle | null>,

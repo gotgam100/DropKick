@@ -19,7 +19,7 @@
 source ~/.cargo/env   # 터미널에서 cargo를 못 찾을 때 먼저
 npm install
 npm run tauri dev     # 개발용 앱 실행 (Rust 코드를 고치면 자동으로 다시 켜진다)
-npm test              # vitest. 현재 189개, 모두 통과해야 한다
+npm test              # vitest. 현재 188개, 모두 통과해야 한다
 npx tsc --noEmit      # 타입 검사
 (cd src-tauri && cargo build)   # Rust만 빌드
 ```
@@ -110,4 +110,4 @@ npx tsc --noEmit      # 타입 검사
    - 키체인 허용 창이 뜨면 사용자가 직접 누른다. 비밀번호를 대신 다루지 않는다.
 4. 앱은 `releases/latest/download/latest.json`을 보고 업데이트한다. **업데이트 서명 열쇠를 잃어버리면 기존 사용자에게 업데이트를 보낼 수 없다.**
 
-현재 배포 버전: **0.4.0** (2026-10-31).
+현재 배포 버전: **0.5.0** (2026-10-31).

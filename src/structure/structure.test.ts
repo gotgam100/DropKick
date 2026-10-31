@@ -8,7 +8,6 @@ import {
   makeSceneRef,
   parseStructureBoard,
   resolveSceneRef,
-  scenePositionPercent,
   serializeStructureBoard,
 } from "./structureModel";
 
@@ -86,9 +85,7 @@ describe("3막 구조 보드 (Save the Cat 15단계)", () => {
     expect(resolved?.number).toBe(5);
   });
 
-  it("씬 위치 백분율과 .beats 파일 확장자 매핑이 올바르게 동작한다", () => {
-    const midScene = mockScene(25, "내부. 링 위 - 밤", "결승전 시작.", 50, 8);
-    expect(scenePositionPercent(midScene, 100)).toBe(50);
+  it(".beats 파일 확장자 매핑이 올바르게 동작한다", () => {
     const tree = planFiles([
       { id: "d1", type: "structure", name: "3막 구조", file: "" },
     ]);

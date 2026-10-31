@@ -226,18 +226,18 @@ describe("스크립트 복사 및 붙여넣기 스타일 유지 (clipboard)", ()
 
     // 7가지 스타일이 실제 에디터 라인들에 적용되었는지 확인
     expect(stylesAfter[0]).toBe("transition"); // FADE IN:
-    expect(stylesAfter[1]).toBe("scene");      // 실내. 낡은 시계 수리점 - 밤
-    expect(stylesAfter[2]).toBe("action");     // 어두컴컴한 공간...
+    expect(stylesAfter[1]).toBe("scene");      // 외부. 시계 수리점 앞 - 저녁
+    expect(stylesAfter[2]).toBe("action");     // 저녁 노을이 낡은 간판을...
     expect(stylesAfter[4]).toBe("character");  // 민재 (V.O.)
     expect(stylesAfter[5]).toBe("dialogue");   // 시간은 멈추지 않는다.
     expect(stylesAfter[15]).toBe("parenthetical"); // (조심스러운 목소리로)
-    expect(stylesAfter[19]).toBe("subheader"); // 가게 안쪽 복도
+    expect(stylesAfter[19]).toBe("subheader"); // 집 안 거실
     expect(stylesAfter[23]).toBe("transition"); // FADE OUT.
 
     expect(state.doc.line(1).text).toBe("FADE IN:");
-    expect(state.doc.line(2).text).toBe("실내. 낡은 시계 수리점 - 밤");
+    expect(state.doc.line(2).text).toBe("외부. 시계 수리점 앞 - 저녁");
     expect(state.doc.line(5).text).toBe("민재 (V.O.)");
-    expect(state.doc.line(20).text).toBe("가게 안쪽 복도");
+    expect(state.doc.line(20).text).toBe("집 안 거실");
   });
 
   it("일반 클립보드로 들어온 Fountain 원문 텍스트도 자동으로 감지하여 스타일을 살려 붙여넣는다", () => {

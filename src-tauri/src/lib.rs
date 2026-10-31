@@ -313,6 +313,9 @@ fn open_auxiliary_window(app: AppHandle, window_type: String) -> Result<(), Stri
     Ok(())
 }
 
+/// 앱스토어의 개발자(Seunghwa Baek) 페이지: iOS 앱과 macOS 앱이 함께 나온다.
+const SISTER_APPS_URL: &str = "https://apps.apple.com/kr/developer/seunghwa-baek/id1892791489";
+
 fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let item =
         |id: &str, label: &str, accel: Option<&str>| MenuItem::with_id(app, id, label, true, accel);
@@ -325,6 +328,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item("about_dropkick", "DropKick 정보", None)?,
             &item("open_settings", "설정…", Some("CmdOrCtrl+,"))?,
             &item("check_update", "업데이트 확인…", None)?,
+            &item("sister_apps", "자매품", None)?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::hide(app, Some("DropKick 가리기"))?,
             &PredefinedMenuItem::hide_others(app, Some("기타 가리기"))?,
@@ -498,6 +502,14 @@ pub fn run() {
             let id = event.id().0.as_str();
             if id == "open_settings" {
                 let _ = open_auxiliary_window(app.clone(), "settings".into());
+                return;
+            }
+            if id == "sister_apps" {
+                // 개발자의 다른 앱(iOS·macOS)을 앱스토어 개발자 페이지에서 보여 준다.
+                use tauri_plugin_opener::OpenerExt;
+                let _ = app
+                    .opener()
+                    .open_url(SISTER_APPS_URL, None::<&str>);
                 return;
             }
             if id == "open_guide" {

@@ -189,18 +189,6 @@ export function sceneHeadingTexts(state: EditorState, skipLine?: number): string
   return out;
 }
 
-/** 씬헤딩 글을 중복 없이. 자주 쓴 것부터, 같으면 나중에 쓴 것부터. */
-export function sceneHeadings(state: EditorState, skipLine?: number): string[] {
-  const found = new Map<string, { count: number; last: number }>();
-  sceneHeadingTexts(state, skipLine).forEach((text, i) => {
-    const entry = found.get(text) ?? { count: 0, last: 0 };
-    found.set(text, { count: entry.count + 1, last: i });
-  });
-  return [...found.entries()]
-    .sort((a, b) => b[1].count - a[1].count || b[1].last - a[1].last)
-    .map(([text]) => text);
-}
-
 // ---------- 문서 만들기 ----------
 
 export function createScriptState(

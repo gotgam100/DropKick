@@ -211,11 +211,6 @@ body {
   padding: 0 12px;
 }
 
-.toolbar.with-stats .toolbar-right {
-  width: var(--stats-width);
-  border-left: 1px solid var(--border);
-}
-
 .style-button {
   display: inline-flex;
   align-items: center;

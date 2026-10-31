@@ -18,15 +18,6 @@ export type SfSymbolDef = {
   render: (open?: boolean) => ReactNode;
 };
 
-export const SYMBOL_CATEGORIES: { id: SymbolCategory; label: string }[] = [
-  { id: "all", label: "전체" },
-  { id: "docs", label: "문서·보관" },
-  { id: "film", label: "영화·창작" },
-  { id: "people", label: "인물·감정" },
-  { id: "places", label: "장소·자연" },
-  { id: "objects", label: "사물·기호" },
-];
-
 export const SF_SYMBOLS: SfSymbolDef[] = [
   // ---------- 문서·보관 ----------
   {

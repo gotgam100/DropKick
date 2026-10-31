@@ -30,15 +30,15 @@ describe("예시 스크립트", () => {
     const doc = fromFountain(SAMPLE_KOREAN_SCRIPT_FOUNTAIN);
     const subheaderIndex = doc.lines.findIndex((l) => l.style === "subheader");
     expect(subheaderIndex).toBeGreaterThan(0);
-    expect(doc.lines[subheaderIndex].text).toBe("가게 안쪽 복도");
+    expect(doc.lines[subheaderIndex].text).toBe("집 안 거실");
 
     // 서브헤더 이후 3줄은 액션이어야 함
     expect(doc.lines[subheaderIndex + 1].style).toBe("action");
-    expect(doc.lines[subheaderIndex + 1].text).toBe("수아가 젖은 우산을 접고 녹슨 문을 열고 들어선다.");
+    expect(doc.lines[subheaderIndex + 1].text).toBe("수아가 외투를 걸치고 방을 나선다. 불 꺼진 거실이 고요하다.");
     expect(doc.lines[subheaderIndex + 2].style).toBe("action");
-    expect(doc.lines[subheaderIndex + 2].text).toBe("어두운 복도 벽을 따라 오래된 시계태엽들이 나직하게 째깍거린다.");
+    expect(doc.lines[subheaderIndex + 2].text).toBe("벽시계 초침 소리만 어둠 속에서 나직하게 째깍거린다.");
     expect(doc.lines[subheaderIndex + 3].style).toBe("action");
-    expect(doc.lines[subheaderIndex + 3].text).toBe("복도 끝에서 따뜻한 백열전구 불빛이 새어나온다.");
+    expect(doc.lines[subheaderIndex + 3].text).toBe("현관 앞에서 수아가 열쇠를 집어 들고 불을 끈다.");
   });
 
   it("최소 2개 이상의 씬헤딩을 포함한다", () => {

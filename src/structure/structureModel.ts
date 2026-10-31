@@ -359,10 +359,3 @@ export function resolveSceneRef(ref: AssignedSceneRef, scenes: SceneSummary[]): 
 
   return null;
 }
-
-/** 씬이 전체 원고에서 위치한 비율 (0 ~ 100%) */
-export function scenePositionPercent(scene: SceneSummary, totalPages: number): number {
-  const pages = Math.max(1, totalPages);
-  const pos = (scene.page - 1 + scene.eighths / 16) / pages;
-  return Math.max(0, Math.min(100, Math.round(pos * 100)));
-}

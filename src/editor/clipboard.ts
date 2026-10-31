@@ -28,10 +28,6 @@ export function getInMemoryClipboard(): ScriptClipboardPayload | null {
   return inMemoryClipboard;
 }
 
-export function setInMemoryClipboard(payload: ScriptClipboardPayload | null): void {
-  inMemoryClipboard = payload;
-}
-
 /** 선택된 구간의 텍스트와 줄별 스타일을 추출한다. */
 export function extractSelectedLines(
   doc: Text,
