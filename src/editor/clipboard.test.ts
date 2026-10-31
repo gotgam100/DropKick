@@ -228,15 +228,15 @@ describe("스크립트 복사 및 붙여넣기 스타일 유지 (clipboard)", ()
     expect(stylesAfter[0]).toBe("transition"); // FADE IN:
     expect(stylesAfter[1]).toBe("scene");      // 외부. 시계 수리점 앞 - 저녁
     expect(stylesAfter[2]).toBe("action");     // 저녁 노을이 낡은 간판을...
-    expect(stylesAfter[4]).toBe("character");  // 민재 (V.O.)
-    expect(stylesAfter[5]).toBe("dialogue");   // 시간은 멈추지 않는다.
+    expect(stylesAfter[4]).toBe("character");  // 민재
+    expect(stylesAfter[5]).toBe("dialogue");   // 오래도 버텼다, 이 녀석.
     expect(stylesAfter[15]).toBe("parenthetical"); // (조심스러운 목소리로)
     expect(stylesAfter[19]).toBe("subheader"); // 집 안 거실
     expect(stylesAfter[23]).toBe("transition"); // FADE OUT.
 
     expect(state.doc.line(1).text).toBe("FADE IN:");
     expect(state.doc.line(2).text).toBe("외부. 시계 수리점 앞 - 저녁");
-    expect(state.doc.line(5).text).toBe("민재 (V.O.)");
+    expect(state.doc.line(5).text).toBe("민재");
     expect(state.doc.line(20).text).toBe("집 안 거실");
   });
 
