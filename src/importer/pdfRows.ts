@@ -31,8 +31,8 @@ export async function extractPdfRows(data: Uint8Array, pdfjs: PdfJs): Promise<Ro
       const viewport = page.getViewport({ scale: 1 });
       const content = await page.getTextContent();
       const items = content.items.filter((i): i is PdfItem => "str" in i && i.str.trim() !== "")
-        // 기울어진 글(워터마크)은 본문이 아니다
-        .filter((i) => Math.abs(i.transform[1]) < 0.02 * (Math.abs(i.transform[3]) || 10) && Math.abs(i.transform[2]) < 0.02 * (Math.abs(i.transform[0]) || 10)).map((i) => ({
+        // 비스듬히 눕힌 글(워터마크)은 본문이 아니다. 글자만 기울인 기울임꼴은 본문이니 남긴다.
+        .filter((i) => Math.abs(i.transform[1]) < 0.02 * (Math.abs(i.transform[3]) || 10)).map((i) => ({
         text: i.str.replace(/\u0000/g, " "),
         x: i.transform[4],
         top: viewport.height - i.transform[5],

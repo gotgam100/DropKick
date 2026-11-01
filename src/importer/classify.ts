@@ -35,7 +35,9 @@ const CLUSTER_GAP = 5;
 /** 줄이 "끝까지 찼다"고 보는 여유 (pt). 한국어는 단어 하나쯤 남기고 줄을 바꾼다 */
 const FULL_LINE_SLACK = 6;
 const TIME_WORDS = "낮|밤|아침|저녁|새벽|오전|오후|해질녘|해질 녘|한낮|한밤|동틀 녘|DAY|NIGHT|MORNING|EVENING|DAWN|DUSK|SUNSET|SUNRISE|D|N";
-const TRANSITION = /^(FADE\s*(IN|OUT|TO)|CUT\s*TO|DISSOLVE|SMASH\s*CUT|MATCH\s*CUT|WIPE|페이드|컷\s*투|디졸브|암전|F\.?\s*[IO]\.?|FADE)\b/i;
+const TRANSITION = /^(FADE\s*(IN|OUT|TO)|CUT\s*TO|DISSOLVE|SMASH\s*CUT|MATCH\s*CUT|WIPE|페이드|컷\s*투|디졸브|암전|F\.?\s*[IO]\.?|O\.?\s*L\.?|W\.?\s*[IO]\.?|DIS\.?|오버랩|화이트\s*(?:아웃|인)|블랙\s*(?:아웃|인)|FADE)(?![가-힣A-Za-z])/i;
+/** 줄 하나가 통째로 서브 헤더인 표기: 인서트·자막·플래시백·챕터 등 */
+const SUBHEADER_TEXT = /^(?:[\[(【]\s*(?:자막|인서트|플래시백|회상|SUPER)\s*[\])】]|(?:CHAPTER|챕터|시퀀스|SEQUENCE|SEQ)\.?\s*\d+|(?:플래시백|회상|인서트|자막|SUPER|INSERT)\s*(?:[:.\-–—>＞》]|끝|시작|$)|[(（](?:과거|현재|회상|꿈|환상)[)）]\.?$)/i;
 const IN_OUT = /^(실내|실외|내부|외부|INT|EXT|I\/E|E\/I)(?=[.\s/,]|$)/i;
 const NOISE = /^\(?\s*(MORE|계속)\s*\)?$/i;
 const CONTD = /\s*\(\s*(CONT['’]?D\.?|CONT\.?|계속)\s*\)\s*$/i;
@@ -93,6 +95,33 @@ function cleanRows(rows: Row[]): { rows: Row[]; removed: number } {
   return { rows: kept.filter((r) => r.segs.length > 0), removed };
 }
 
+/** "민재: 안녕하세요."처럼 이름과 대사를 콜론으로 이은 줄 */
+const COLON_DIALOGUE = /^([^\s:：,，.!?…()（）\d][^\s:：,，.!?…()（）]{0,9}(?:\s?\d{1,2})?(?:\s*[(（][^)）]{1,10}[)）])?)\s*[:：]\s*(.+)$/;
+/** 콜론 앞이 이름이 아니라 이름표인 낱말들 */
+const COLON_LABEL = /^(자막|인서트|플래시백|회상|참고|주|메모|비고|장소|시간|날짜|제목|작가|각본|연출|씬\d*|INS|SC|S|NOTE|SUPER)$/i;
+
+/** 같은 이름이 콜론 대사로 되풀이되는 문서면, 그 줄들을 이름 + 대사 두 덩어리로 나눈다 */
+function splitColonDialogue(rows: Row[]): Row[] {
+  const counts = new Map<string, number>();
+  let total = 0;
+  for (const row of rows) {
+    if (row.segs.length !== 1) continue;
+    const m = COLON_DIALOGUE.exec(row.segs[0].text);
+    if (!m || COLON_LABEL.test(nameKey(m[1])) || parseSceneHeading(row.segs[0].text)) continue;
+    counts.set(nameKey(m[1]), (counts.get(nameKey(m[1])) ?? 0) + 1);
+  }
+  const names = new Set([...counts].filter(([, n]) => n >= 2).map(([name]) => name));
+  for (const n of counts.values()) if (n >= 2) total += n;
+  if (names.size === 0 || total < 4) return rows;
+  return rows.map((row) => {
+    if (row.segs.length !== 1) return row;
+    const seg = row.segs[0];
+    const m = COLON_DIALOGUE.exec(seg.text);
+    if (!m || !names.has(nameKey(m[1]))) return row;
+    return { ...row, segs: [{ ...seg, text: m[1].trim(), right: undefined }, { ...seg, x: seg.x + 200, text: m[2].trim() }] };
+  });
+}
+
 // ---------- 2. 위치 모으기 ----------
 
 type Cluster = { x: number; count: number; texts: string[] };
@@ -144,34 +173,46 @@ function characterScore(cluster: Cluster): number {
 
 /** 씬헤딩이면 DropKick 형식 글("실내. 장소 - 낮")로, 아니면 null */
 export function parseSceneHeading(raw: string): string | null {
-  let text = raw.trim();
+  // ■ ◆ ○ 같은 머리 기호는 떼고 본다
+  let text = raw.trim().replace(/^[■□◆◇●○◎▶▷▪▫※★☆]+\s*/, "");
   if (text.length > 70) return null;
   // 씬 번호(#1, S#1, SC#1, 1.)가 붙은 줄은 씬헤딩으로 먼저 본다. 번호는 떼고 새로 매긴다.
   let numbered = false;
-  const tagged = /^(?:SC\s*#?|S\s*#|씬\s*#?|#)\s*\d+\s*[.):\-]?\s*(.*)$/i.exec(text);
+  // 번호 자리가 비어 있는 "SC#_ 마을버스"도 번호표로 본다
+  const tagged =
+    /^(?:SC\s*#?|S\s*#|씬\s*#?|#)[_\s]*\d+\s*[.):\-_]?\s*(.*)$/i.exec(text) ?? /^(?:SC|S)\s*#[_\s]+(.+)$/i.exec(text);
   const plain = /^\d+\s*[.):]\s*(.+)$/.exec(text);
   if (tagged && tagged[1]) {
-    text = tagged[1].trim();
+    // "SC#_ 1. 슈퍼 앞"처럼 번호가 겹치거나 밑줄이 앞에 남은 것도 정리한다
+    text = tagged[1].replace(/^[_\s]+/, "").replace(/^\d+\s*[.)]\s*/, "").trim();
     numbered = true;
   } else if (plain && !/[.!?…。？！]$/.test(plain[1])) {
     text = plain[1].trim();
     numbered = true;
   }
 
-  // "미숙의 집 (낮, 실내)" 처럼 괄호에 시간과 실내외를 적은 형식
+  // "미숙의 집 (낮, 실내)", "카페 (실내_밤)" 처럼 괄호에 시간과 실내외를 적은 형식
   const meta = /^(.+?)\s*[(（]\s*([^)）]+?)\s*[)）]$/.exec(text);
-  if (numbered && meta) {
-    const parts = meta[2].split(/[,，/·]\s*/).map((p) => p.trim()).filter(Boolean);
-    const io = parts.find((p) => /^(실내|실외|내부|외부|INT|EXT)$/i.test(p));
-    const time = parts.find((p) => p !== io);
-    if (io || time) {
-      const place = meta[1].trim();
-      return `${io ? `${io}. ` : ""}${place}${time ? ` - ${time}` : ""}`;
+  if (meta && (numbered || (meta[1].length <= 30 && !/[.!?…。？！]$/.test(meta[1])))) {
+    const parts = meta[2].split(/[,，/·_]\s*/).map((p) => p.trim()).filter(Boolean);
+    const isIo = (p: string) => /^(실내|실외|내부|외부|INT|EXT|I|E)$/i.test(p);
+    const isTime = (p: string) => new RegExp(`^(${TIME_WORDS})$`, "i").test(p);
+    // 번호가 없으면 "(웃으며)" 같은 괄호지문과 헷갈리지 않게 모두 실내외·시간 낱말일 때만 본다
+    if (numbered || (parts.length > 0 && parts.every((p) => isIo(p) || isTime(p)))) {
+      const io = parts.find((p) => isIo(p) && p.length > 1);
+      const time = parts.find((p) => p !== io);
+      if (io || time) {
+        const place = meta[1].trim();
+        return `${io ? `${io}. ` : ""}${place}${time ? ` - ${time}` : ""}`;
+      }
     }
   }
 
   if (IN_OUT.test(text)) return text;
   if (numbered) return text;
+  // "카페 / 밤" 처럼 슬래시로 시간을 붙인 형식
+  const slash = new RegExp(`^(.{1,30}?)\\s*[/／]\\s*(${TIME_WORDS})\\.?$`, "i").exec(text);
+  if (slash && !/[.!?…。？！]$/.test(slash[1])) return `${slash[1].trim()} - ${slash[2]}`;
   const timeEnd = new RegExp(`(?:\\s[-–—]\\s*|\\s)(${TIME_WORDS})\\.?$`, "i");
   if (/ [-–—] /.test(text) && timeEnd.test(text) && !isParenthetical(text)) return text;
   return null;
@@ -217,7 +258,7 @@ export function classifyRows(input: Row[], answers: Answers = {}): ImportedScrip
   }
 
   const cleaned = cleanRows(rows);
-  rows = cleaned.rows;
+  rows = splitColonDialogue(cleaned.rows);
 
   const allSegs = rows.flatMap((r) => r.segs);
   const total = allSegs.length;
@@ -245,7 +286,10 @@ export function classifyRows(input: Row[], answers: Answers = {}): ImportedScrip
   const pageWidth = rows.find((r) => r.pageWidth)?.pageWidth;
   const isRight = (x: number) => x >= RIGHT_X || (pageWidth !== undefined && x > baseX + pageWidth * 0.4);
 
-  const indented = strong.filter((c) => c.x > baseX + 8 && !isRight(c.x));
+  // 씬헤딩이 모여 있는 위치(지문보다 조금 들여쓴 씬헤딩 등)는 대사 칸이 아니다
+  const sceneClusters = strong.filter((c) => c.x > baseX + 8 && c.texts.filter((t) => parseSceneHeading(t)).length >= c.texts.length * 0.6);
+  const isSceneX = (x: number) => x <= baseX + 10 || sceneClusters.some((c) => Math.abs(c.x - x) <= CLUSTER_GAP * 1.5);
+  const indented = strong.filter((c) => c.x > baseX + 8 && !isRight(c.x) && !sceneClusters.includes(c));
 
   // 인물 위치: 짧고 같은 이름이 되풀이되는 안쪽 위치
   const candidates = indented
@@ -316,6 +360,21 @@ export function classifyRows(input: Row[], answers: Answers = {}): ImportedScrip
   rowGaps.sort((a, b) => a - b);
   const lineStep = rowGaps[Math.floor(rowGaps.length * 0.1)] ?? 0;
 
+  // 글을 읽지 못한 곳: 줄 사이가 갑자기 크게 비었거나, 글이 하나도 없는 쪽 (그림으로 된 글, 읽기 어려운 글꼴 등)
+  if (lineStep > 0 && rows.every((r) => !r.paragraph)) {
+    let flagged = 0;
+    rows.forEach((r, i) => {
+      const prev = rows[i - 1];
+      if (prev && prev.page === r.page && r.y - prev.y > Math.max(lineStep * 4.5, 60) && flagged < 30) {
+        flagged++;
+        flag("missing-text", r.page, prev.segs.map((sg) => sg.text).join(" "));
+      }
+    });
+    const pagesWithText = new Set(rows.map((r) => r.page));
+    const allPages = [...pagesWithText].sort((a, b) => a - b);
+    for (let p = allPages[0] + 1; p < allPages[allPages.length - 1]; p++) if (!pagesWithText.has(p)) flag("missing-text", p, "이 쪽에서 읽은 글이 없습니다");
+  }
+
   // ---- 줄마다 역할 정하기 ----
   const items: Item[] = [];
   let prevRole: Role | null = null;
@@ -333,9 +392,10 @@ export function classifyRows(input: Row[], answers: Answers = {}): ImportedScrip
       let continuation = false;
       if (seg.hint) role = seg.hint;
       else if (rowPos === "first" && row.segs.length === 1 && /^INS\s*[.>＞》]/i.test(text)) role = "subheader";
-      else if (rowPos === "first" && !isDialogueX(seg.x) && !isCharacterX(seg.x) && parseSceneHeading(text) && seg.x <= baseX + 10) role = "scene";
+      else if (rowPos === "first" && row.segs.length === 1 && text.length <= 40 && SUBHEADER_TEXT.test(text)) role = "subheader";
+      else if (rowPos === "first" && !isDialogueX(seg.x) && !isCharacterX(seg.x) && parseSceneHeading(text) && isSceneX(seg.x)) role = "scene";
       else if (isRight(seg.x) && text.length <= 30) role = "transition";
-      else if (TRANSITION.test(text) && text.length <= 24 && !isDialogueX(seg.x) && seg.x <= baseX + 10 && /[A-Z가-힣]/.test(text) && (/^(FADE|CUT|DISSOLVE|SMASH|MATCH|WIPE|F\.)/i.test(text) || /^(페이드|컷|디졸브|암전)/.test(text))) role = "transition";
+      else if (TRANSITION.test(text) && text.length <= 24 && !isDialogueX(seg.x) && seg.x <= baseX + 10 && /[A-Z가-힣]/.test(text) && (/^(FADE|CUT|DISSOLVE|SMASH|MATCH|WIPE|F\.|O\.?\s*L|W\.?\s*[IO]|DIS|오버랩|화이트|블랙)/i.test(text) || /^(페이드|컷|디졸브|암전)/.test(text))) role = "transition";
       else if (rowPos === "later") role = isParenthetical(text) && text.length <= 30 ? "parenthetical" : "dialogue";
       else if (stacked && rowPos === "first" && row.segs.length === 1 && seg.block === stacked.key) {
         if (stacked.names.has(nameKey(text))) role = "character";
@@ -363,7 +423,8 @@ export function classifyRows(input: Row[], answers: Answers = {}): ImportedScrip
         return;
       }
       // 인물 이름 끝의 (CONT'D) 떼기
-      const clean = role === "character" ? unwrapName(text.replace(CONTD, "").trim()) : text;
+      // "형사 1"과 "형사1"은 같은 인물이다 (뒤 숫자 앞 띄어쓰기를 없앤다)
+      const clean = role === "character" ? unwrapName(text.replace(CONTD, "").trim()).replace(/^([^\s\d]+)\s+(\d{1,2})(?=\s*(?:\(|$))/, "$1$2") : text;
 
       // 이름 옆에 대사가 붙는 문서: 대사 위치에서 시작해도 앞 줄과 간격이 벌어졌으면 새 액션이다
       const lastRow = items[items.length - 1];
@@ -454,6 +515,8 @@ export function classifyRows(input: Row[], answers: Answers = {}): ImportedScrip
   // ---- 마무리: 대사 앞 (괄호), 씬헤딩 정리 ----
   const lines: ImportedScript["lines"] = [];
   const characters = new Set<string>();
+  const nameCount = new Map<string, number>();
+  const namePage = new Map<string, number>();
   let scenes = 0;
   let dialogues = 0;
   let actions = 0;
@@ -471,13 +534,23 @@ export function classifyRows(input: Row[], answers: Answers = {}): ImportedScrip
       dialogues++;
     } else if (m.role === "character") {
       lines.push({ style: "character", text: m.text });
-      characters.add(nameKey(m.text));
+      const key = nameKey(m.text);
+      nameCount.set(key, (nameCount.get(key) ?? 0) + 1);
+      if (!namePage.has(key)) namePage.set(key, m.page);
+      // "홍, 진", "준우/사내"처럼 둘이 함께 말하는 이름은 사람마다 따로 센다
+      const together = key.split(/\s*[,，/·&]\s*/).filter((n) => n && n.length <= 10);
+      for (const person of together.length > 1 ? together : [key]) characters.add(person);
     } else {
       lines.push({ style: m.role, text: m.text });
       if (m.role === "action") actions++;
     }
   }
 
+  // 한 번만 나온 이름은 인물이 아닐 수 있다 (인물이 여럿인 원고에서만 알려 준다)
+  if (nameCount.size >= 4) {
+    let n = 0;
+    for (const [key, count] of nameCount) if (count === 1 && !/[,，/·&]/.test(key) && n++ < 20) flag("single-name", namePage.get(key) ?? 1, key);
+  }
   if (scenes === 0) flag("no-scene", 1, "");
   if (characters.size === 0 && scenes > 0) flag("no-character", 1, "");
 

@@ -5,6 +5,7 @@
 import { unzipSync, strFromU8 } from "fflate";
 import type { LineStyle } from "../editor/styles";
 import { decode, styleHint } from "./docxRows";
+import { splitSpaced } from "./spaced";
 import { CENTER_X, RIGHT_X, type Row, type Seg } from "./types";
 
 type ParaShape = { left: number; align: string };
@@ -57,11 +58,12 @@ function paragraphSegs(xml: string, header: Header): Seg[] {
   const useHint = hint && parts.filter((p) => p.trim()).length === 1;
   parts.forEach((part, i) => {
     for (const piece of part.split("\n")) {
-      const text = piece.replace(/\s+/g, " ").trim();
-      if (!text) continue;
-      // 이름 + 대사 뒤에 탭으로 들여 쓴 글은 줄을 바꿔 이어 쓴 대사다
-      if (segs.length >= 2) segs[segs.length - 1].text += ` ${text}`;
-      else segs.push({ x: x + (i > 0 ? 200 * i : 0), text, ...(useHint && i === 0 ? { hint } : {}) });
+      const pieces = splitSpaced(piece, x + (i > 0 ? 200 * i : 0));
+      for (const one of pieces) {
+        // 이름 + 대사 뒤에 탭으로 들여 쓴 글은 줄을 바꿔 이어 쓴 대사다
+        if (segs.length >= 2) segs[segs.length - 1].text += ` ${one.text}`;
+        else segs.push({ ...one, ...(useHint && i === 0 && pieces.length === 1 ? { hint } : {}) });
+      }
     }
   });
   return segs;

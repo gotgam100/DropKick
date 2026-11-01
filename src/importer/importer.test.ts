@@ -3,6 +3,7 @@ import { buildDocx } from "../docx/buildDocx";
 import { classifyRows, parseSceneHeading } from "./classify";
 import { extractDocxRows, styleHint } from "./docxRows";
 import { extractHwpxRows } from "./hwpxRows";
+import { splitSpaced } from "./spaced";
 import { documentKind, importDocumentBytes } from "./importDocument";
 import { zipSync, strToU8 } from "fflate";
 import type { Row } from "./types";
@@ -334,5 +335,117 @@ describe("Word·한글 문서의 여러 배치", () => {
     expect(result.questions.some((q) => q.id === "character")).toBe(false);
     expect(result.lines.map((l) => l.style)).toEqual(["scene", "character", "dialogue", "character", "dialogue", "character", "dialogue", "character", "dialogue"]);
     expect(result.lines[4].text).toBe("그래, 잘 지냈어? 이어서 말한다.");
+  });
+});
+
+describe("번호가 붙은 인물 이름", () => {
+  const row = (y: number, ...segs: [number, string][]): Row => ({ page: 2, y, pageWidth: 595, pageHeight: 842, segs: segs.map(([x, text]) => ({ x, text, font: "b" })) });
+
+  it("형사1, 이웃1, 형사 2 같은 이름도 인물로 보고 '형사 2'는 '형사2'로 합친다", () => {
+    const result = classifyRows([
+      row(17, [85, "1. 사무실 / 낮"]),
+      row(34, [85, "형사1이 문을 연다."]),
+      row(68, [85, "형사1"], [165, "움직이지 마!"]),
+      row(102, [85, "이웃1"], [165, "무슨 일이에요?"]),
+      row(136, [85, "형사 2"], [165, "신고 받고 왔습니다."]),
+      row(170, [85, "이웃1"], [165, "아, 네."]),
+      row(204, [85, "형사2"], [165, "경찰입니다."]),
+    ]);
+    expect(result.lines.filter((l) => l.style === "character").map((l) => l.text)).toEqual(["형사1", "이웃1", "형사2", "이웃1", "형사2"]);
+    expect(result.lines.find((l) => l.text.startsWith("형사1이"))?.style).toBe("action");
+  });
+});
+
+describe("한국 시나리오 표기 보강", () => {
+  const para = (y: number, text: string): Row => ({ page: 1, y, paragraph: true, segs: [{ x: 0, text }] });
+
+  it("씬헤딩의 머리 기호·슬래시·괄호 표기", () => {
+    expect(parseSceneHeading("■ 1. 거실 - 낮")).toBe("거실 - 낮");
+    expect(parseSceneHeading("카페/밤")).toBe("카페 - 밤");
+    expect(parseSceneHeading("거실 (낮)")).toBe("거실 - 낮");
+    expect(parseSceneHeading("술집 룸 (실내_밤)")).toBe("실내. 술집 룸 - 밤");
+    expect(parseSceneHeading("SC#_ 마을버스 (낮)")).toBe("마을버스 - 낮");
+    expect(parseSceneHeading("SC#_23진료실 (실내_아침)")).toBe("실내. 진료실 - 아침");
+    // 괄호지문이나 일반 글은 씬헤딩이 아니다
+    expect(parseSceneHeading("(웃으며)")).toBeNull();
+    expect(parseSceneHeading("그는 카페/밤거리를 걸었다.")).toBeNull();
+  });
+
+  it("서브 헤더와 전환 표기", () => {
+    const result = classifyRows([
+      para(0, "S#1. 집 - 낮"), para(1, "Chapter 1. 시작"), para(2, "플래시백"), para(3, "[자막] 3년 후"), para(4, "인서트 - 편지"), para(5, "(과거)"),
+      para(6, "O.L."), para(7, "S#2. 길 - 밤"), para(8, "화이트 아웃"), para(9, "W.O."), para(10, "블랙 아웃"), para(11, "그가 돌아본다."),
+    ]);
+    expect(result.lines.map((l) => l.style)).toEqual(["scene", "subheader", "subheader", "subheader", "subheader", "subheader", "transition", "scene", "transition", "transition", "transition", "action"]);
+  });
+
+  it("콜론으로 이은 대사", () => {
+    const result = classifyRows([
+      para(0, "S#1. 집 - 낮"), para(1, "민재가 앉아 있다."), para(2, "민재: 안녕하세요."), para(3, "수아: 네, 안녕하세요."), para(4, "민재: 오랜만이네요."), para(5, "수아: 그러게요."),
+      para(6, "참고: 이 장면은 줄인다."),
+    ]);
+    expect(result.lines.map((l) => l.style)).toEqual(["scene", "action", "character", "dialogue", "character", "dialogue", "character", "dialogue", "character", "dialogue", "action"]);
+    expect(result.lines[3].text).toBe("안녕하세요.");
+  });
+
+  it("공백으로 들여쓴 원고(Word·한글)", () => {
+    const result = classifyRows([
+      para(0, "S#1. 집 - 낮"), para(1, "민재가 앉아 있다."),
+      ...["민재", "수아", "민재", "수아"].flatMap((name, i) => [para(2 + i * 2, `${" ".repeat(24)}${name}`), para(3 + i * 2, `${" ".repeat(12)}대사 ${i}번입니다.`)]),
+    ].map((r) => ({ ...r, segs: r.segs.map((s) => ({ ...s, ...splitSpaced(s.text, 0)[0] })) })));
+    expect(result.lines.map((l) => l.style)).toEqual(["scene", "action", "character", "dialogue", "character", "dialogue", "character", "dialogue", "character", "dialogue"]);
+  });
+
+  it("이름 뒤를 공백으로 벌려 대사를 붙인 줄은 이름과 대사로 나뉜다", () => {
+    expect(splitSpaced("민재          안녕하세요.", 0).map((c) => c.text)).toEqual(["민재", "안녕하세요."]);
+    expect(splitSpaced("   들여씀", 0)[0].x).toBe(12);
+  });
+
+  it("읽지 못한 글(큰 빈 구간), 한 번만 나온 이름, 함께 말하는 인물", () => {
+    const row = (y: number, ...segs: [number, string][]): Row => ({ page: 2, y, pageWidth: 595, pageHeight: 842, segs: segs.map(([x, text]) => ({ x, text, font: "b" })) });
+    const rows: Row[] = [row(80, [85, "1. 집 / 낮"])];
+    let y = 80;
+    const names = ["민재", "수아", "민재", "수아", "택시기사", "민재, 수아"];
+    names.forEach((n) => rows.push(row((y += 34), [85, n], [165, "대사입니다."]), row((y += 17), [165, "이어집니다."])));
+    rows.push(row((y += 200), [85, "멀리 떨어진 글."]));
+    const result = classifyRows(rows);
+    const kinds = result.report.review.map((r) => r.kind);
+    expect(kinds).toContain("missing-text");
+    expect(kinds).toContain("single-name");
+    expect(result.report.review.find((r) => r.kind === "single-name")?.text).toBe("택시기사");
+    expect(result.report.characters).toEqual(expect.arrayContaining(["민재", "수아", "택시기사"]));
+    expect(result.report.characters).not.toContain("민재, 수아");
+  });
+
+  it("지문보다 조금 들여쓴 씬헤딩도 씬으로 센다 (대사 칸으로 오해하지 않는다)", () => {
+    const row = (y: number, ...segs: [number, string][]): Row => ({ page: 2, y, pageWidth: 595, pageHeight: 842, segs: segs.map(([x, text]) => ({ x, text, font: "b" })) });
+    const rows: Row[] = [];
+    let y = 60;
+    for (let i = 1; i <= 6; i++) {
+      rows.push(row((y += 34), [100, `${i}. 장소${"가나다라마바"[i - 1]} / 낮`]));
+      rows.push(row((y += 17), [85, "지문입니다."]));
+      rows.push(row((y += 34), [85, "형사1"], [165, "움직이지 마!"]));
+      rows.push(row((y += 34), [85, "이웃1"], [165, "무슨 일이에요?"]));
+    }
+    const result = classifyRows(rows);
+    expect(result.report.scenes).toBe(6);
+  });
+
+  it("기울임꼴 글은 버리지 않고 회전한 워터마크만 거른다", async () => {
+    const item = (str: string, transform: number[]) => ({ str, transform, width: 50, height: 10, fontName: "f" });
+    const pdfjs = {
+      getDocument: () => ({
+        promise: Promise.resolve({
+          numPages: 1,
+          getPage: async () => ({
+            getViewport: () => ({ width: 595, height: 842 }),
+            getTextContent: async () => ({ items: [item("본문", [10, 0, 0, 10, 85, 700]), item("기울임", [10, 0, 3, 10, 85, 680]), item("워터마크", [7, 7, -7, 7, 200, 400])] }),
+          }),
+        }),
+      }),
+    };
+    const { extractPdfRows } = await import("./pdfRows");
+    const rows = await extractPdfRows(new Uint8Array(), pdfjs as never);
+    expect(rows.flatMap((r) => r.segs.map((s) => s.text))).toEqual(["본문", "기울임"]);
   });
 });

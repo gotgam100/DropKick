@@ -33,7 +33,7 @@ export const CENTER_X = 5000;
 export const RIGHT_X = 9000;
 
 /** 확인하면 좋은 곳의 종류 */
-export type ReviewKind = "orphan-dialogue" | "lonely-name" | "no-scene" | "no-character";
+export type ReviewKind = "orphan-dialogue" | "lonely-name" | "no-scene" | "no-character" | "missing-text" | "single-name";
 
 export type ReviewItem = { kind: ReviewKind; page: number; text: string };
 

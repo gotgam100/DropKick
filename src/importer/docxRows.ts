@@ -4,6 +4,7 @@
  */
 import { unzipSync, strFromU8 } from "fflate";
 import type { LineStyle } from "../editor/styles";
+import { splitSpaced } from "./spaced";
 import { CENTER_X, RIGHT_X, type Row, type Seg } from "./types";
 
 export function decode(text: string): string {
@@ -59,8 +60,10 @@ function paragraphSegs(xml: string, centerKeys: Map<string, number> = new Map())
   const useHint = hint && parts.filter((p) => p.trim()).length === 1;
   parts.forEach((part, i) => {
     for (const piece of part.split("\n")) {
-      const text = piece.replace(/\s+/g, " ").trim();
-      if (text) segs.push({ x: x + (i > 0 ? 200 * i : 0), text, ...(style ? { block: style } : {}), ...(useHint && i === 0 ? { hint } : {}) });
+      const pieces = splitSpaced(piece, x + (i > 0 ? 200 * i : 0));
+      for (const one of pieces) {
+        segs.push({ ...one, ...(style ? { block: style } : {}), ...(useHint && i === 0 && pieces.length === 1 ? { hint } : {}) });
+      }
     }
   });
   return segs.length ? { segs } : null;

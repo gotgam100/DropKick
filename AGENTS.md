@@ -19,7 +19,7 @@
 source ~/.cargo/env   # 터미널에서 cargo를 못 찾을 때 먼저
 npm install
 npm run tauri dev     # 개발용 앱 실행 (Rust 코드를 고치면 자동으로 다시 켜진다)
-npm test              # vitest. 현재 255개, 모두 통과해야 한다
+npm test              # vitest. 현재 265개, 모두 통과해야 한다
 npx tsc --noEmit      # 타입 검사
 (cd src-tauri && cargo build)   # Rust만 빌드
 ```
@@ -36,7 +36,7 @@ npx tsc --noEmit      # 타입 검사
 | `src/docx/` | Word(.docx) 만들기 (docx, MIT). 할리우드 표준 들여쓰기와 표지 포함 |
 | `src/export/` | 내보내기 창(`ExportDialog.tsx`)과, 원고 말고 함께 담을 문서(인물 설정, 메모, 3막 구조 표)를 PDF·Word 공통 조각으로 바꾸는 `extras.ts`. PDF 그리기는 `src/pdf/extrasPdf.ts`, Word는 `buildDocx.ts` |
 | `src/fountain/` | Fountain 형식 읽기/쓰기 |
-| `src/importer/` | 파일 메뉴의 "외부 시나리오 가져오기"(PDF·Word·한글 hwpx만. hwp는 안 됨). **AI 없이** 글자 위치와 모양으로 줄 스타일을 짐작한다. `pdfRows.ts`(pdf.js legacy판으로 글자·위치 뽑기, 기울어진 워터마크 제외), `docxRows.ts`(Word 문단·들여쓰기·문단 스타일 이름, fflate로 zip 풀기), `hwpxRows.ts`(한글 hwpx: header.xml의 문단 모양·스타일 이름과 section*.xml 문단. Word와 같은 방식), 가져오기 규칙 메모: 씬 번호(#1, S#1, SC#1, 1.)는 씬헤딩으로 먼저 보고 번호는 뗀다 / `(길동)`은 인물 / `INS.`·`INS>` 줄은 서브 헤더 / 이름이 줄 앞에 되풀이되면 위치가 달라도 인물 / 같은 문단 스타일에 인물·대사가 쌓인 문서는 되풀이 이름으로 가름 / 첫 씬헤딩 앞 짧은 줄은 표지로 물어봄, `classify.ts`(위치 모아 액션·인물·대사 자리 알아내기, 씬헤딩·전환·서브헤더 판단, 줄 이어 붙이기, 어색한 곳 목록), `importDocument.ts`(진입점, pdf.js는 PDF를 고를 때만 불러온다), `ImportQuestionDialog.tsx`(분석 전에 확실하지 않은 것만 질문: 표지인지, 인물 이름 위치, 헷갈린 줄의 스타일을 줄마다 고르기. 이름 옆에 대사가 붙고 액션도 대사와 같은 위치에서 시작하는 문서는 줄 간격으로 가른다. 답을 받아 `classifyRows(rows, answers)`로 다시 분석), `ImportResultDialog.tsx`(결과 창) |
+| `src/importer/` | 파일 메뉴의 "외부 시나리오 가져오기"(PDF·Word·한글 hwpx만. hwp는 안 됨). **AI 없이** 글자 위치와 모양으로 줄 스타일을 짐작한다. `pdfRows.ts`(pdf.js legacy판으로 글자·위치 뽑기, 기울어진 워터마크 제외), `docxRows.ts`(Word 문단·들여쓰기·문단 스타일 이름, fflate로 zip 풀기), `hwpxRows.ts`(한글 hwpx: header.xml의 문단 모양·스타일 이름과 section*.xml 문단. Word와 같은 방식), 가져오기 규칙 메모(0.6.1에서 추가: 기울임꼴 글 살림, 읽지 못한 글 경고, 콜론 대사 `민재: …`, 공백 들여쓰기 `spaced.ts`, 씬헤딩 머리 기호·`카페/밤`·`거실 (낮)`·`SC#_`, 서브 헤더 `Chapter`·`플래시백`·`[자막]`·`인서트`·`(과거)`, 전환 `O.L.`·`W.O.`·`화이트 아웃`, 지문보다 들여쓴 씬헤딩, 한 번만 나온 이름 표시, `홍, 진`은 따로 세기, `형사 2`→`형사2`): 씬 번호(#1, S#1, SC#1, 1.)는 씬헤딩으로 먼저 보고 번호는 뗀다 / `(길동)`은 인물 / `INS.`·`INS>` 줄은 서브 헤더 / 이름이 줄 앞에 되풀이되면 위치가 달라도 인물 / 같은 문단 스타일에 인물·대사가 쌓인 문서는 되풀이 이름으로 가름 / 첫 씬헤딩 앞 짧은 줄은 표지로 물어봄, `classify.ts`(위치 모아 액션·인물·대사 자리 알아내기, 씬헤딩·전환·서브헤더 판단, 줄 이어 붙이기, 어색한 곳 목록), `importDocument.ts`(진입점, pdf.js는 PDF를 고를 때만 불러온다), `ImportQuestionDialog.tsx`(분석 전에 확실하지 않은 것만 질문: 표지인지, 인물 이름 위치, 헷갈린 줄의 스타일을 줄마다 고르기. 이름 옆에 대사가 붙고 액션도 대사와 같은 위치에서 시작하는 문서는 줄 간격으로 가른다. 답을 받아 `classifyRows(rows, answers)`로 다시 분석), `ImportResultDialog.tsx`(결과 창) |
 | `src/analysis/` | 통계(페이지, 러닝타임, 인물별 대사량, 씬 길이, 장소별 씬 `places.ts`) |
 | `src/project/` | 프로젝트 모델(`model.ts`), 트리 편집(`tree.ts`), 저장/불러오기(`projectIO.ts`, `tauriFs.ts`), 스크립트가 여럿일 때의 규칙(`scripts.ts`: 활성 스크립트, 전용 문서 가리기, 스크립트별 메모·수정고), 전체 상태(`useProject.ts`: 자동 저장, 복구, 백업, 메뉴 처리, 스크립트 바꾸기·만들기·복제·지우기) |
 | `src/panels/` | 왼쪽 프로젝트 트리, 찾기, 오른쪽 통계, 인물 이름 바꾸기 창 |
@@ -121,4 +121,4 @@ npx tsc --noEmit      # 타입 검사
    - 키체인 허용 창이 뜨면 사용자가 직접 누른다. 비밀번호를 대신 다루지 않는다.
 4. 앱은 `releases/latest/download/latest.json`을 보고 업데이트한다. **업데이트 서명 열쇠를 잃어버리면 기존 사용자에게 업데이트를 보낼 수 없다.**
 
-현재 배포 버전: **0.6.0** (2026-11-01).
+현재 배포 버전: **0.6.1** (2026-11-02).

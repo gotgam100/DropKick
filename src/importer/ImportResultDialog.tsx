@@ -12,7 +12,7 @@ const GROUPS: { kind: ReviewKind; title: string; hint: string }[] = [
   {
     kind: "no-scene",
     title: "씬헤딩을 찾지 못했습니다",
-    hint: "모든 글이 액션으로 들어갔을 수 있습니다. 원고를 처음부터 훑어보며 씬헤딩 줄을 지정해 주세요.",
+    hint: "시나리오 문서가 맞는지 확인해 주세요. 맞다면 모든 글이 액션으로 들어갔을 수 있으니, 원고를 처음부터 훑어보며 씬헤딩 줄을 지정해 주세요.",
   },
   {
     kind: "no-character",
@@ -23,6 +23,16 @@ const GROUPS: { kind: ReviewKind; title: string; hint: string }[] = [
     kind: "orphan-dialogue",
     title: "대사 자리에 있지만 인물 이름이 없는 글",
     hint: "액션으로 넣었습니다. 대사라면 앞에 인물 이름을 적고 줄 스타일을 바꿔 주세요.",
+  },
+  {
+    kind: "missing-text",
+    title: "글을 읽지 못한 곳이 있는 것 같습니다",
+    hint: "그림으로 된 글이나 읽기 어려운 글꼴은 가져올 수 없습니다. 이 앞뒤를 원본과 비교해 보세요. Word나 한글(hwpx) 파일로 받으면 더 정확합니다.",
+  },
+  {
+    kind: "single-name",
+    title: "한 번만 나온 인물 이름",
+    hint: "인물이 아닌 글이 이름으로 들어갔을 수 있습니다. 인물 이름이 맞는지 확인해 주세요.",
   },
   {
     kind: "lonely-name",
