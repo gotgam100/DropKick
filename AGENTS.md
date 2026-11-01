@@ -46,6 +46,7 @@ npx tsc --noEmit      # 타입 검사
 | `src/update/` | 자동 업데이트 확인 |
 | `src/split/` | 화면 나누기(좌우 두 화면). `paneTargets.ts`(두 화면에 무엇을 보여줄지 규칙, 순수 함수), `PaneHeader.tsx`(화면 위 선택줄), `SplitDivider.tsx`(경계선 끌기), `useElementWidth.ts`. 원고 편집기는 하나뿐이라 원고·같은 문서는 한 화면에만 열린다 |
 | `src-tauri/src/lib.rs` | Rust 명령(파일 읽기/쓰기, 휴지통, 백업 정리 등), 메뉴, `.dropkick` 열기 |
+| `public/licenses/` | 앱에 함께 들어가는 오픈소스 라이선스 전문(`THIRD-PARTY-LICENSES.txt`)과 pdf.js `LICENSE`. 의존성(npm·Rust)을 바꾸면 `node scripts/gen-licenses.mjs`로 다시 만든다 |
 | `samples/` | 테스트용 한글 원고 (`short-5p.fountain`, `long-100p.fountain`) |
 | `design/` | 앱 아이콘 원본 (`app-icon-1024.png` → `npx tauri icon`으로 `src-tauri/icons` 생성, 생성 후 `android/`, `ios/` 폴더는 지운다) |
 
