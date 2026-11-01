@@ -24,6 +24,8 @@ function names(tree: ProjectNode[]): unknown[] {
   return tree.map((n) => (n.type === "folder" ? { [n.name]: names(n.children) } : n.name));
 }
 
+const OV = { 개요: ["시놉시스", "3막 구조 양식"] };
+
 function sample() {
   const { manifest } = createProject("드롭킥");
   let tree = manifest.tree;
@@ -39,24 +41,28 @@ function sample() {
 }
 
 describe("트리 편집", () => {
-  it("새 프로젝트 기본 트리: 개요, 스크립트, 인물 설정, 메모, 기타", () => {
+  it("새 프로젝트 기본 트리: 개요, 메인 스크립트, 인물 설정, 메모, 기타, 구분선, 수정고", () => {
     expect(names(createProject("드롭킥").manifest.tree)).toEqual([
-      { 개요: [] },
-      "스크립트",
+      { 개요: ["시놉시스", "3막 구조 양식"] },
+      "메인 스크립트",
       { "인물 설정": [] },
       { 메모: [] },
       { 기타: [] },
+      "구분선",
+      { 수정고: [] },
     ]);
   });
 
   it("폴더 안에 새 문서를 만든다", () => {
     const { tree } = sample();
     expect(names(tree)).toEqual([
-      { 개요: [] },
-      "스크립트",
+      { 개요: ["시놉시스", "3막 구조 양식"] },
+      "메인 스크립트",
       { "인물 설정": ["민재", "수아"] },
       { 메모: ["새 문서"] },
       { 기타: [] },
+      "구분선",
+      { 수정고: [] },
     ]);
   });
 
@@ -78,26 +84,26 @@ describe("트리 편집", () => {
     const { tree, ids } = sample();
     const result = removeNode(tree, ids.people);
     expect(result.removed.map((d) => d.name)).toEqual(["민재", "수아"]);
-    expect(names(result.tree)).toEqual([{ 개요: [] }, "스크립트", { 메모: ["새 문서"] }, { 기타: [] }]);
+    expect(names(result.tree)).toEqual([OV, "메인 스크립트", { 메모: ["새 문서"] }, { 기타: [] }, "구분선", { 수정고: [] }]);
   });
 
   it("끌어서 다른 폴더 안으로, 다른 문서 앞뒤로 옮긴다", () => {
     const { tree, ids } = sample();
     let next = moveNode(tree, ids.idea, ids.people, "inside");
-    expect(names(next)).toEqual([{ 개요: [] }, "스크립트", { "인물 설정": ["민재", "수아", "새 문서"] }, { 메모: [] }, { 기타: [] }]);
+    expect(names(next)).toEqual([OV, "메인 스크립트", { "인물 설정": ["민재", "수아", "새 문서"] }, { 메모: [] }, { 기타: [] }, "구분선", { 수정고: [] }]);
     next = moveNode(next, ids.sua, ids.script, "before");
-    expect(names(next)).toEqual([{ 개요: [] }, "수아", "스크립트", { "인물 설정": ["민재", "새 문서"] }, { 메모: [] }, { 기타: [] }]);
+    expect(names(next)).toEqual([OV, "수아", "메인 스크립트", { "인물 설정": ["민재", "새 문서"] }, { 메모: [] }, { 기타: [] }, "구분선", { 수정고: [] }]);
     next = moveNode(next, ids.minjae, ids.idea, "after");
-    expect(names(next)).toEqual([{ 개요: [] }, "수아", "스크립트", { "인물 설정": ["새 문서", "민재"] }, { 메모: [] }, { 기타: [] }]);
+    expect(names(next)).toEqual([OV, "수아", "메인 스크립트", { "인물 설정": ["새 문서", "민재"] }, { 메모: [] }, { 기타: [] }, "구분선", { 수정고: [] }]);
   });
 
   it("폴더 안에 폴더를 넣을 수 있고, 스크립트도 옮기거나 이름을 바꿀 수 있다", () => {
     const { tree, ids } = sample();
     let next = moveNode(tree, ids.memos, ids.people, "inside");
-    expect(names(next)).toEqual([{ 개요: [] }, "스크립트", { "인물 설정": ["민재", "수아", { 메모: ["새 문서"] }] }, { 기타: [] }]);
+    expect(names(next)).toEqual([OV, "메인 스크립트", { "인물 설정": ["민재", "수아", { 메모: ["새 문서"] }] }, { 기타: [] }, "구분선", { 수정고: [] }]);
     next = renameNode(next, ids.script, "시나리오 1고");
     next = moveNode(next, ids.script, ids.people, "after");
-    expect(names(next)).toEqual([{ 개요: [] }, { "인물 설정": ["민재", "수아", { 메모: ["새 문서"] }] }, "시나리오 1고", { 기타: [] }]);
+    expect(names(next)).toEqual([OV, { "인물 설정": ["민재", "수아", { 메모: ["새 문서"] }] }, "시나리오 1고", { 기타: [] }, "구분선", { 수정고: [] }]);
   });
 
   it("폴더를 자기 안으로는 옮길 수 없고, 문서 안으로도 넣을 수 없다", () => {
@@ -128,7 +134,7 @@ describe("저장할 파일 경로", () => {
     let next = renameNode(tree, ids.idea, "아이디어");
     next = renameNode(next, ids.people, "등장인물");
     const files = walkDocs(planFiles(next)).map((d) => d.file);
-    expect(files).toEqual(["스크립트.fountain", "등장인물/민재.md", "등장인물/수아.md", "메모/아이디어.md"]);
+    expect(files).toEqual(["개요/시놉시스.md", "개요/3막 구조 양식.beats", "메인 스크립트.fountain", "등장인물/민재.md", "등장인물/수아.md", "메모/아이디어.md"]);
   });
 
   it("파일 이름으로 못 쓰는 글자는 바꾸고, 겹치면 번호를 붙인다", () => {

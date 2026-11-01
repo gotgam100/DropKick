@@ -227,6 +227,15 @@ body {
   white-space: nowrap;
 }
 
+.style-button.icon-button {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.style-button .toolbar-icon {
+  display: block;
+}
+
 .style-button:hover {
   background: var(--button-hover);
 }

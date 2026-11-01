@@ -7,6 +7,7 @@ import {
   safeFileName,
   walkDocs,
   type DocNode,
+  type DividerNode,
   type DocType,
   type FolderNode,
   type ProjectNode,
@@ -80,11 +81,40 @@ function isDescendant(node: ProjectNode, id: string): boolean {
   return node.children.some((c) => c.id === id || isDescendant(c, id));
 }
 
+/**
+ * 같은 폴더 안에서 이 이름을 이미 쓰고 있는 항목.
+ * - 폴더끼리, 문서(스크립트 포함)끼리만 겹친다. 폴더 "스크립트"와 스크립트 "스크립트"는 같은 이름이어도 된다.
+ *   (folder: 이름을 붙일 항목이 폴더인지)
+ * - scopeId는 이름을 붙일 문서의 전용 스크립트다. 서로 다른 스크립트 전용인 문서끼리는 같은 이름이어도 겹치지 않는다.
+ *   scopeId가 없으면 공통 문서라 모든 문서와 겹친다. (폴더는 실제 폴더 이름이 되므로 스크립트와 상관없이 겹친다.)
+ */
+export function findNameConflict(
+  siblings: ProjectNode[],
+  name: string,
+  exceptId?: string,
+  scopeId?: string,
+  folder = false,
+): ProjectNode | undefined {
+  return siblings.find(
+    (n) =>
+      n.type !== "divider" &&
+      n.id !== exceptId &&
+      n.name === name &&
+      (n.type === "folder") === folder &&
+      (folder || !scopeId || !n.scriptId || n.scriptId === scopeId),
+  );
+}
+
 /** 같은 폴더 안에서 겹치지 않는 이름 ("새 메모", "새 메모 2", ...) */
-export function uniqueName(siblings: ProjectNode[], base: string, exceptId?: string): string {
-  const taken = new Set(siblings.filter((n) => n.id !== exceptId).map((n) => n.name));
-  if (!taken.has(base)) return base;
-  for (let i = 2; ; i++) if (!taken.has(`${base} ${i}`)) return `${base} ${i}`;
+export function uniqueName(
+  siblings: ProjectNode[],
+  base: string,
+  exceptId?: string,
+  scopeId?: string,
+  folder = false,
+): string {
+  if (!findNameConflict(siblings, base, exceptId, scopeId, folder)) return base;
+  for (let i = 2; ; i++) if (!findNameConflict(siblings, `${base} ${i}`, exceptId, scopeId, folder)) return `${base} ${i}`;
 }
 
 function mapTree(tree: ProjectNode[], fn: (nodes: ProjectNode[], parentId: string | null) => ProjectNode[], parentId: string | null = null): ProjectNode[] {
@@ -112,8 +142,13 @@ export function makeDoc(tree: ProjectNode[], type: DocType, parentId: string | n
   return { id: newId(type), type, name, file: "" };
 }
 
+/** 새 구분선 노드. 이름은 겹쳐도 되고 파일은 없다. */
+export function makeDivider(): DividerNode {
+  return { id: newId("divider"), type: "divider", name: "구분선" };
+}
+
 export function makeFolder(tree: ProjectNode[], parentId: string | null): FolderNode {
-  return { id: newId("folder"), type: "folder", name: uniqueName(siblingsOf(tree, parentId), "새 폴더"), children: [] };
+  return { id: newId("folder"), type: "folder", name: uniqueName(siblingsOf(tree, parentId), "새 폴더", undefined, undefined, true), children: [] };
 }
 
 /** 이름으로 맨 위 폴더 찾기 */
@@ -127,7 +162,8 @@ export function renameNode(tree: ProjectNode[], id: string, name: string): Proje
   if (!trimmed) return tree;
   const parent = findParent(tree, id);
   const siblings = parent ? parent.children : tree;
-  const unique = uniqueName(siblings, trimmed, id);
+  const self = findNode(tree, id);
+  const unique = uniqueName(siblings, trimmed, id, self && self.type !== "folder" ? self.scriptId : undefined, self?.type === "folder");
   return mapTree(tree, (nodes) => nodes.map((n) => (n.id === id ? { ...n, name: unique } : n)));
 }
 
@@ -149,13 +185,20 @@ export function setNodeIcon(tree: ProjectNode[], id: string, icon?: string): Pro
 export function removeNode(tree: ProjectNode[], id: string): { tree: ProjectNode[]; removed: DocNode[]; node: ProjectNode | null } {
   const node = findNode(tree, id);
   if (!node) return { tree, removed: [], node: null };
-  const removed = node.type === "folder" ? walkDocs(node.children) : [node];
+  const removed = node.type === "folder" ? walkDocs(node.children) : node.type === "divider" ? [] : [node];
   const next = mapTree(tree, (nodes) => nodes.filter((n) => n.id !== id));
   return { tree: next, removed, node };
 }
 
 /** 노드를 다른 노드 앞/뒤, 또는 폴더 안으로 옮긴다. 자기 안으로는 못 옮긴다. */
-export function moveNode(tree: ProjectNode[], id: string, targetId: string, position: DropPosition): ProjectNode[] {
+export function moveNode(
+  tree: ProjectNode[],
+  id: string,
+  targetId: string,
+  position: DropPosition,
+  /** 옮긴 뒤 이 문서가 갖게 될 전용 스크립트 (이름이 겹치는지 가리는 데 쓴다) */
+  scopeId?: string,
+): ProjectNode[] {
   if (id === targetId) return tree;
   const node = findNode(tree, id);
   const target = findNode(tree, targetId);
@@ -166,7 +209,19 @@ export function moveNode(tree: ProjectNode[], id: string, targetId: string, posi
   const without = mapTree(tree, (nodes) => nodes.filter((n) => n.id !== id));
   const parentId = position === "inside" ? targetId : (findParent(without, targetId)?.id ?? null);
   const siblings = siblingsOf(without, parentId);
-  const moved = { ...node, name: uniqueName(siblings, node.name, node.id) } as ProjectNode;
+  const moved =
+    node.type === "divider"
+      ? node
+      : ({
+          ...node,
+          name: uniqueName(
+            siblings,
+            node.name,
+            node.id,
+            node.type === "folder" ? undefined : (scopeId ?? node.scriptId),
+            node.type === "folder",
+          ),
+        } as ProjectNode);
 
   if (position === "inside") return insertNode(without, moved, targetId);
 
@@ -198,6 +253,7 @@ const EXTENSION: Record<DocType, string> = {
 export function planFiles(tree: ProjectNode[], base = ""): ProjectNode[] {
   const used = new Set<string>();
   return tree.map((node) => {
+    if (node.type === "divider") return node;
     const name = safeFileName(node.name);
     if (node.type === "folder") {
       const dir = base ? `${base}/${name}` : name;

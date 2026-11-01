@@ -40,32 +40,26 @@ interface InfographicLine {
   continued?: boolean;
 }
 
-const INFOGRAPHIC_LINES: InfographicLine[] = [
-  { id: "l1", style: "transition", text: "FADE IN:" },
-  { id: "l2", style: "scene", text: "외부. 시계 수리점 앞 - 저녁", sceneNum: 1 },
-  { id: "l3", style: "action", text: "저녁 노을이 낡은 간판을 붉게 물들인다. 쇼윈도 너머로 수백 개의 시계가 제각각 째깍거린다." },
-  { id: "l4", style: "action", text: "민재(70대)가 열쇠를 꺼내 수리점 문 앞에 서자, 길고양이 한 마리가 다가와 발목에 몸을 비빈다.", continued: true },
-  { id: "l5", style: "character", text: "민재" },
-  { id: "l6", style: "dialogue", text: "일찍 왔구나." },
-  { id: "l7", style: "action", text: "민재가 열쇠로 문을 열고 한쪽으로 비켜선다." },
-  { id: "l8", style: "action", text: "고양이가 꼬리를 세우고 먼저 가게 안으로 들어간다.", continued: true },
-  { id: "l9", style: "action", text: "민재가 그 뒤를 따라 들어가 문을 닫는다.", continued: true },
-  { id: "l10", style: "transition", text: "CUT TO:" },
-  { id: "l11", style: "scene", text: "내부. 수아의 방 - 밤", sceneNum: 2 },
-  { id: "l12", style: "action", text: "책상 위 스탠드 불빛만 켜져 있다. 벽에 걸린 낡은 손목시계가 멈춰 있다." },
-  { id: "l13", style: "action", text: "수아(30대)가 그 시계를 두 손에 쥐고 한참을 들여다본다.", continued: true },
-  { id: "l14", style: "action", text: "책상 위 스마트폰이 진동한다. 수아가 통화 버튼을 누른다.", continued: true },
-  { id: "l15", style: "character", text: "수아" },
-  { id: "l16", style: "parenthetical", text: "(조심스러운 목소리로)" },
-  { id: "l17", style: "dialogue", text: "어르신, 이 시계 아직 고칠 수 있을까요?" },
-  { id: "l18", style: "character", text: "민재 (V.O.)" },
-  { id: "l19", style: "dialogue", text: "가져오너라. 가게 문은 열려 있다." },
-  { id: "l20", style: "subheader", text: "집 안 거실" },
-  { id: "l21", style: "action", text: "수아가 외투를 걸치고 방을 나선다. 불 꺼진 거실이 고요하다." },
-  { id: "l22", style: "action", text: "벽시계 초침 소리만 어둠 속에서 나직하게 째깍거린다.", continued: true },
-  { id: "l23", style: "action", text: "현관 앞에서 수아가 열쇠를 집어 들고 불을 끈다.", continued: true },
-  { id: "l24", style: "transition", text: "FADE OUT." },
-];
+/** 가이드 가운데 용지에 보여 줄 줄들: 예시 스크립트의 첫 씬 전체 (넘치면 스크롤) */
+function firstSceneLines(): InfographicLine[] {
+  const lines = fromFountain(SAMPLE_KOREAN_SCRIPT_FOUNTAIN).lines;
+  const out: InfographicLine[] = [];
+  let scenes = 0;
+  for (const [i, line] of lines.entries()) {
+    if (line.style === "scene") {
+      scenes += 1;
+      if (scenes > 1) break;
+    }
+    out.push({
+      id: `l${i}`,
+      style: line.style,
+      text: line.text,
+      ...(line.style === "scene" ? { sceneNum: scenes } : {}),
+      ...(line.style === "action" && out[out.length - 1]?.style === "action" ? { continued: true } : {}),
+    });
+  }
+  return out;
+}
 
 export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalone }: Props) {
   const [hoveredStyle, setHoveredStyle] = useState<string | null>(null);
@@ -81,6 +75,8 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
     posX: number;
     posY: number;
   } | null>(null);
+
+  const infographicLines = useMemo(firstSceneLines, []);
 
   const sampleScriptLines = useMemo(() => {
     return fromFountain(SAMPLE_KOREAN_SCRIPT_FOUNTAIN).lines;
@@ -268,7 +264,7 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
             <div className="guide-paper-col">
               <div className="guide-paper-container paper">
                 <div className="guide-paper-content">
-                  {INFOGRAPHIC_LINES.map((line) => {
+                  {infographicLines.map((line) => {
                     const isSceneNumHovered = hoveredStyle === "sceneNum" && line.sceneNum !== undefined;
                     const isStyleHovered = hoveredStyle === line.style;
                     const isLineOrange = isStyleHovered;

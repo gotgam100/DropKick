@@ -9,13 +9,15 @@ import { LINE_STYLES, STYLE_LABELS, shortcutFor } from "./editor/styles";
 import { formatCombo, shortcutForEvent } from "./settings/appShortcuts";
 import { useProject } from "./project/useProject";
 import { findNode, findParent, folderNamed } from "./project/tree";
-import { BLANK_SCRIPT_LINES, DOC_TYPE_LABELS, newId, walkDocs, type DocNode } from "./project/model";
+import { visibleDocsFor, visibleTreeFor } from "./project/scripts";
+import { BLANK_SCRIPT_LINES, DOC_TYPE_LABELS, newId, type DocNode } from "./project/model";
 import { DEFAULT_PRESETS, isDefaultPreset, loadPresets, savePresets, type DocPreset } from "./project/presets";
 import {
   DEFAULT_SETTINGS,
   clearAllAppStorage,
   loadSettings,
   normalizeZoom,
+  ZOOM_STEPS,
   saveSettings,
   type AppSettings,
 } from "./settings/settings";
@@ -27,7 +29,9 @@ import { ProjectTree } from "./panels/ProjectTree";
 import { PresetEditorView } from "./panels/PresetEditorView";
 import { SfSymbolIcon } from "./panels/sfSymbols";
 import { StructureBoardView } from "./structure/StructureBoardView";
-import { TitlePageDialog } from "./titlepage/TitlePageDialog";
+import { ScriptSettingsDialog } from "./titlepage/ScriptSettingsDialog";
+import { ImportQuestionDialog } from "./importer/ImportQuestionDialog";
+import { ImportResultDialog } from "./importer/ImportResultDialog";
 import { RenameCharacterDialog } from "./panels/RenameCharacterDialog";
 import { RevisionView, type Snapshot } from "./revisions/RevisionView";
 import { NewRevisionDialog } from "./revisions/NewRevisionDialog";
@@ -115,6 +119,44 @@ type PresetModalState = {
   draft?: { name: string; body: string; icon?: string; docType?: "character" | "memo" };
 };
 
+/** 툴바 오른쪽의 아이콘 버튼 그림 */
+function ToolbarIcon({ kind }: { kind: "settings" | "focus" | "guide" }) {
+  return (
+    <svg
+      className="toolbar-icon"
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {kind === "settings" && (
+        <>
+          <path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7" />
+          <circle cx="10.5" cy="4.5" r="1.5" />
+          <circle cx="5.5" cy="11.5" r="1.5" />
+        </>
+      )}
+      {kind === "focus" && (
+        <>
+          <path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5" />
+          <circle cx="8" cy="8" r="1.6" />
+        </>
+      )}
+      {kind === "guide" && (
+        <>
+          <path d="M2 3.2c1.9-.7 4-.5 6 .8 2-1.3 4.1-1.5 6-.8v9c-1.9-.7-4-.5-6 .8-2-1.3-4.1-1.5-6-.8z" />
+          <path d="M8 4v9" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 function App() {
   const editorRef = useRef<EditorHandle>(null);
   const textRefs = [useRef<TextEditorHandle>(null), useRef<TextEditorHandle>(null)];
@@ -172,7 +214,6 @@ function App() {
     return localStorage.getItem(GUIDE_SEEN_KEY) !== "true";
   });
   const [presetMenuPos, setPresetMenuPos] = useState<{ x: number; y: number } | null>(null);
-  const [moreMenuPos, setMoreMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [presetModal, setPresetModalState] = useState<PresetModalState | null>(null);
   // 양식 편집 화면은 열 때 포커스가 있던 화면을 덮는다.
   const presetPaneRef = useRef<PaneIndex>(0);
@@ -185,7 +226,10 @@ function App() {
   const scriptName = findNode(project.tree, project.mainScriptId)?.name ?? "스크립트";
 
   // ---------- 화면 나누기 ----------
-  const { openDoc, mainScriptId } = project;
+  const { openDoc, openMainScript, mainScriptId } = project;
+  // 활성 스크립트에서 보이는 문서들 (공통 + 이 스크립트 전용). 스크립트 문서는 뺀다.
+  const visibleTree = useMemo(() => visibleTreeFor(project.tree, mainScriptId).tree, [project.tree, mainScriptId]);
+  const visibleDocs = useMemo(() => visibleDocsFor(project.tree, mainScriptId), [project.tree, mainScriptId]);
   const split = paneState.split;
   const focusedIndex: PaneIndex = split ? paneState.focus : 0;
   const presetPane: PaneIndex | null = presetModal ? (split ? presetPaneRef.current : 0) : null;
@@ -225,10 +269,10 @@ function App() {
       paneRef.current = next;
       setPaneState(next);
       const t = next.panes[next.split ? next.focus : 0];
-      if (t.kind === "script") openDoc(mainScriptId);
+      if (t.kind === "script") openMainScript();
       else if (t.kind === "doc") openDoc(t.id);
     },
-    [mainScriptId, openDoc],
+    [openDoc, openMainScript],
   );
 
   /** 포커스가 있는 화면에 연다. 다른 화면이 이미 열고 있으면 그 화면으로 포커스만 옮긴다. */
@@ -262,11 +306,11 @@ function App() {
   const toggleSplit = useCallback(() => {
     const s = paneRef.current;
     if (s.split) return applyPanes(setSplit(s, false));
-    const board = walkDocs(project.tree).find((d) => d.type === "structure");
+    const board = visibleDocs.find((d) => d.type === "structure");
     const second: PaneTarget | undefined =
       s.panes[0].kind === "script" && board ? { kind: "doc", id: board.id } : undefined;
     applyPanes(setSplit(s, true, second));
-  }, [applyPanes, project.tree]);
+  }, [applyPanes, visibleDocs]);
 
   // ---------- 집중 모드: 툴바, 사이드바, 통계를 숨기고 원고만 보여 준다 ----------
   const [focusMode, setFocusMode] = useState(false);
@@ -308,8 +352,9 @@ function App() {
 
   // 문서나 수정고가 사라지면 그 화면은 원고로 돌린다.
   useEffect(() => {
+    // 활성 스크립트에서 보이지 않는 문서(다른 스크립트 전용)나 다른 스크립트의 수정고를 연 화면은 원고로 돌린다.
     const valid = {
-      docIds: new Set(walkDocs(project.tree).map((d) => d.id)),
+      docIds: new Set(visibleDocs.map((d) => d.id)),
       revisionIds: new Set(project.revisions.map((r) => r.id)),
       mainScriptId,
     };
@@ -318,7 +363,7 @@ function App() {
       paneRef.current = next;
       return next;
     });
-  }, [project.tree, project.revisions, mainScriptId]);
+  }, [visibleDocs, project.revisions, mainScriptId]);
 
   // 프로젝트 쪽에서 열린 문서가 바뀌면(새 문서 만들기 등) 포커스가 있는 화면에 보여준다.
   const activeDocId = project.activeDoc.id;
@@ -407,6 +452,46 @@ function App() {
     }
   }, []);
 
+  // 화면 비율을 한 단계씩 키우거나 줄인다. (80 → 100 → 120 → 150)
+  const stepZoom = useCallback((direction: 1 | -1) => {
+    const current = loadSettings().zoom;
+    const at = ZOOM_STEPS.indexOf(current);
+    const z = ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, at + direction))];
+    if (z === current) return;
+    setSettings((prev) => {
+      const next = { ...prev, zoom: z };
+      saveSettings(next);
+      return next;
+    });
+    setNotice({ text: `화면 비율: ${z}%`, key: Date.now() });
+  }, []);
+
+  // ⌘+ / ⌘- 로 화면 비율 조절
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const plus = e.key === "=" || e.key === "+" || e.code === "NumpadAdd";
+      const minus = e.key === "-" || e.key === "_" || e.code === "NumpadSubtract";
+      if (!plus && !minus) return;
+      e.preventDefault();
+      stepZoom(plus ? 1 : -1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [stepZoom]);
+
+  // 스타일 메뉴에 단축키를 보여 준다. 설정이 바뀌면(다른 창 포함) 다시 보낸다.
+  useEffect(() => {
+    if (!isTauri()) return;
+    const send = () => {
+      const shortcuts = LINE_STYLES.map((style) => [style, loadSettings().styleShortcuts[style]]);
+      invoke("set_style_menu_shortcuts", { shortcuts }).catch(() => {});
+    };
+    send();
+    window.addEventListener("storage", send);
+    return () => window.removeEventListener("storage", send);
+  }, []);
+
   // 메뉴 처리 (사이드바, 통계, 설정, DropKick 정보, 화면 비율)
   useEffect(() => {
     if (!isTauri()) return;
@@ -416,11 +501,14 @@ function App() {
       const id = event.payload;
       if (id === "toggle_scenes") toggleSidebar();
       else if (id === "toggle_stats") toggleStats();
+      else if (id === "toggle_focus") toggleFocus();
       else if (id === "open_settings") handleOpenSettings();
       else if (id === "about_dropkick") setAboutOpen(true);
       else if (id === "export_pdf") setExportFormat("pdf");
       else if (id === "export_docx") setExportFormat("docx");
       else if (id === "open_guide") handleOpenGuide();
+      else if (id === "zoom:in") stepZoom(1);
+      else if (id === "zoom:out") stepZoom(-1);
       else if (id.startsWith("zoom:")) {
         const z = normalizeZoom(id.slice("zoom:".length));
         setSettings((prev) => {
@@ -540,20 +628,20 @@ function App() {
   // 인물 설정 문서 ↔ 원고 속 인물 (문서 이름으로 연결)
   const characterDocs = useMemo(() => {
     const map = new Map<string, DocNode>();
-    for (const doc of walkDocs(project.tree)) {
+    for (const doc of visibleDocs) {
       if (doc.type === "character" && !map.has(characterKey(doc.name))) map.set(characterKey(doc.name), doc);
     }
     return map;
-  }, [project.tree]);
+  }, [visibleDocs]);
 
-  const { addDoc } = project;
+  const { addCharacterProfile } = project;
   const openProfile = useCallback(
     (name: string) => {
       const doc = characterDocs.get(characterKey(name));
       if (doc) openDoc(doc.id);
-      else addDoc(folderNamed(project.tree, "인물 설정"), "character", name);
+      else addCharacterProfile(name);
     },
-    [addDoc, characterDocs, openDoc, project.tree],
+    [addCharacterProfile, characterDocs, openDoc],
   );
 
   const applyCharacterRename = (oldName: string, newName: string, everywhere: boolean) => {
@@ -563,7 +651,7 @@ function App() {
     if (profile) project.rename(profile.id, newName);
     if (result) {
       setNotice({
-        text: `"${oldName}" → "${newName}": 인물 줄 ${result.characterLines}곳${everywhere ? `, 지문·대사 ${result.textHits}곳` : ""} 바꿈 (⌘Z로 되돌리기)`,
+        text: `"${oldName}" → "${newName}": 인물 줄 ${result.characterLines}곳${everywhere ? `, 씬헤딩·지문·대사 ${result.textHits}곳` : ""} 바꿈 (⌘Z로 되돌리기)`,
         key: Date.now(),
       });
     }
@@ -603,14 +691,14 @@ function App() {
     (): Snapshot => ({
       name: "지금 원고",
       lines: editorRef.current?.getLines() ?? [],
-      docs: settingsDocs(project.tree).map(({ doc, folders }) => ({
+      docs: settingsDocs(visibleTree).map(({ doc, folders }) => ({
         doc: { id: doc.id, type: doc.type, name: doc.name, folders },
         text: project.docTexts.get(doc.id) ?? "",
       })),
       pages: analysis.pages,
       runtime: analysis.runtimeMinutes,
     }),
-    [analysis.pages, analysis.runtimeMinutes, project.docTexts, project.tree],
+    [analysis.pages, analysis.runtimeMinutes, project.docTexts, visibleTree],
   );
 
   const docChars = useMemo(() => project.activeText.replace(/\s/g, "").length, [project.activeText]);
@@ -658,7 +746,7 @@ function App() {
       setPresetMenuPos(null);
       setPresetModal(null);
       if (!forceNew) {
-        const existing = walkDocs(project.tree).find((d) => d.type === "structure");
+        const existing = visibleDocs.find((d) => d.type === "structure");
         if (existing) {
           if (existing.name === "3막 구조" || existing.name === "3막 구조(세이브 더 캣)") {
             project.rename(existing.id, "3막 구조 양식");
@@ -672,7 +760,7 @@ function App() {
       showBoard(id);
       setShowSidebar(true);
     },
-    [project, setPresetModal, setShowSidebar, showBoard],
+    [project, setPresetModal, setShowSidebar, showBoard, visibleDocs],
   );
 
   // 상단 헤더 왼쪽 경로 표시: "프로젝트 이름 - 선택한 폴더 - 문서 이름"
@@ -994,23 +1082,37 @@ function App() {
             )).concat(
               <span key="divider" className="toolbar-divider" />,
               <button
-                key="more"
+                key="script-settings"
                 type="button"
-                className={moreMenuPos ? "style-button active" : "style-button"}
-                aria-expanded={Boolean(moreMenuPos)}
-                aria-label="더보기"
-                title="표지, 집중 모드, 작성 가이드"
+                className="style-button icon-button"
+                aria-label="스크립트 설정"
+                title="스크립트 설정 (표지, 씬 번호, 워터마크)"
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={(e) => {
-                  if (moreMenuPos) {
-                    setMoreMenuPos(null);
-                  } else {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setMoreMenuPos({ x: rect.left, y: rect.bottom + 4 });
-                  }
-                }}
+                onClick={() => setEditingTitlePage(true)}
               >
-                <span className="style-name">더보기 <span className="menu-caret">▼</span></span>
+                <ToolbarIcon kind="settings" />
+              </button>,
+              <button
+                key="focus"
+                type="button"
+                className="style-button icon-button"
+                aria-label="집중 모드"
+                title={`집중 모드 (${formatCombo(settings.appShortcuts.toggleFocus)})`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={toggleFocus}
+              >
+                <ToolbarIcon kind="focus" />
+              </button>,
+              <button
+                key="guide"
+                type="button"
+                className="style-button icon-button"
+                aria-label="시나리오 작성 가이드"
+                title={`시나리오 작성 가이드 (${formatCombo(settings.appShortcuts.openGuide)})`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleOpenGuide}
+              >
+                <ToolbarIcon kind="guide" />
               </button>,
             )
           ) : (
@@ -1085,7 +1187,13 @@ function App() {
             onFilterChange={setTreeFilter}
             onOpenDoc={(id) => {
               setPresetModal(null);
-              openTarget(docTarget(id));
+              // 다른 스크립트를 누르면 그 스크립트로 바꿔 연다.
+              if (findNode(project.tree, id)?.type === "script") {
+                openDoc(id);
+                openTarget({ kind: "script" });
+              } else {
+                openTarget(docTarget(id));
+              }
             }}
             onSelectScene={goToLine}
             onMoveScene={(fromLine, beforeLine) => editorRef.current?.moveScene(fromLine, beforeLine)}
@@ -1094,6 +1202,7 @@ function App() {
             onAdd={(kind, parentId) => {
               setPresetModal(null);
               if (kind === "folder") return project.addFolder(parentId);
+              if (kind === "script") return project.addScript(parentId);
               if (kind === "structure") return project.addDoc(parentId, "structure");
               return project.addDoc(parentId, kind === "character" ? "character" : "memo");
             }}
@@ -1106,6 +1215,9 @@ function App() {
               setPresetModal({ initial: null });
             }}
             onRename={project.rename}
+            onDuplicateScript={project.duplicateScript}
+            onAddDivider={project.addDivider}
+            onSetScope={project.setScope}
             onRemove={project.remove}
             onMove={project.move}
             onSetIcon={project.setIcon}
@@ -1206,15 +1318,24 @@ function App() {
       </footer>
 
       {editingTitlePage && (
-        <TitlePageDialog
+        <ScriptSettingsDialog
+          scriptName={scriptName}
           titlePage={project.titlePage}
-          onSave={project.setTitlePage}
+          settings={project.scriptSettings}
+          onSave={(titlePage, settings) => {
+            project.setTitlePage(titlePage);
+            project.setScriptSettings(settings);
+          }}
           onClose={() => {
             setEditingTitlePage(false);
             editorRef.current?.focus();
           }}
         />
       )}
+
+      {project.importAsk && <ImportQuestionDialog questions={project.importAsk.questions} onAnswer={project.answerImport} />}
+
+      {project.importResult && <ImportResultDialog result={project.importResult} onClose={project.dismissImportResult} />}
 
       {renamingCharacter && (
         <RenameCharacterDialog
@@ -1233,51 +1354,6 @@ function App() {
           onClose={() => setRenamingCharacter(null)}
         />
       )}
-
-      {moreMenuPos &&
-        createPortal(
-          <div className="icon-popover-backdrop" onMouseDown={() => setMoreMenuPos(null)}>
-            <div
-              className="tree-menu"
-              role="menu"
-              aria-label="더보기"
-              style={{ left: moreMenuPos.x, top: moreMenuPos.y }}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMoreMenuPos(null);
-                  setEditingTitlePage(true);
-                }}
-              >
-                표지 편집 (PDF 첫 장)
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMoreMenuPos(null);
-                  toggleFocus();
-                }}
-              >
-                집중 모드 ({formatCombo(settings.appShortcuts.toggleFocus)})
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMoreMenuPos(null);
-                  handleOpenGuide();
-                }}
-              >
-                시나리오 작성 가이드 ({formatCombo(settings.appShortcuts.openGuide)})
-              </button>
-            </div>
-          </div>,
-          document.body,
-        )}
 
       {presetMenuPos &&
         createPortal(
@@ -1420,7 +1496,7 @@ function App() {
         <ExportDialog
           format={exportFormat}
           scriptName={scriptName}
-          docs={walkDocs(project.tree).filter((d) => d.id !== project.mainScriptId)}
+          docs={visibleDocs}
           onExport={(script, docIds) =>
             project.exportBundle(exportFormat, { script, docIds })
           }

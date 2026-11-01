@@ -127,11 +127,23 @@ function mapStyles(old: readonly LineStyle[], tr: Transaction): LineStyle[] {
 
 export type { SceneNumber } from "../layout/sceneNumbers";
 
+/** 첫 씬의 번호를 바꾼다. (스크립트 설정의 "씬 번호 시작") */
+export const setSceneStartEffect = StateEffect.define<number>();
+
+/** 첫 씬의 번호. 기본 1 */
+export const sceneStartField = StateField.define<number>({
+  create: () => 1,
+  update(value, tr) {
+    for (const effect of tr.effects) if (effect.is(setSceneStartEffect)) return effect.value;
+    return value;
+  },
+});
+
 export function computeSceneNumbers(
   state: EditorState,
   styles: readonly LineStyle[],
 ): Map<number, SceneNumber> {
-  return numberScenes(styles, (n) => state.doc.line(n).text);
+  return numberScenes(styles, (n) => state.doc.line(n).text, state.field(sceneStartField, false) ?? 1);
 }
 
 export const sceneNumbersField = StateField.define<Map<number, SceneNumber>>({
@@ -140,7 +152,8 @@ export const sceneNumbersField = StateField.define<Map<number, SceneNumber>>({
   },
   update(value, tr) {
     const styles = tr.state.field(lineStylesField);
-    if (!tr.docChanged && tr.startState.field(lineStylesField) === styles) return value;
+    const startChanged = tr.effects.some((e) => e.is(setSceneStartEffect));
+    if (!startChanged && !tr.docChanged && tr.startState.field(lineStylesField) === styles) return value;
     return computeSceneNumbers(tr.state, styles);
   },
 });
@@ -189,26 +202,106 @@ export function sceneHeadingTexts(state: EditorState, skipLine?: number): string
   return out;
 }
 
+/**
+ * 한글 입력 중에 Enter를 누르면 줄바꿈이 두 번(\n\n) 한꺼번에 들어올 수 있다.
+ * 직접 친 글에서 한 번에 줄바꿈이 둘 들어오는 일은 없으므로 하나로 줄인다.
+ * (붙여넣기·끌어다 놓기·자동 완성은 그대로 둔다)
+ */
+export const singleEnterFilter = EditorState.transactionFilter.of((tr) => {
+  if (!tr.docChanged || !tr.isUserEvent("input")) return tr;
+  if (tr.isUserEvent("input.paste") || tr.isUserEvent("input.drop") || tr.isUserEvent("input.complete")) return tr;
+  let count = 0;
+  let change: { from: number; to: number; text: string } | null = null;
+  tr.changes.iterChanges((from, to, _fromB, _toB, inserted) => {
+    count++;
+    change = { from, to, text: inserted.toString() };
+  });
+  const only = change as { from: number; to: number; text: string } | null;
+  if (count !== 1 || !only || !only.text.endsWith("\n\n")) return tr;
+  const insert = only.text.slice(0, -1);
+  return [
+    {
+      changes: { from: only.from, to: only.to, insert },
+      selection: EditorSelection.cursor(only.from + insert.length),
+      effects: tr.effects,
+      userEvent: "input",
+      scrollIntoView: tr.scrollIntoView,
+    },
+  ];
+});
+
 // ---------- 문서 만들기 ----------
 
 export function createScriptState(
   lines: ScriptLine[],
   extensions: Extension = [],
+  /** 첫 씬의 번호 */
+  sceneStart = 1,
 ): EditorState {
   const source = lines.length > 0 ? lines : [{ style: DEFAULT_STYLE, text: "" }];
   const styles = source.map((l) => l.style);
   return EditorState.create({
     doc: source.map((l) => l.text).join("\n"),
-    extensions: [lineStylesField.init(() => styles), sceneNumbersField, styleHistory, extensions],
+    extensions: [
+      lineStylesField.init(() => styles),
+      sceneStartField.init(() => sceneStart),
+      sceneNumbersField,
+      singleEnterFilter,
+      styleHistory,
+      extensions,
+    ],
   });
 }
 
 // ---------- 명령 ----------
 
+/**
+ * 괄호지문이 되는 줄의 글을 괄호로 감싼다. 이미 감싸져 있으면 손대지 않는다.
+ * 빈 줄은 "()"로 만들고, 커서가 있던 줄이면 괄호 안에 둔다.
+ */
+function parentheticalWrap(
+  state: EditorState,
+  lineNumber: number,
+): { changes: ChangeSpec[]; cursor?: number } {
+  const line = state.doc.line(lineNumber);
+  const text = line.text;
+  const trimmed = text.trim();
+  if (trimmed === "") return { changes: [{ from: line.from, to: line.to, insert: "()" }], cursor: line.from + 1 };
+  const open = trimmed.startsWith("(") || trimmed.startsWith("（");
+  const close = trimmed.endsWith(")") || trimmed.endsWith("）");
+  if (open && close) return { changes: [] };
+  const changes: ChangeSpec[] = [];
+  if (!open) changes.push({ from: line.from, insert: "(" });
+  if (!close) changes.push({ from: line.to, insert: ")" });
+  return { changes };
+}
+
+/** 스타일을 바꾸는 효과와, 괄호지문이면 괄호로 감싸는 글 고침을 함께 만든다. */
+function styleTransaction(state: EditorState, lineNumbers: number[], style: LineStyle) {
+  const effects: StateEffect<{ pos: number; style: LineStyle }>[] = [];
+  const changes: ChangeSpec[] = [];
+  let selection: EditorSelection | undefined;
+  for (const n of lineNumbers) {
+    effects.push(setLineStyleEffect.of({ pos: state.doc.line(n).from, style }));
+    if (style !== "parenthetical" || styleAtLine(state, n) === "parenthetical") continue;
+    const wrap = parentheticalWrap(state, n);
+    changes.push(...wrap.changes);
+    const head = state.selection.main.head;
+    if (state.selection.main.empty && state.doc.lineAt(head).number === n) {
+      const line = state.doc.line(n);
+      if (wrap.cursor !== undefined) selection = EditorSelection.single(wrap.cursor);
+      // 줄 맨 끝(또는 맨 앞)에 있던 커서는 괄호가 붙은 뒤에도 맨 끝(맨 앞)에 둔다. (Tab을 이어서 누를 수 있게)
+      else if (wrap.changes.length && head === line.to) selection = EditorSelection.single(line.to + wrap.changes.length);
+      else if (wrap.changes.length && head === line.from) selection = EditorSelection.single(line.from);
+    }
+  }
+  return state.update({ effects, changes, selection, userEvent: changes.length ? "input.style" : "style" });
+}
+
 /** 선택한 줄(들)의 스타일을 바꾼다. */
 export function setStyle(style: LineStyle): StateCommand {
   return ({ state, dispatch }) => {
-    const effects: StateEffect<{ pos: number; style: LineStyle }>[] = [];
+    const lines: number[] = [];
     const seen = new Set<number>();
     for (const range of state.selection.ranges) {
       const first = state.doc.lineAt(range.from).number;
@@ -216,10 +309,10 @@ export function setStyle(style: LineStyle): StateCommand {
       for (let n = first; n <= last; n++) {
         if (seen.has(n)) continue;
         seen.add(n);
-        effects.push(setLineStyleEffect.of({ pos: state.doc.line(n).from, style }));
+        lines.push(n);
       }
     }
-    dispatch(state.update({ effects, userEvent: "style" }));
+    dispatch(styleTransaction(state, lines, style));
     return true;
   };
 }
@@ -245,11 +338,14 @@ export const insertScriptNewline: StateCommand = ({ state, dispatch }) => {
   const enterRules = getNextStyleRules();
   const newStyle = isHeaderOrSingle || atLineEnd ? (enterRules[style] ?? "action") : style;
   const newLineStart = range.from + 1;
+  // 새 줄이 괄호지문이면 "()"를 미리 넣고 커서를 괄호 안에 둔다.
+  const wrapped = newStyle === "parenthetical" && atLineEnd;
+  const insert = wrapped ? "\n()" : "\n";
 
   dispatch(
     state.update({
-      changes: { from: range.from, to: range.to, insert: "\n" },
-      selection: EditorSelection.cursor(newLineStart),
+      changes: { from: range.from, to: range.to, insert },
+      selection: EditorSelection.cursor(wrapped ? newLineStart + 1 : newLineStart),
       effects: setLineStyleEffect.of({ pos: newLineStart, style: newStyle }),
       scrollIntoView: true,
       userEvent: "input",
@@ -259,7 +355,7 @@ export const insertScriptNewline: StateCommand = ({ state, dispatch }) => {
 };
 
 /**
- * Tab / Shift+Tab: 빈 줄이거나 커서가 줄 맨 앞일 때 스타일을 순환한다.
+ * Tab / Shift+Tab: 빈 줄이거나 커서가 줄 맨 앞·맨 끝일 때 스타일을 순환한다.
  * 그 밖의 경우에도 Tab이 다른 곳으로 포커스를 옮기지 않도록 막는다.
  */
 export function cycleLineStyle(direction: 1 | -1): StateCommand {
@@ -267,14 +363,9 @@ export function cycleLineStyle(direction: 1 | -1): StateCommand {
     const range = state.selection.main;
     if (!range.empty) return true;
     const line = state.doc.lineAt(range.head);
-    if (line.length > 0 && range.head !== line.from) return true;
+    if (line.length > 0 && range.head !== line.from && range.head !== line.to) return true;
     const style = cycleStyle(styleAtLine(state, line.number), direction);
-    dispatch(
-      state.update({
-        effects: setLineStyleEffect.of({ pos: line.from, style }),
-        userEvent: "style",
-      }),
-    );
+    dispatch(styleTransaction(state, [line.number], style));
     return true;
   };
 }
@@ -285,7 +376,7 @@ export type CharacterRename = {
   changes: ChangeSpec[];
   /** 바뀐 인물 이름 줄 수 */
   characterLines: number;
-  /** 바뀐 지문/대사 속 이름 수 */
+  /** 바뀐 씬헤딩/서브헤더/지문/대사 속 이름 수 */
   textHits: number;
 };
 
@@ -296,7 +387,7 @@ function escapeRegExp(text: string) {
 /**
  * 인물 이름 바꾸기.
  * - 인물 스타일 줄: 이름 부분만 바꾸고 (V.O.) 같은 표시는 그대로 둔다.
- * - everywhere면 액션·괄호지문·대사 속의 이름도 바꾼다. ("민재가" → "준호가")
+ * - everywhere면 씬헤딩·서브헤더·액션·괄호지문·대사 속의 이름도 바꾼다. ("민재가" → "준호가")
  * oldKey는 인물 묶음 키 (괄호 표시를 뗀 이름, 영문은 대문자).
  */
 export function renameCharacter(
@@ -325,7 +416,10 @@ export function renameCharacter(
       const at = line.text.indexOf(current);
       changes.push({ from: line.from + at, to: line.from + at + current.length, insert: name });
       characterLines++;
-    } else if (everywhere && (style === "action" || style === "dialogue" || style === "parenthetical")) {
+    } else if (
+      everywhere &&
+      (style === "action" || style === "dialogue" || style === "parenthetical" || style === "scene" || style === "subheader")
+    ) {
       const upper = toUpperLatin(line.text);
       for (const match of line.text.matchAll(pattern)) {
         const index = match.index ?? 0;

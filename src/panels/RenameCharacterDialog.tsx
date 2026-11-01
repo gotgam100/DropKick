@@ -52,7 +52,7 @@ export function RenameCharacterDialog({ name, preview, hasProfile, onApply, onCl
         </label>
         <label className="dialog-check">
           <input type="checkbox" checked={everywhere} onChange={(e) => setEverywhere(e.target.checked)} />
-          지문과 대사 속 이름도 바꾸기
+          씬헤딩, 지문, 대사 속 이름도 바꾸기
         </label>
         <p className="dialog-hint">
           인물 이름 줄 {counts.characterLines}곳

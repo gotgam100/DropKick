@@ -21,6 +21,8 @@ export type ScriptDocument = {
   /** Fountain 표지 정보 (Title:, Author: 등). 그대로 보관했다가 다시 쓴다. */
   titlePage: string | null;
   lines: ScriptLine[];
+  /** 첫 씬의 번호 (스크립트 설정). 저장할 때 `#번호#`에 쓴다. 기본 1 */
+  sceneStart?: number;
 };
 
 const SCENE_NUMBER_SUFFIX = /\s*#[\w.\-]+#\s*$/;
@@ -107,6 +109,7 @@ export function toFountain(doc: ScriptDocument): string {
   const scenes = numberScenes(
     doc.lines.map((l) => l.style),
     (n) => doc.lines[n - 1].text,
+    doc.sceneStart ?? 1,
   );
   let prev: ScriptLine | undefined;
   doc.lines.forEach((line, i) => {

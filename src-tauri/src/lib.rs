@@ -23,6 +23,17 @@ fn read_script(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| format!("파일을 열 수 없습니다: {e}"))
 }
 
+/// PDF·Word 같은 바이너리 파일을 그대로 읽어 화면에 넘긴다.
+#[tauri::command]
+fn read_binary(path: String) -> Result<tauri::ipc::Response, String> {
+    let lower = path.to_lowercase();
+    if !(lower.ends_with(".pdf") || lower.ends_with(".docx") || lower.ends_with(".hwpx")) {
+        return Err("PDF, Word, hwpx 파일만 읽을 수 있습니다.".to_string());
+    }
+    let data = fs::read(&path).map_err(|e| format!("파일을 열 수 없습니다: {e}"))?;
+    Ok(tauri::ipc::Response::new(data))
+}
+
 /// 원고 파일을 저장한다. 임시 파일에 먼저 쓰고 바꿔치기해서,
 /// 저장 중에 문제가 생겨도 원래 파일이 깨지지 않게 한다.
 #[tauri::command]
@@ -255,7 +266,11 @@ fn reveal_in_finder(path: String) -> Result<(), String> {
 #[tauri::command]
 fn set_recent_projects(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
     let Some(menu) = app.menu() else { return Ok(()) };
-    let Some(tauri::menu::MenuItemKind::Submenu(sub)) = menu.get("recent_projects") else {
+    // menu.get은 맨 위 메뉴만 찾으므로, 파일 메뉴를 먼저 찾고 그 안에서 최근 프로젝트를 찾는다.
+    let Some(tauri::menu::MenuItemKind::Submenu(file)) = menu.get("file_menu") else {
+        return Ok(());
+    };
+    let Some(tauri::menu::MenuItemKind::Submenu(sub)) = file.get("recent_projects") else {
         return Ok(());
     };
     let err = |e: tauri::Error| e.to_string();
@@ -286,6 +301,26 @@ fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
+/// 스타일 메뉴에 단축키를 다른 메뉴처럼 보여 준다. (단축키는 설정에서 바꿀 수 있어서 화면이 알려 준다)
+/// shortcuts: (스타일 id, ⌘와 함께 누르는 글쇠)
+#[tauri::command]
+fn set_style_menu_shortcuts(app: AppHandle, shortcuts: Vec<(String, String)>) -> Result<(), String> {
+    let Some(menu) = app.menu() else { return Ok(()) };
+    let Some(tauri::menu::MenuItemKind::Submenu(sub)) = menu.get("style_menu") else {
+        return Ok(());
+    };
+    for (style, key) in shortcuts {
+        if let Some(tauri::menu::MenuItemKind::MenuItem(item)) = sub.get(&format!("style:{style}")) {
+            let accel = format!("CmdOrCtrl+{}", key.trim().to_uppercase());
+            // 메뉴가 못 읽는 글쇠면 단축키 표시만 뺀다. (화면의 단축키 처리는 그대로 동작한다)
+            if item.set_accelerator(Some(accel)).is_err() {
+                let _ = item.set_accelerator(None::<&str>);
+            }
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn open_auxiliary_window(app: AppHandle, window_type: String) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(&window_type) {
@@ -296,7 +331,7 @@ fn open_auxiliary_window(app: AppHandle, window_type: String) -> Result<(), Stri
 
     let (title, url, width, height, min_w, min_h) = match window_type.as_str() {
         "settings" => ("설정", "index.html?aux=settings", 780.0, 620.0, 640.0, 480.0),
-        "guide" => ("시나리오 작성 가이드", "index.html?aux=guide", 1120.0, 780.0, 840.0, 560.0),
+        "guide" => ("시나리오 작성 가이드", "index.html?aux=guide", 1120.0, 890.0, 840.0, 560.0),
         _ => return Err(format!("알 수 없는 창 종류입니다: {window_type}")),
     };
 
@@ -330,10 +365,6 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item("check_update", "업데이트 확인…", None)?,
             &item("sister_apps", "자매품", None)?,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::hide(app, Some("DropKick 가리기"))?,
-            &PredefinedMenuItem::hide_others(app, Some("기타 가리기"))?,
-            &PredefinedMenuItem::show_all(app, Some("모두 보기"))?,
-            &PredefinedMenuItem::separator(app)?,
             &item("quit", "DropKick 종료", Some("CmdOrCtrl+Q"))?,
         ],
     )?;
@@ -356,18 +387,21 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         &[&MenuItem::with_id(app, "recent_none", "최근 프로젝트 없음", false, None::<&str>)?],
     )?;
 
-    let file_menu = Submenu::with_items(
+    let file_menu = Submenu::with_id_and_items(
         app,
+        "file_menu",
         "파일",
         true,
         &[
             &item("new_project", "새 프로젝트", Some("CmdOrCtrl+N"))?,
             &item("open", "프로젝트 열기…", Some("CmdOrCtrl+O"))?,
             &recent_menu,
+            &item("import_document", "외부 시나리오 가져오기…", None)?,
             &item("import_fountain", "Fountain 가져오기…", None)?,
             &PredefinedMenuItem::separator(app)?,
             &item("save", "저장", Some("CmdOrCtrl+S"))?,
             &item("save_as", "다른 이름으로 저장…", Some("CmdOrCtrl+Shift+S"))?,
+            &PredefinedMenuItem::separator(app)?,
             &item("open_project_location", "프로젝트 위치 열기", None)?,
             &item("open_backups", "백업 폴더 보기", None)?,
             &PredefinedMenuItem::separator(app)?,
@@ -396,16 +430,17 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     )?;
 
     // 스타일·보기·가이드 단축키는 설정에서 바꿀 수 있어서, 메뉴가 아니라 화면(JS)에서 처리한다.
-    let style_menu = Submenu::with_items(
+    let style_menu = Submenu::with_id_and_items(
         app,
+        "style_menu",
         "스타일",
         true,
         &[
             &item("style:scene", "씬헤딩", None)?,
             &item("style:action", "액션", None)?,
             &item("style:character", "인물", None)?,
-            &item("style:parenthetical", "괄호지문", None)?,
             &item("style:dialogue", "대사", None)?,
+            &item("style:parenthetical", "괄호지문", None)?,
             &item("style:subheader", "서브 헤더", None)?,
             &item("style:transition", "전환", None)?,
         ],
@@ -420,6 +455,9 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item("zoom:100", "100% (기본)", None)?,
             &item("zoom:120", "120%", None)?,
             &item("zoom:150", "150%", None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &item("zoom:in", "확대", Some("CmdOrCtrl+="))?,
+            &item("zoom:out", "축소", Some("CmdOrCtrl+-"))?,
         ],
     )?;
 
@@ -430,6 +468,8 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         &[
             &item("toggle_scenes", "사이드바 보기/숨기기", None)?,
             &item("toggle_stats", "통계 보기/숨기기", None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &item("toggle_focus", "집중 모드", None)?,
             &PredefinedMenuItem::separator(app)?,
             &zoom_menu,
         ],
@@ -520,6 +560,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             read_script,
+            read_binary,
             write_script,
             write_binary,
             ensure_dir,
@@ -534,6 +575,7 @@ pub fn run() {
             take_pending_opens,
             quit_app,
             set_recent_projects,
+            set_style_menu_shortcuts,
             open_auxiliary_window
         ])
         .build(tauri::generate_context!())

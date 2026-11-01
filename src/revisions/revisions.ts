@@ -50,6 +50,7 @@ export function settingsDocs(tree: ProjectNode[]): { doc: DocNode; folders: stri
       if (node.type === "folder") {
         visit(node.children, [...folders, node.name], inSettings || SETTINGS_FOLDERS.includes(node.name));
       } else if (
+        node.type !== "divider" &&
         node.type !== "script" &&
         (inSettings || node.type === "character" || node.type === "synopsis" || node.type === "structure")
       ) {

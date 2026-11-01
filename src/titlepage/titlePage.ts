@@ -23,6 +23,10 @@ export type TitlePageFields = {
   contact: string;
 };
 
+/** 표지에 넣을 수 있는 항목 */
+export type CoverField = keyof TitlePageFields;
+export const COVER_FIELDS: CoverField[] = ["title", "credit", "author", "source", "draftDate", "contact"];
+
 export const EMPTY_TITLE_PAGE: TitlePageFields = {
   title: "",
   credit: "",
@@ -91,4 +95,24 @@ export function writeTitlePage(fields: TitlePageFields, previous: string | null)
     else out.push(`${entry.key}:`, ...entry.lines.map((l) => `    ${l}`));
   }
   return out.length > 0 ? out.join("\n") : null;
+}
+
+/**
+ * 표지에서 끈 항목을 뺀 표지 글을 만든다. (원고 파일의 표지는 그대로 두고, 내보낼 때만 쓴다)
+ * 켜 둔 항목 중 내용이 있는 게 하나도 없으면 표지 자체가 없는 것으로 보고 null을 돌려준다.
+ */
+export function applyCoverToggles(titlePage: string | null, off: readonly CoverField[] = []): string | null {
+  if (!titlePage || !titlePage.trim()) return null;
+  const hidden = new Set(off);
+  const out: string[] = [];
+  let shown = 0;
+  for (const entry of parseEntries(titlePage)) {
+    const field = fieldFor(entry.key);
+    if (field && hidden.has(field)) continue;
+    const lines = entry.lines.filter(Boolean);
+    if (field && lines.length > 0) shown++;
+    if (lines.length <= 1) out.push(`${entry.key}: ${lines[0] ?? ""}`);
+    else out.push(`${entry.key}:`, ...lines.map((l) => `    ${l}`));
+  }
+  return shown > 0 ? out.join("\n") : null;
 }

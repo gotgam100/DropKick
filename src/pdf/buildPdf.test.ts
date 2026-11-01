@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { PDFDocument } from "pdf-lib";
+import { PDFDict, PDFDocument, PDFName, PDFNumber } from "pdf-lib";
 import { fromFountain } from "../fountain/fountain";
 import { paginate } from "../layout/paginate";
 import { buildExtraSection } from "../export/extras";
@@ -51,5 +51,39 @@ describe("PDF 내보내기", () => {
     const doc = fromFountain(readFileSync(new URL("samples/short-5p.fountain", root), "utf8"));
     const both = await PDFDocument.load(await buildPdf(doc, fonts, extras));
     expect(both.getPageCount()).toBe(pdf.getPageCount() + 1 + paginate(doc.lines).pages.length);
+  });
+
+  /** 한 쪽에 불투명도 0.1(ca)인 그래픽 설정이 있는지 */
+  const hasTenPercent = (pdf: PDFDocument, index: number) => {
+    const states = pdf.getPage(index).node.Resources()?.lookup(PDFName.of("ExtGState"));
+    if (!(states instanceof PDFDict)) return false;
+    return states.values().some((v) => {
+      const dict = pdf.context.lookup(v);
+      const ca = dict instanceof PDFDict ? dict.lookup(PDFName.of("ca")) : undefined;
+      return ca instanceof PDFNumber && Math.abs(ca.asNumber() - 0.1) < 1e-9;
+    });
+  };
+
+  it("워터마크: 모든 쪽(표지 포함)에 기울어진 글이 불투명도 10%로 반복해서 찍힌다", async () => {
+    const doc = fromFountain(readFileSync(new URL("samples/short-5p.fountain", root), "utf8"));
+    const plain = await buildPdf(doc, fonts);
+    const marked = await buildPdf(doc, fonts, [], { watermark: "홍길동 전용 외부 유출 금지" });
+    const pdf = await PDFDocument.load(marked);
+    const plainPdf = await PDFDocument.load(plain);
+    expect(pdf.getPageCount()).toBe(plainPdf.getPageCount());
+    for (let i = 0; i < pdf.getPageCount(); i++) {
+      expect(hasTenPercent(pdf, i)).toBe(true);
+      expect(hasTenPercent(plainPdf, i)).toBe(false);
+    }
+    expect(marked.length).toBeGreaterThan(plain.length);
+    const out = process.env.DROPKICK_PDF_OUT;
+    if (out) writeFileSync(`${out}/watermark.pdf`, marked);
+  });
+
+  it("워터마크가 비어 있으면 찍지 않는다", async () => {
+    const doc = fromFountain(readFileSync(new URL("samples/short-5p.fountain", root), "utf8"));
+    const bytes = await buildPdf(doc, fonts, [], { watermark: "   " });
+    const pdf = await PDFDocument.load(bytes);
+    for (let i = 0; i < pdf.getPageCount(); i++) expect(hasTenPercent(pdf, i)).toBe(false);
   });
 });

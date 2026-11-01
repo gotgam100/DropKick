@@ -248,6 +248,7 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
   const scenes = numberScenes(
     doc.lines.map((l) => l.style),
     (n) => doc.lines[n - 1].text,
+    doc.sceneStart ?? 1,
   );
 
   for (let i = 0; i < doc.lines.length; i++) {

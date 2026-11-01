@@ -49,6 +49,9 @@ function lineDecoration(style: LineStyle, continued: boolean, current: boolean):
 // 단어 중간에서 줄이 바뀌지 않게 하는 표시. 브라우저는 "7,800"이나 따옴표 뒤에서도
 // 줄을 끊는데, 페이지 계산은 띄어쓰기에서만 끊으므로 화면도 그렇게 맞춘다.
 // (줄보다 긴 단어는 표시하지 않아 글자 단위로 끊긴다. 페이지 계산도 같다.)
+// 빈 원고의 안내 글. CodeMirror의 placeholder는 글을 쓰는 순간 화면 요소가 지워져서,
+// 한글을 처음 칠 때 조합이 끊겼다. (ㅅㅣ) 그래서 요소 없이 CSS 글자로만 보여 준다.
+const emptyDocLine = Decoration.line({ class: "cm-doc-empty" });
 const noWrapMark = Decoration.mark({ class: "cm-nowrap" });
 const WORD = /\S+/g;
 
@@ -113,7 +116,9 @@ const styleDecorations = ViewPlugin.fromClass(
       const currentLine = state.doc.lineAt(state.selection.main.head).number;
       const ranges: Range<Decoration>[] = [];
       let lastLine = 0;
-      for (const { from, to } of view.visibleRanges) {
+      // 처음 그릴 때처럼 보이는 범위가 아직 없으면 문서 전체를 본다. (빈 원고에도 첫 줄 장식이 붙도록)
+      const visible = view.visibleRanges.length > 0 ? view.visibleRanges : [{ from: 0, to: state.doc.length }];
+      for (const { from, to } of visible) {
         let pos = from;
         while (pos <= to) {
           const line = state.doc.lineAt(pos);
@@ -123,6 +128,7 @@ const styleDecorations = ViewPlugin.fromClass(
               CONTINUOUS_STYLES.has(style) && styles[line.number - 2] === style;
             const current = line.number === currentLine && view.hasFocus;
             ranges.push(lineDecoration(style, continued, current).range(line.from));
+            if (state.doc.length === 0) ranges.push(emptyDocLine.range(line.from));
 
             const width = ELEMENTS[style].width;
             for (const match of line.text.matchAll(WORD)) {
@@ -222,6 +228,8 @@ function sceneCompletions(context: CompletionContext) {
   let from: number;
   let names: string[];
   if (parts.time !== null) {
+    // "-"만 쓰고 띄어쓰기를 하기 전에는 아직 아무것도 제안하지 않는다.
+    if (parts.time === "" && !/[-–—]\s$/.test(typed)) return null;
     // 장소 뒤 " - "를 쓴 다음이면 시간대를 제안한다.
     from = pos - parts.time.length;
     names = knownTimes(headings, parts.place);

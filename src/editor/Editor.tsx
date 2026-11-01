@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import type { EditorState, Extension, Text } from "@codemirror/state";
-import { EditorView, keymap, placeholder } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, redo, undo } from "@codemirror/commands";
 import { openSearchPanel, searchKeymap } from "@codemirror/search";
 import { koreanSearchPhrases } from "./searchPhrases";
@@ -12,6 +12,8 @@ import {
   currentStyle,
   lineStylesField,
   sceneNumbersField,
+  sceneStartField,
+  setSceneStartEffect,
   scriptLines,
   renameCharacter,
   setStyle,
@@ -64,6 +66,8 @@ export type EditorHandle = {
   /** 글 범위가 화면에서 차지하는 곳 (메모 창을 그 글 밖에 띄우려고 쓴다) */
   rectOf: (from: number, to: number) => { top: number; bottom: number; left: number; right: number } | null;
   getNotes: () => ScriptNote[];
+  /** 첫 씬의 번호를 바꾼다. (스크립트 설정의 "씬 번호 시작") 스크립트를 불러올 때도 이 값을 쓴다. */
+  setSceneStart: (start: number) => void;
   /** 메모가 붙은 글을 골라 화면 가운데에 보이게 한다. (메모를 찾았으면 true) */
   selectNote: (id: string) => boolean;
   /** 저장해 둔 메모를 지금 글에 맞춰 붙인다. */
@@ -138,6 +142,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const extensionsRef = useRef<Extension | null>(null);
+  const sceneStartRef = useRef(1);
   const savedRef = useRef<Snapshot | null>(null);
   const dirtyRef = useRef(false);
   const lastInfoRef = useRef<EditorInfo | null>(null);
@@ -161,7 +166,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
 
   function publishAnalysis(state: EditorState) {
     const { pagination } = state.field(paginationField);
-    onAnalysisRef.current(analyzeScript(scriptLines(state), pagination));
+    onAnalysisRef.current(analyzeScript(scriptLines(state), pagination, state.field(sceneStartField)));
   }
 
   function setDirty(dirty: boolean) {
@@ -185,7 +190,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
     load(lines) {
       const view = viewRef.current;
       if (!view || !extensionsRef.current) return;
-      const state = createScriptState(lines, extensionsRef.current);
+      const state = createScriptState(lines, extensionsRef.current, sceneStartRef.current);
       view.setState(state);
       savedRef.current = snapshot(state);
       setDirty(false);
@@ -255,6 +260,14 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
       view.focus();
       return true;
     },
+    setSceneStart(start) {
+      const next = Number.isInteger(start) && start >= 1 ? start : 1;
+      sceneStartRef.current = next;
+      const view = viewRef.current;
+      if (!view || view.state.field(sceneStartField) === next) return;
+      view.dispatch({ effects: setSceneStartEffect.of(next) });
+      publishAnalysis(view.state);
+    },
     setNotes(notes) {
       const view = viewRef.current;
       if (!view) return;
@@ -318,7 +331,6 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
       searchPanelDrag(),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "false", lang: "ko" }),
-      placeholder("여기에 시나리오를 쓰세요…"),
       scriptEditing(),
       scriptNotes((id) => onNoteOpenRef.current(id)),
       pageBreaks(),

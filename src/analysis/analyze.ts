@@ -62,7 +62,12 @@ export function formatEighths(eighths: number): string {
   return rest === 0 ? `${whole}` : `${whole} ${rest}/8`;
 }
 
-export function analyzeScript(lines: ScriptLine[], pagination: Pagination = paginate(lines)): ScriptAnalysis {
+export function analyzeScript(
+  lines: ScriptLine[],
+  pagination: Pagination = paginate(lines),
+  /** 첫 씬의 번호 (스크립트 설정) */
+  sceneStart = 1,
+): ScriptAnalysis {
   const { pages } = pagination;
   const linesPerPage = Math.max(1, ...pages.flatMap((p) => p.lines.map((l) => l.row + 1)));
 
@@ -82,6 +87,7 @@ export function analyzeScript(lines: ScriptLine[], pagination: Pagination = pagi
   const sceneNumbers = numberScenes(
     lines.map((l) => l.style),
     (n) => lines[n - 1].text,
+    sceneStart,
   );
   const sceneLines = [...sceneNumbers.keys()];
 

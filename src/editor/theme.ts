@@ -26,6 +26,11 @@ export const paperTheme = EditorView.theme({
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
     { backgroundColor: "var(--selection)" },
   ".cm-placeholder": { color: "var(--muted)" },
+  ".cm-doc-empty::after": {
+    content: '"여기에 시나리오를 쓰세요…"',
+    color: "var(--muted)",
+    pointerEvents: "none",
+  },
   ".cm-panels": {
     backgroundColor: "var(--chrome)",
     color: "var(--ink)",

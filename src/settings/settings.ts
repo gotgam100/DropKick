@@ -6,6 +6,9 @@ import { DEFAULT_APP_SHORTCUTS, parseAppShortcuts, type AppShortcuts } from "./a
 
 export type ThemeMode = "system" | "light" | "dark";
 export type ZoomPercent = 80 | 100 | 120 | 150;
+
+/** ⌘+ / ⌘- 로 오가는 화면 비율 단계 */
+export const ZOOM_STEPS: readonly ZoomPercent[] = [80, 100, 120, 150];
 export type AutosaveInterval = 3000 | 10000 | 30000 | 0;
 
 export type StyleShortcuts = Record<LineStyle, string>;
@@ -15,10 +18,17 @@ export const DEFAULT_STYLE_SHORTCUTS: StyleShortcuts = {
   scene: "1",
   action: "2",
   character: "3",
-  parenthetical: "4",
-  dialogue: "5",
+  dialogue: "4",
+  parenthetical: "5",
   subheader: "6",
   transition: "7",
+};
+
+/** 스타일 순서를 바꾸기 전의 기본 단축키. 저장된 값이 이것과 같으면 새 기본값으로 바꿔 읽는다. */
+const OLD_DEFAULT_STYLE_SHORTCUTS: StyleShortcuts = {
+  ...DEFAULT_STYLE_SHORTCUTS,
+  parenthetical: "4",
+  dialogue: "5",
 };
 
 export const DEFAULT_NEXT_STYLE_RULES: NextStyleRules = {
@@ -107,9 +117,14 @@ export function loadSettings(): AppSettings {
     const rawKeep = typeof p.backupKeepCount === "number" ? Math.round(p.backupKeepCount) : 30;
     const backupKeepCount = Math.max(1, Math.min(100, rawKeep));
 
+    const saved: Partial<StyleShortcuts> =
+      p.styleShortcuts && typeof p.styleShortcuts === "object" ? p.styleShortcuts : {};
+    const untouched = (Object.keys(OLD_DEFAULT_STYLE_SHORTCUTS) as LineStyle[]).every(
+      (style) => saved[style] === OLD_DEFAULT_STYLE_SHORTCUTS[style],
+    );
     const styleShortcuts: StyleShortcuts = {
       ...DEFAULT_STYLE_SHORTCUTS,
-      ...(p.styleShortcuts && typeof p.styleShortcuts === "object" ? p.styleShortcuts : {}),
+      ...(untouched ? {} : saved),
     };
 
     const nextStyleOnEnter: NextStyleRules = {

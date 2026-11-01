@@ -8,14 +8,16 @@ export const MANUAL_SCENE_NUMBER = /^\s*(?:S\s*#|#)\s*(\d+)/i;
 /**
  * 씬헤딩마다 번호를 매긴다. 앞 씬 번호 + 1이 기본이고,
  * 직접 "#10." 또는 "S#10."처럼 번호를 쓴 씬이 있으면 그 번호부터 이어서 센다.
+ * 첫 씬은 start번(기본 1번)에서 시작한다. (스크립트 설정에서 고른 번호)
  * 결과는 줄 번호(1부터) → 씬 번호.
  */
 export function numberScenes(
   styles: readonly LineStyle[],
   textAt: (lineNumber: number) => string,
+  start = 1,
 ): Map<number, SceneNumber> {
   const result = new Map<number, SceneNumber>();
-  let previous = 0;
+  let previous = start - 1;
   for (let n = 1; n <= styles.length; n++) {
     if (styles[n - 1] !== "scene") continue;
     const match = MANUAL_SCENE_NUMBER.exec(textAt(n));

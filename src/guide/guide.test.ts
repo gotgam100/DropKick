@@ -30,21 +30,17 @@ describe("예시 스크립트", () => {
     const doc = fromFountain(SAMPLE_KOREAN_SCRIPT_FOUNTAIN);
     const subheaderIndex = doc.lines.findIndex((l) => l.style === "subheader");
     expect(subheaderIndex).toBeGreaterThan(0);
-    expect(doc.lines[subheaderIndex].text).toBe("집 안 거실");
+    expect(doc.lines[subheaderIndex].text).toBe("회상. 단편영화 <은행강도의 최후> 촬영장");
 
-    // 서브헤더 이후 3줄은 액션이어야 함
+    // 서브헤더 바로 아래는 액션 줄
     expect(doc.lines[subheaderIndex + 1].style).toBe("action");
-    expect(doc.lines[subheaderIndex + 1].text).toBe("수아가 외투를 걸치고 방을 나선다. 불 꺼진 거실이 고요하다.");
-    expect(doc.lines[subheaderIndex + 2].style).toBe("action");
-    expect(doc.lines[subheaderIndex + 2].text).toBe("벽시계 초침 소리만 어둠 속에서 나직하게 째깍거린다.");
-    expect(doc.lines[subheaderIndex + 3].style).toBe("action");
-    expect(doc.lines[subheaderIndex + 3].text).toBe("현관 앞에서 수아가 열쇠를 집어 들고 불을 끈다.");
+    expect(doc.lines[subheaderIndex + 1].text).toContain("슬레이트");
   });
 
-  it("최소 2개 이상의 씬헤딩을 포함한다", () => {
+  it("씬헤딩 4개로 이루어진 전문이다", () => {
     const doc = fromFountain(SAMPLE_KOREAN_SCRIPT_FOUNTAIN);
     const scenes = doc.lines.filter((l) => l.style === "scene");
-    expect(scenes.length).toBeGreaterThanOrEqual(2);
+    expect(scenes.length).toBe(4);
   });
 
   it("가이드 키 상수가 정의되어 있다", () => {

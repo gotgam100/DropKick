@@ -202,10 +202,11 @@ describe("스크립트 복사 및 붙여넣기 스타일 유지 (clipboard)", ()
   });
 
   it("가이드의 예시 스크립트 복사(copyScriptPayloadToClipboard) 후 붙여넣을 때 7가지 스타일이 온전히 유지된다", async () => {
-    // 1. 가이드에서 복사할 24개 줄 준비
+    // 1. 가이드에서 복사할 예시 스크립트 전문 준비
     const sampleFountain = parseFountainClipboard(SAMPLE_KOREAN_SCRIPT_FOUNTAIN);
     expect(sampleFountain).not.toBeNull();
-    expect(sampleFountain!.styles.length).toBe(24);
+    const total = sampleFountain!.styles.length;
+    expect(total).toBeGreaterThan(200);
 
     // 복사 실행
     await copyScriptPayloadToClipboard(sampleFountain!);
@@ -222,22 +223,19 @@ describe("스크립트 복사 및 붙여넣기 스타일 유지 (clipboard)", ()
     state = tr.state;
 
     const stylesAfter = state.field(lineStylesField);
-    expect(stylesAfter.length).toBe(24);
+    expect(stylesAfter.length).toBe(total);
 
     // 7가지 스타일이 실제 에디터 라인들에 적용되었는지 확인
-    expect(stylesAfter[0]).toBe("transition"); // FADE IN:
-    expect(stylesAfter[1]).toBe("scene");      // 외부. 시계 수리점 앞 - 저녁
-    expect(stylesAfter[2]).toBe("action");     // 저녁 노을이 낡은 간판을...
-    expect(stylesAfter[4]).toBe("character");  // 민재
-    expect(stylesAfter[5]).toBe("dialogue");   // 일찍 왔구나.
-    expect(stylesAfter[15]).toBe("parenthetical"); // (조심스러운 목소리로)
-    expect(stylesAfter[19]).toBe("subheader"); // 집 안 거실
-    expect(stylesAfter[23]).toBe("transition"); // FADE OUT.
+    expect(stylesAfter[0]).toBe("scene");         // 실내. 미숙의 집 - 낮
+    expect(stylesAfter[1]).toBe("action");        // 집안 곳곳을 뒤지고 있는...
+    expect(stylesAfter[2]).toBe("character");     // 미숙
+    expect(stylesAfter[3]).toBe("parenthetical"); // (중얼)
+    expect(stylesAfter[4]).toBe("dialogue");      // 하아... 없다...
+    expect(stylesAfter).toContain("subheader");   // 회상. 단편영화 ...
+    expect(stylesAfter).toContain("transition");  // Fade out.
 
-    expect(state.doc.line(1).text).toBe("FADE IN:");
-    expect(state.doc.line(2).text).toBe("외부. 시계 수리점 앞 - 저녁");
-    expect(state.doc.line(5).text).toBe("민재");
-    expect(state.doc.line(20).text).toBe("집 안 거실");
+    expect(state.doc.line(1).text).toBe("실내. 미숙의 집 - 낮");
+    expect(state.doc.line(3).text).toBe("미숙");
   });
 
   it("일반 클립보드로 들어온 Fountain 원문 텍스트도 자동으로 감지하여 스타일을 살려 붙여넣는다", () => {

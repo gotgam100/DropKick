@@ -6,12 +6,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEven
 import { createPortal } from "react-dom";
 import { formatEighths, type SceneSummary } from "../analysis/analyze";
 import type { ProjectNode, RevisionMeta } from "../project/model";
+import { canScope, hiddenIdsFor, scriptDocs, visibleTreeFor } from "../project/scripts";
 import { isDefaultPreset, type DocPreset } from "../project/presets";
 import { findParent, type DropPosition } from "../project/tree";
 import { searchProject, type Snippet } from "./search";
 import { IconPickerDialog, SfSymbolIcon } from "./sfSymbols";
 
-type NewKind = "doc" | "character" | "structure" | "folder";
+type NewKind = "script" | "doc" | "character" | "structure" | "folder";
 
 type Props = {
   title: string;
@@ -37,6 +38,12 @@ type Props = {
   onAddPreset?: (preset: DocPreset, parentId: string | null) => string | null;
   onCreatePreset?: () => void;
   onRename: (id: string, name: string) => void;
+  /** 스크립트를 복제해 새 버전으로 만든다. 새 스크립트의 id를 돌려준다. */
+  onDuplicateScript?: (id: string) => string | null;
+  /** 구분선 추가. afterId가 있으면 그 항목 바로 뒤에 둔다. */
+  onAddDivider?: (parentId: string | null, afterId?: string) => void;
+  /** 문서·폴더를 볼 스크립트를 정한다. scriptId가 없으면 모든 스크립트에서 보인다. */
+  onSetScope?: (id: string, scriptId?: string) => void;
   onRemove: (id: string) => void;
   onMove: (id: string, targetId: string, position: DropPosition) => void;
   onSetIcon?: (id: string, icon?: string) => void;
@@ -54,6 +61,15 @@ function Chevron({ open }: { open: boolean }) {
     <svg className={open ? "tree-chevron open" : "tree-chevron"} width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
       <path d="M3 2l4 3-4 3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+/** 폴더를 우클릭했을 때 메뉴 글 뒤에 붙는 열린 폴더 아이콘: "이 폴더 안에 만든다"는 뜻 */
+function InFolderMark() {
+  return (
+    <span className="menu-in-folder" title="이 폴더 안에">
+      <SfSymbolIcon type="folder" open />
+    </span>
   );
 }
 
@@ -91,6 +107,9 @@ export function ProjectTree(props: Props) {
     onAddPreset,
     onCreatePreset,
     onRename,
+    onDuplicateScript,
+    onAddDivider,
+    onSetScope,
     onRemove,
     onMove,
     onSetIcon,
@@ -105,6 +124,9 @@ export function ProjectTree(props: Props) {
   // 폴더는 처음에 닫혀 있고, 펼친 폴더만 기억한다. 스크립트는 처음에 펼쳐 둔다.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [scriptClosed, setScriptClosed] = useState(false);
+  // 다른 스크립트 전용 문서를 보이게 할지, 찾을 때 모든 스크립트를 뒤질지
+  const [showHidden, setShowHidden] = useState(false);
+  const [allScripts, setAllScripts] = useState(false);
   const expand = (id: string) => setExpanded((set) => (set.has(id) ? set : new Set(set).add(id)));
   const [renaming, setRenaming] = useState<string | null>(null);
   // 오른쪽 클릭 메뉴. node가 null이면 빈 곳을 누른 것
@@ -135,6 +157,7 @@ export function ProjectTree(props: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
+  const scopeSubmenuRef = useRef<HTMLDivElement>(null);
 
   // 우클릭 메뉴가 창 아래나 오른쪽 밖으로 잘리지 않도록 위치를 보정한다.
   useLayoutEffect(() => {
@@ -148,8 +171,8 @@ export function ProjectTree(props: Props) {
     el.style.top = `${nextTop}px`;
   }, [menu]);
 
-  const adjustSubmenuPosition = () => {
-    const sub = submenuRef.current;
+  const adjustSubmenuPosition = (ref: React.RefObject<HTMLDivElement | null> = submenuRef) => {
+    const sub = ref.current;
     if (!sub || typeof window === "undefined") return;
     sub.style.top = "-5px";
     const rect = sub.getBoundingClientRect();
@@ -161,10 +184,22 @@ export function ProjectTree(props: Props) {
   };
 
   const query = filter.trim();
+
+  // 스크립트가 여럿이면, 지금 스크립트에서 보이는 문서만 보여 준다. (다른 스크립트 전용은 가린다)
+  const scripts = useMemo(() => scriptDocs(tree), [tree]);
+  const multi = scripts.length > 1;
+  const scriptNames = useMemo(() => new Map(scripts.map((s) => [s.id, s.name])), [scripts]);
+  const hiddenIds = useMemo(() => hiddenIdsFor(tree, mainScriptId), [tree, mainScriptId]);
+  const visible = useMemo(() => visibleTreeFor(tree, mainScriptId), [tree, mainScriptId]);
+  const showAll = showHidden || (query !== "" && allScripts);
+  const baseTree = showAll ? tree : visible.tree;
   const shown = useMemo(
-    () => searchProject(tree, scenes, mainScriptId, docTexts, query),
-    [tree, scenes, mainScriptId, docTexts, query],
+    () => searchProject(baseTree, scenes, mainScriptId, docTexts, query, allScripts || !multi),
+    [baseTree, scenes, mainScriptId, docTexts, query, allScripts, multi],
   );
+
+  // 스크립트를 바꾸면 씬 목록은 다시 펼친다.
+  useEffect(() => setScriptClosed(false), [mainScriptId]);
 
   // 지금 열린 문서가 보이도록, 그 문서가 들어 있는 폴더들을 펼친다.
   useEffect(() => {
@@ -449,6 +484,31 @@ export function ProjectTree(props: Props) {
     nodes.map((node) => {
       const isFolder = node.type === "folder";
       const isScript = node.id === mainScriptId;
+      const isAnyScript = node.type === "script";
+      if (node.type === "divider") {
+        const dividerDrop = drag && drag.over === node.id && drag.position ? ` drop-${drag.position}` : "";
+        return (
+          <div key={node.id} className="tree-item">
+            <div
+              role="separator"
+              className={`tree-row tree-divider${dividerDrop}${drag?.id === node.id ? " dragging" : ""}`}
+              style={{ paddingLeft: 4 + depth * 14 }}
+              data-node-id={node.id}
+              data-node-type="divider"
+              title="구분선 (끌어서 옮기고, 우클릭으로 지웁니다)"
+              onPointerDown={(e) => onRowPointerDown(e, node)}
+              onMouseDown={(e) => e.preventDefault()}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setMenu({ x: e.clientX, y: e.clientY, node });
+              }}
+            >
+              <span className="tree-divider-line" />
+            </div>
+          </div>
+        );
+      }
       const expandable = isFolder || isScript;
       const open = expandable && isOpen(node.id);
       const dropClass =
@@ -460,7 +520,9 @@ export function ProjectTree(props: Props) {
             aria-expanded={expandable ? open : undefined}
             aria-selected={node.id === activeDocId && !openRevisionId}
             tabIndex={-1}
-            className={`tree-row${node.id === activeDocId && !openRevisionId ? " active" : ""}${dropClass}${drag?.id === node.id ? " dragging" : ""}`}
+            className={`tree-row${node.id === activeDocId && !openRevisionId ? " active" : ""}${dropClass}${drag?.id === node.id ? " dragging" : ""}${
+              hiddenIds.has(node.id) ? " scope-hidden" : ""
+            }${isAnyScript ? (isScript ? " script-active" : " script-inactive") : ""}`}
             style={{ paddingLeft: 4 + depth * 14 }}
             data-node-id={node.id}
             data-node-type={node.type}
@@ -472,8 +534,10 @@ export function ProjectTree(props: Props) {
             onClick={() => {
               if (suppressClickRef.current) return;
               if (isFolder) toggle(node.id);
-              else onOpenDoc(node.id);
+              // 다른 스크립트 전용 문서는 지금 스크립트에서 열 수 없다.
+              else if (!hiddenIds.has(node.id)) onOpenDoc(node.id);
             }}
+            title={hiddenIds.has(node.id) ? "다른 스크립트 전용이라 지금은 열 수 없습니다" : undefined}
             onDoubleClick={() => setRenaming(node.id)}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -491,10 +555,15 @@ export function ProjectTree(props: Props) {
             >
               {expandable && <Chevron open={open} />}
             </span>
-            <span className={`tree-icon icon-${node.icon ?? node.type}`}>
+            <span className={`tree-icon icon-${node.icon ?? node.type}${isAnyScript ? (isScript ? " script-active" : " script-inactive") : ""}`}>
               <SfSymbolIcon type={node.type} icon={node.icon} open={open} />
             </span>
             {renderName(node)}
+            {node.scriptId && scriptNames.has(node.scriptId) && renaming !== node.id && (
+              <span className="tree-scope" title={`"${scriptNames.get(node.scriptId)}" 스크립트에서만 보입니다`}>
+                {scriptNames.get(node.scriptId)}
+              </span>
+            )}
             {dirtyDocIds.has(node.id) && <span className="tree-dirty" title="저장하지 않은 변경 사항" />}
             {isFolder && renaming !== node.id && (
               <button
@@ -550,6 +619,12 @@ export function ProjectTree(props: Props) {
           spellCheck={false}
         />
         {query && <div className="search-count">{shown.count > 0 ? `${shown.count}곳에서 찾음` : "찾는 내용이 없습니다"}</div>}
+        {query && multi && (
+          <label className="search-all-scripts">
+            <input type="checkbox" checked={allScripts} onChange={(e) => setAllScripts(e.target.checked)} />
+            <span>모든 스크립트에서 찾기</span>
+          </label>
+        )}
       </div>
 
       <div
@@ -565,6 +640,17 @@ export function ProjectTree(props: Props) {
           <p className="panel-empty">"{query}"이(가) 들어간 문서나 씬이 없습니다.</p>
         ) : (
           renderNodes(shown.tree, 0)
+        )}
+
+        {!query && multi && (visible.hidden > 0 || showHidden) && (
+          <button
+            type="button"
+            className="tree-hidden-note"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setShowHidden((v) => !v)}
+          >
+            {showHidden ? "다른 스크립트 전용 항목 다시 가리기" : `다른 스크립트 전용 항목 ${visible.hidden}개 숨김 · 보기`}
+          </button>
         )}
 
         {!query && (
@@ -678,7 +764,7 @@ export function ProjectTree(props: Props) {
                 style={{ left: menu.x, top: menu.y }}
                 onClick={(e) => e.stopPropagation()}
               >
-                {menu.node && (
+                {menu.node && menu.node.type !== "divider" && (
                   <>
                     <button
                       type="button"
@@ -702,6 +788,19 @@ export function ProjectTree(props: Props) {
                         아이콘 변경…
                       </button>
                     )}
+                    {menu.node.type === "script" && onDuplicateScript && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          const id = onDuplicateScript(menu.node!.id);
+                          if (id) setRenaming(id);
+                          setMenu(null);
+                        }}
+                      >
+                        복제해서 새 버전 만들기
+                      </button>
+                    )}
                     <hr />
                   </>
                 )}
@@ -709,11 +808,11 @@ export function ProjectTree(props: Props) {
                   type="button"
                   role="menuitem"
                   onClick={() => {
-                    add("doc", menuParent(menu.node));
+                    add("script", menuParent(menu.node));
                     setMenu(null);
                   }}
                 >
-                  새 문서{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}
+                  새 스크립트 추가{menu.node?.type === "folder" && <InFolderMark />}
                 </button>
                 <button
                   type="button"
@@ -723,16 +822,26 @@ export function ProjectTree(props: Props) {
                     setMenu(null);
                   }}
                 >
-                  새 폴더{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}
+                  새 폴더 추가{menu.node?.type === "folder" && <InFolderMark />}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    add("doc", menuParent(menu.node));
+                    setMenu(null);
+                  }}
+                >
+                  새 문서 추가{menu.node?.type === "folder" && <InFolderMark />}
                 </button>
                 {presets && onAddPreset ? (
                   <div
                     className="tree-submenu-trigger"
                     role="menuitem"
                     aria-haspopup="menu"
-                    onMouseEnter={adjustSubmenuPosition}
+                    onMouseEnter={() => adjustSubmenuPosition(submenuRef)}
                   >
-                    <span>양식{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}</span>
+                    <span>양식 추가{menu.node?.type === "folder" && <InFolderMark />}</span>
                     <span className="tree-submenu-arrow" aria-hidden="true">
                       ▸
                     </span>
@@ -824,10 +933,67 @@ export function ProjectTree(props: Props) {
                       setMenu(null);
                     }}
                   >
-                    새 인물 설정{menu.node?.type === "folder" ? " (이 폴더 안에)" : ""}
+                    새 인물 설정{menu.node?.type === "folder" && <InFolderMark />}
                   </button>
                 )}
-                {menu.node && menu.node.id !== mainScriptId && (
+                {onAddDivider && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      const node = menu.node;
+                      // 문서·스크립트·구분선을 눌렀으면 그 바로 뒤에, 폴더나 빈 곳이면 그 안(맨 끝)에 둔다.
+                      onAddDivider(menuParent(node), node && node.type !== "folder" ? node.id : undefined);
+                      setMenu(null);
+                    }}
+                  >
+                    구분선 추가{menu.node?.type === "folder" && <InFolderMark />}
+                  </button>
+                )}
+                {menu.node && multi && onSetScope && canScope(menu.node) && (
+                  <>
+                    <hr />
+                    <div
+                      className="tree-submenu-trigger"
+                      role="menuitem"
+                      aria-haspopup="menu"
+                      onMouseEnter={() => adjustSubmenuPosition(scopeSubmenuRef)}
+                    >
+                      <span>전용 스크립트 선택</span>
+                      <span className="tree-submenu-arrow" aria-hidden="true">
+                        ▸
+                      </span>
+                      <div ref={scopeSubmenuRef} className="tree-menu tree-submenu" role="menu">
+                        <div className="preset-menu-section-label">이 {menu.node.type === "folder" ? "폴더" : "문서"}를 연결할 스크립트</div>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            onSetScope(menu.node!.id, undefined);
+                            setMenu(null);
+                          }}
+                        >
+                          {menu.node.scriptId ? "　" : "✓ "}모든 스크립트 (공통)
+                        </button>
+                        {scripts.map((script) => (
+                          <button
+                            key={script.id}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              onSetScope(menu.node!.id, script.id);
+                              setMenu(null);
+                            }}
+                          >
+                            {menu.node!.scriptId === script.id ? "✓ " : "　"}
+                            {script.name} 전용
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+                {menu.node && (menu.node.type !== "script" || multi) && (
                   <>
                     <hr />
                     <button
@@ -840,7 +1006,7 @@ export function ProjectTree(props: Props) {
                         onRemove(id);
                       }}
                     >
-                      지우기…
+                      {menu.node.type === "divider" ? "구분선 지우기" : "지우기…"}
                     </button>
                   </>
                 )}

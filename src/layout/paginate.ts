@@ -157,10 +157,16 @@ function contdName(name: string) {
 /** 할리우드 표준 줄 간격(12pt)일 때 한 페이지 줄 수. 예상 러닝타임 계산에 쓴다. */
 export const STANDARD_LINES_PER_PAGE = 54;
 
-export function paginate(lines: ScriptLine[], linesPerPage: number = PAGE.linesPerPage): Pagination {
+export function paginate(
+  lines: ScriptLine[],
+  linesPerPage: number = PAGE.linesPerPage,
+  /** 첫 씬의 번호 (스크립트 설정) */
+  sceneStart = 1,
+): Pagination {
   const scenes = numberScenes(
     lines.map((l) => l.style),
     (n) => lines[n - 1].text,
+    sceneStart,
   );
   const blocks = buildBlocks(lines);
   const pages: Page[] = [];

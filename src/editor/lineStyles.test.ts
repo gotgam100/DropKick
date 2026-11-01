@@ -34,6 +34,69 @@ function styles(state: EditorState) {
   return scriptLines(state).map((l) => l.style);
 }
 
+describe("한글 입력 중 Enter로 줄바꿈이 두 번 들어올 때", () => {
+  it("글 뒤의 줄바꿈 둘을 하나로 줄이고, 인물 줄 다음은 대사가 된다", () => {
+    let state = createScriptState([
+      { style: "scene", text: "실내" },
+      { style: "character", text: "민재" },
+    ]);
+    const end = state.doc.length;
+    state = state.update({
+      changes: { from: end, insert: "\n\n" },
+      selection: EditorSelection.cursor(end + 2),
+      userEvent: "input.type.compose",
+    }).state;
+    expect(state.doc.toString()).toBe("실내\n민재\n");
+    expect(styles(state)).toEqual(["scene", "character", "dialogue"]);
+    expect(state.selection.main.head).toBe(state.doc.length);
+  });
+
+  it("붙여넣기로 들어온 빈 줄은 그대로 둔다", () => {
+    let state = createScriptState([{ style: "action", text: "가" }]);
+    state = state.update({ changes: { from: 1, insert: "\n\n" }, userEvent: "input.paste" }).state;
+    expect(state.doc.toString()).toBe("가\n\n");
+  });
+});
+
+describe("괄호지문", () => {
+  it("글이 있는 줄을 괄호지문으로 바꾸면 괄호로 감싼다", () => {
+    let s = createScriptState([{ style: "dialogue", text: "등 돌린 채" }]);
+    s = run(at(s, 0), setStyle("parenthetical"));
+    expect(scriptLines(s)).toEqual([{ style: "parenthetical", text: "(등 돌린 채)" }]);
+  });
+
+  it("이미 괄호가 있으면 그대로 두고, 한쪽만 있으면 모자란 쪽만 채운다", () => {
+    let s = createScriptState([
+      { style: "dialogue", text: "(웃으며)" },
+      { style: "dialogue", text: "(웃으며" },
+    ]);
+    s = run(at(s, 0), setStyle("parenthetical"));
+    s = run(at(s, s.doc.line(2).from), setStyle("parenthetical"));
+    expect(scriptLines(s).map((l) => l.text)).toEqual(["(웃으며)", "(웃으며)"]);
+  });
+
+  it("빈 줄은 ()로 만들고 커서를 괄호 안에 둔다", () => {
+    let s = createScriptState([{ style: "action", text: "" }]);
+    s = run(s, setStyle("parenthetical"));
+    expect(s.doc.toString()).toBe("()");
+    expect(s.selection.main.head).toBe(1);
+  });
+
+  it("Tab으로 괄호지문이 될 때도 감싸고, 줄 끝 커서가 유지되어 이어서 Tab을 누를 수 있다", () => {
+    let s = createScriptState([{ style: "dialogue", text: "응." }]);
+    s = run(at(s, s.doc.length), cycleLineStyle(1));
+    expect(scriptLines(s)[0]).toEqual({ style: "parenthetical", text: "(응.)" });
+    expect(s.selection.main.head).toBe(s.doc.length);
+  });
+
+  it("바뀐 줄을 되돌리면 글과 스타일이 함께 돌아온다", () => {
+    let s = createScriptState([{ style: "dialogue", text: "응." }], [history()]);
+    s = run(at(s, 0), setStyle("parenthetical"));
+    s = run(s, undo);
+    expect(scriptLines(s)[0]).toEqual({ style: "dialogue", text: "응." });
+  });
+});
+
 describe("Enter", () => {
   it("인물 줄 끝에서 Enter → 다음 줄은 대사", () => {
     let s = createScriptState(sample);
@@ -157,6 +220,14 @@ describe("스타일 지정", () => {
     expect(styles(s).slice(-1)[0]).toBe("character");
     s = run(s, cycleLineStyle(-1));
     expect(styles(s).slice(-1)[0]).toBe("action");
+  });
+
+  it("Tab: 글이 있는 대사 줄 끝에서도 순환하고, 순서는 대사 다음 괄호지문", () => {
+    let s = createScriptState(sample);
+    s = run(at(s, s.doc.length), cycleLineStyle(1));
+    expect(styles(s)[3]).toBe("parenthetical");
+    s = run(s, cycleLineStyle(1));
+    expect(styles(s)[3]).toBe("subheader");
   });
 
   it("Tab: 글자 중간에서는 스타일을 바꾸지 않는다", () => {
@@ -286,6 +357,28 @@ describe("인물 이름 일괄 바꾸기", () => {
     const result = renameCharacter(s, "민재", "준호", true, ["민재", "민재석"]);
     const next = s.update({ changes: result.changes }).state;
     expect(scriptLines(next)[1].text).toBe("민재석 형, 준호가 왔어요.");
+  });
+
+  it("씬헤딩, 서브헤더, 괄호지문 속 이름도 바꾼다", () => {
+    const s = createScriptState([
+      { style: "scene", text: "내부. 민재의 방 - 밤" },
+      { style: "subheader", text: "민재의 책상" },
+      { style: "character", text: "민재" },
+      { style: "parenthetical", text: "(민재는 웃으며)" },
+      { style: "dialogue", text: "응." },
+      { style: "transition", text: "민재 컷 투" },
+    ]);
+    const result = renameCharacter(s, "민재", "준호", true);
+    expect([result.characterLines, result.textHits]).toEqual([1, 3]);
+    const next = s.update({ changes: result.changes }).state;
+    expect(scriptLines(next).map((l) => l.text)).toEqual([
+      "내부. 준호의 방 - 밤",
+      "준호의 책상",
+      "준호",
+      "(준호는 웃으며)",
+      "응.",
+      "민재 컷 투",
+    ]);
   });
 
   it("영문 이름은 대소문자를 가리지 않는다", () => {

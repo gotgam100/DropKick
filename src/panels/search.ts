@@ -41,6 +41,8 @@ export function searchProject(
   mainScriptId: string,
   docTexts: Map<string, string>,
   rawQuery: string,
+  /** 다른 스크립트의 본문까지 찾는다. 끄면 다른 스크립트는 이름으로만 찾는다. */
+  allScripts = true,
 ): SearchResult {
   const query = rawQuery.trim();
   const empty = { docSnippets: new Map(), sceneSnippets: new Map(), count: 0 };
@@ -65,7 +67,9 @@ export function searchProject(
         const children = visit(node.children);
         return children.length > 0 || has(node.name) ? [{ ...node, children }] : [];
       }
+      if (node.type === "divider") return [];
       if (node.id === mainScriptId) return sceneHits.length > 0 || has(node.name) ? [node] : [];
+      if (node.type === "script" && !allScripts && !has(node.name)) return [];
       if (has(node.name)) {
         docCount++;
         return [node];

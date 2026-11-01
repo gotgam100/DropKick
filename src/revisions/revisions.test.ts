@@ -139,7 +139,7 @@ describe("수정고에 함께 넣는 설정 문서", () => {
 
   it("개요·인물 설정 폴더의 문서와 인물 설정은 넣고, 메모·기타는 넣지 않는다", () => {
     const { tree } = project();
-    expect(settingsDocs(tree).map((d) => `${d.folders.join("/")}/${d.doc.name}`)).toEqual(["개요/로그라인", "인물 설정/민재"]);
+    expect(settingsDocs(tree).map((d) => `${d.folders.join("/")}/${d.doc.name}`)).toEqual(["개요/시놉시스", "개요/3막 구조 양식", "개요/로그라인", "인물 설정/민재"]);
   });
 
   it("되돌리면 지운 설정 문서는 원래 폴더에 다시 생기고, 메모는 그대로", () => {

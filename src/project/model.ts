@@ -14,6 +14,8 @@
 import { toFountain } from "../fountain/fountain";
 import type { ScriptLine } from "../editor/lineStyles";
 import { parseNotes, type ScriptNote } from "../editor/notes";
+import { parseScriptSettings, type ScriptSettings } from "./scriptSettings";
+import { createDefaultStructureBoard, serializeStructureBoard } from "../structure/structureModel";
 
 export const PROJECT_EXTENSION = ".dropkick";
 export const MANIFEST_FILE = "project.json";
@@ -21,9 +23,15 @@ export const MANIFEST_FORMAT = "dropkick-project";
 
 export type DocType = "script" | "memo" | "character" | "synopsis" | "structure";
 
-export type DocNode = { id: string; type: DocType; name: string; file: string; icon?: string };
-export type FolderNode = { id: string; type: "folder"; name: string; children: ProjectNode[]; icon?: string };
-export type ProjectNode = DocNode | FolderNode;
+/**
+ * scriptId: 이 스크립트가 열려 있을 때만 보이는 "전용" 문서·폴더. 없으면 모든 스크립트에서 보이는 공통 항목.
+ * (스크립트 문서 자신에게는 쓰지 않는다)
+ */
+export type DocNode = { id: string; type: DocType; name: string; file: string; icon?: string; scriptId?: string };
+export type FolderNode = { id: string; type: "folder"; name: string; children: ProjectNode[]; icon?: string; scriptId?: string };
+/** 사이드바의 구분선. 파일이 없고, 끌어서 옮길 수 있다. */
+export type DividerNode = { id: string; type: "divider"; name: string; icon?: undefined; scriptId?: undefined };
+export type ProjectNode = DocNode | FolderNode | DividerNode;
 
 /** 수정고(1고, 2고 …) 목록 항목. 내용은 dir 폴더에 있다 (src/revisions) */
 export type RevisionStats = { pages: number; scenes: number; runtimeMinutes: number };
@@ -36,21 +44,28 @@ export type RevisionMeta = {
   /** 프로젝트 안 상대 경로 (.dropkick-revisions/…) */
   dir: string;
   stats?: RevisionStats;
+  /** 어느 스크립트의 고인지 (예전 프로젝트는 원고 하나뿐이라 비어 있다) */
+  script?: string;
 };
 
 export type ProjectManifest = {
   format: typeof MANIFEST_FORMAT;
   version: 1;
   title: string;
-  /** 원고(시나리오) 문서의 id */
+  /**
+   * 지금 편집기에 열려 있는(활성) 스크립트 문서의 id.
+   * 프로젝트에는 스크립트가 여럿일 수 있고, 통계·씬 목록·내보내기·수정고·메모는 이 스크립트를 따른다.
+   */
   mainScript: string;
   tree: ProjectNode[];
   /** 마지막으로 연 문서의 id */
   lastOpened?: string;
   /** 수정고 목록 (오래된 것부터) */
   revisions?: RevisionMeta[];
-  /** 원고에 붙인 메모 (src/editor/notes.ts) */
+  /** 원고에 붙인 메모 (src/editor/notes.ts). 어느 스크립트의 것인지는 메모마다 script로 적는다. */
   notes?: ScriptNote[];
+  /** 스크립트마다 따로 가지는 설정 (표지 항목 켜고 끄기, 씬 번호 시작, 워터마크). 키는 스크립트 id */
+  scriptSettings?: Record<string, ScriptSettings>;
 };
 
 export const DOC_TYPE_LABELS: Record<DocType, string> = {
@@ -89,7 +104,7 @@ export function walkDocs(tree: ProjectNode[]): DocNode[] {
   const visit = (nodes: ProjectNode[]) => {
     for (const node of nodes) {
       if (node.type === "folder") visit(node.children);
-      else docs.push(node);
+      else if (node.type !== "divider") docs.push(node);
     }
   };
   visit(tree);
@@ -119,7 +134,9 @@ function parseNode(value: unknown, ids: Set<string>): ProjectNode {
   if (typeof id !== "string" || !id || ids.has(id)) throw new ProjectError("트리 항목 id가 없거나 겹칩니다.");
   if (typeof name !== "string") throw new ProjectError("트리 항목 이름이 없습니다.");
   ids.add(id);
+  if (node.type === "divider") return { id, type: "divider", name };
   const icon = typeof node.icon === "string" && node.icon.trim() ? node.icon.trim() : undefined;
+  const scriptId = typeof node.scriptId === "string" && node.scriptId ? node.scriptId : undefined;
   if (node.type === "folder") {
     if (!Array.isArray(node.children)) throw new ProjectError(`"${name}" 폴더 형식이 잘못되었습니다.`);
     return {
@@ -128,6 +145,7 @@ function parseNode(value: unknown, ids: Set<string>): ProjectNode {
       name,
       children: node.children.map((c) => parseNode(c, ids)),
       ...(icon ? { icon } : {}),
+      ...(scriptId ? { scriptId } : {}),
     };
   }
   if (typeof node.type !== "string" || !DOC_TYPES.includes(node.type)) {
@@ -136,7 +154,14 @@ function parseNode(value: unknown, ids: Set<string>): ProjectNode {
   if (typeof node.file !== "string" || !isSafeRelativePath(node.file)) {
     throw new ProjectError(`"${name}"의 파일 경로가 올바르지 않습니다.`);
   }
-  return { id, type: node.type as DocType, name, file: node.file, ...(icon ? { icon } : {}) };
+  return {
+    id,
+    type: node.type as DocType,
+    name,
+    file: node.file,
+    ...(icon ? { icon } : {}),
+    ...(scriptId && node.type !== "script" ? { scriptId } : {}),
+  };
 }
 
 export function parseManifest(text: string): ProjectManifest {
@@ -157,6 +182,16 @@ export function parseManifest(text: string): ProjectManifest {
   const main = docs.find((d) => d.id === data.mainScript && d.type === "script") ?? docs.find((d) => d.type === "script");
   if (!main) throw new ProjectError("프로젝트에 시나리오 문서가 없습니다.");
 
+  // 없는 스크립트를 가리키는 "전용" 표시는 공통으로 되돌린다.
+  const scriptIds = new Set(docs.filter((d) => d.type === "script").map((d) => d.id));
+  const fixScope = (nodes: ProjectNode[]): ProjectNode[] =>
+    nodes.map((n) => {
+      const scoped = n.scriptId && !scriptIds.has(n.scriptId);
+      const base = scoped ? (({ scriptId: _drop, ...rest }) => rest)(n) : n;
+      return base.type === "folder" ? { ...base, children: fixScope(base.children) } : (base as ProjectNode);
+    });
+  const fixedTree = fixScope(tree);
+
   const files = new Set<string>();
   for (const doc of docs) {
     if (files.has(doc.file)) throw new ProjectError(`"${doc.file}" 파일을 두 문서가 함께 쓰고 있습니다.`);
@@ -173,20 +208,31 @@ export function parseManifest(text: string): ProjectManifest {
           typeof r.dir === "string" &&
           isSafeRelativePath(r.dir) &&
           r.dir.startsWith(".dropkick-revisions/"),
-      ).map((r) => ({ ...r, note: typeof r.note === "string" ? r.note : "" }))
+      ).map((r) => ({
+        ...r,
+        note: typeof r.note === "string" ? r.note : "",
+        script: typeof r.script === "string" && scriptIds.has(r.script) ? r.script : main.id,
+      }))
     : undefined;
 
-  const notes = parseNotes(data.notes);
+  // 예전 프로젝트(스크립트 하나)의 메모는 그 스크립트의 것이다.
+  const notes = parseNotes(data.notes).map((n) => ({
+    ...n,
+    script: n.script && scriptIds.has(n.script) ? n.script : main.id,
+  }));
+
+  const scriptSettings = parseScriptSettings(data.scriptSettings, scriptIds);
 
   return {
     format: MANIFEST_FORMAT,
     version: 1,
     title: typeof data.title === "string" ? data.title : "",
     mainScript: main.id,
-    tree,
+    tree: fixedTree,
     lastOpened: typeof data.lastOpened === "string" && ids.has(data.lastOpened) ? data.lastOpened : undefined,
     ...(revisions && revisions.length > 0 ? { revisions } : {}),
     ...(notes.length > 0 ? { notes } : {}),
+    ...(Object.keys(scriptSettings).length > 0 ? { scriptSettings } : {}),
   };
 }
 
@@ -198,10 +244,9 @@ export function serializeManifest(manifest: ProjectManifest): string {
 
 export type NewProject = { manifest: ProjectManifest; texts: Map<string, string> };
 
-/** 새 프로젝트의 기본 트리: 개요, 스크립트, 인물 설정, 메모, 기타 */
-export const DEFAULT_FOLDERS_BEFORE_SCRIPT = ["개요"];
+/** 새 프로젝트의 기본 트리: 개요(시놉시스, 3막 구조 양식), 메인 스크립트, 인물 설정, 메모, 기타, 구분선, 수정고 */
 export const DEFAULT_FOLDERS_AFTER_SCRIPT = ["인물 설정", "메모", "기타"];
-export const SCRIPT_NAME = "스크립트";
+export const SCRIPT_NAME = "메인 스크립트";
 
 /** 빈 원고: 새 스크립트 작성 시 첫 줄은 씬헤딩으로 시작 */
 export const BLANK_SCRIPT_LINES: ScriptLine[] = [{ style: "scene", text: "" }];
@@ -211,6 +256,8 @@ export const BLANK_SCRIPT_LINES: ScriptLine[] = [{ style: "scene", text: "" }];
  */
 export function createProject(title: string, script?: { titlePage: string | null; lines: ScriptLine[] }): NewProject {
   const scriptId = newId("script");
+  const synopsisId = newId("synopsis");
+  const structureId = newId("structure");
   const folder = (name: string): FolderNode => ({ id: newId("folder"), type: "folder", name, children: [] });
   const manifest: ProjectManifest = {
     format: MANIFEST_FORMAT,
@@ -218,9 +265,19 @@ export function createProject(title: string, script?: { titlePage: string | null
     title,
     mainScript: scriptId,
     tree: [
-      ...DEFAULT_FOLDERS_BEFORE_SCRIPT.map(folder),
+      {
+        id: newId("folder"),
+        type: "folder",
+        name: "개요",
+        children: [
+          { id: synopsisId, type: "synopsis", name: "시놉시스", file: "개요/시놉시스.md" },
+          { id: structureId, type: "structure", name: "3막 구조 양식", file: "개요/3막 구조 양식.beats" },
+        ],
+      },
       { id: scriptId, type: "script", name: SCRIPT_NAME, file: `${SCRIPT_NAME}.fountain` },
       ...DEFAULT_FOLDERS_AFTER_SCRIPT.map(folder),
+      { id: newId("divider"), type: "divider", name: "구분선" },
+      folder("수정고"),
     ],
     lastOpened: scriptId,
   };
@@ -228,7 +285,14 @@ export function createProject(title: string, script?: { titlePage: string | null
     titlePage: script ? script.titlePage : `Title: ${title}`,
     lines: script && script.lines.length > 0 ? script.lines : BLANK_SCRIPT_LINES,
   });
-  return { manifest, texts: new Map([[scriptId, scriptText]]) };
+  return {
+    manifest,
+    texts: new Map([
+      [scriptId, scriptText],
+      [synopsisId, ""],
+      [structureId, serializeStructureBoard(createDefaultStructureBoard())],
+    ]),
+  };
 }
 
 // ---------- project.json이 없을 때 다시 만들기 ----------

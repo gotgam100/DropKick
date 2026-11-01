@@ -5,7 +5,7 @@
  * 화면의 페이지 번호와 PDF의 페이지 번호가 같다.
  * 영문은 Courier Prime, 한글은 나눔고딕코딩으로 찍는다.
  */
-import { PDFDocument, type PDFFont, type PDFPage } from "pdf-lib";
+import { PDFDocument, degrees, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import type { ScriptDocument } from "../fountain/fountain";
 import { KOREAN_SCALE, splitRuns, textColumns } from "../layout/metrics";
@@ -79,14 +79,46 @@ function drawTitlePage(pdf: PDFDocument, fonts: Fonts, titlePage: string) {
   bottom.forEach((line, i) => drawLine(page, fonts, line, 0, PAGE.linesPerPage - bottom.length + i, false));
 }
 
+/** 워터마크 글자: 불투명도 10%, 기울어진 글씨가 쪽 전체에 반복된다. */
+export const WATERMARK = { opacity: 0.1, angle: 35, size: 22, maxWidth: 360 };
+
+/** 한 쪽 전체에 워터마크를 반복해서 찍는다. 글이 길면 글자를 줄여 한 줄이 쪽 안에 들어오게 한다. */
+export function drawWatermark(page: PDFPage, font: PDFFont, rawText: string) {
+  const text = rawText.replace(/\s+/g, " ").trim();
+  if (!text) return;
+  const { width, height } = page.getSize();
+  const natural = font.widthOfTextAtSize(text, WATERMARK.size);
+  const size = natural > WATERMARK.maxWidth ? Math.max(8, (WATERMARK.size * WATERMARK.maxWidth) / natural) : WATERMARK.size;
+  const w = font.widthOfTextAtSize(text, size);
+  const rad = (WATERMARK.angle * Math.PI) / 180;
+  const stepX = w + 70;
+  const stepY = Math.max(110, w * Math.sin(rad) + size * 4);
+  // 글자 가운데가 격자 점에 오도록 시작점을 옮긴다. 줄마다 반 칸씩 엇갈리게 놓는다.
+  for (let row = 0, cy = -stepY; cy < height + stepY; cy += stepY, row++) {
+    for (let cx = -stepX + (row % 2 ? stepX / 2 : 0); cx < width + stepX; cx += stepX) {
+      page.drawText(text, {
+        x: cx - (w / 2) * Math.cos(rad),
+        y: cy - (w / 2) * Math.sin(rad),
+        size,
+        font,
+        color: rgb(0, 0, 0),
+        opacity: WATERMARK.opacity,
+        rotate: degrees(WATERMARK.angle),
+      });
+    }
+  }
+}
+
 /**
  * doc가 null이면 원고 없이 부록(extras)만 담는다.
  * extras는 원고 뒤에 문서마다 새 페이지에서 이어 붙는다.
+ * watermark가 있으면 표지와 부록을 포함한 모든 쪽에 찍는다.
  */
 export async function buildPdf(
   doc: ScriptDocument | null,
   files: FontFiles,
   extras: ExtraSection[] = [],
+  options: { watermark?: string } = {},
 ): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
@@ -105,7 +137,7 @@ export async function buildPdf(
 
   if (doc?.titlePage && doc.titlePage.trim()) drawTitlePage(pdf, fonts, doc.titlePage);
 
-  const { pages } = paginate(doc?.lines ?? []);
+  const { pages } = paginate(doc?.lines ?? [], PAGE.linesPerPage, doc?.sceneStart ?? 1);
   const totalPages = pages.length;
   for (const p of doc ? pages : []) {
     const page = pdf.addPage([WIDTH, HEIGHT]);
@@ -141,6 +173,10 @@ export async function buildPdf(
   }
 
   drawExtras(pdf, { regular: korean, bold: koreanBold }, extras);
+
+  if (options.watermark?.trim()) {
+    for (const page of pdf.getPages()) drawWatermark(page, korean, options.watermark);
+  }
 
   return pdf.save();
 }

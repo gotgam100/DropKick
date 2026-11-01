@@ -4,8 +4,8 @@ export const LINE_STYLES = [
   "scene",
   "action",
   "character",
-  "parenthetical",
   "dialogue",
+  "parenthetical",
   "subheader",
   "transition",
 ] as const;

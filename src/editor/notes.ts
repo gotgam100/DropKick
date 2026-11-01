@@ -15,6 +15,8 @@ export type ScriptNote = {
   /** 메모를 붙인 글. 불러올 때 위치가 맞는지 확인하는 데 쓴다. */
   quote: string;
   text: string;
+  /** 어느 스크립트의 메모인지 (프로젝트에 스크립트가 여럿일 때. 편집기 안에서는 쓰지 않는다) */
+  script?: string;
 };
 
 type NoteSpec = { id: string; text: string };
@@ -106,7 +108,8 @@ export function parseNotes(value: unknown): ScriptNote[] {
     if (typeof n.from !== "number" || typeof n.to !== "number" || !(n.from >= 0) || !(n.to > n.from)) continue;
     if (typeof n.quote !== "string" || typeof n.text !== "string") continue;
     ids.add(n.id);
-    notes.push({ id: n.id, from: n.from, to: n.to, quote: n.quote, text: n.text });
+    const script = typeof n.script === "string" && n.script ? n.script : undefined;
+    notes.push({ id: n.id, from: n.from, to: n.to, quote: n.quote, text: n.text, ...(script ? { script } : {}) });
   }
   return notes;
 }

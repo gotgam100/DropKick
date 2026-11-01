@@ -1,5 +1,7 @@
 import { useMemo } from "react";
-import { walkDocs, type ProjectNode } from "../project/model";
+import { findNode } from "../project/tree";
+import { visibleDocsFor } from "../project/scripts";
+import type { ProjectNode } from "../project/model";
 import type { RevisionMeta } from "../project/model";
 import type { PaneIndex, PaneTarget } from "./paneTargets";
 
@@ -41,14 +43,16 @@ export function PaneHeader({
   onClose,
 }: Props) {
   const { structures, documents } = useMemo(() => {
-    const docs = walkDocs(tree).filter((d) => d.id !== mainScriptId);
+    // 지금 스크립트에서 보이는 문서만 (스크립트 문서와 다른 스크립트 전용 문서는 뺀다)
+    const docs = visibleDocsFor(tree, mainScriptId);
     return {
       structures: docs.filter((d) => d.type === "structure"),
       documents: docs.filter((d) => d.type !== "structure"),
     };
   }, [tree, mainScriptId]);
 
-  // 원고 문서(주 스크립트)는 'script' 값으로 쓴다.
+  // 편집기에 열린(활성) 스크립트는 'script' 값으로 쓴다. 이름은 스크립트 이름을 보여 준다.
+  const scriptName = findNode(tree, mainScriptId)?.name ?? "스크립트";
   const value = target.kind === "doc" && target.id === mainScriptId ? "script" : encode(target);
 
   return (
@@ -61,7 +65,7 @@ export function PaneHeader({
           aria-label={`화면 ${index + 1}에 보여줄 내용`}
           onChange={(e) => onChange(decode(e.target.value))}
         >
-          <option value="script">스크립트</option>
+          <option value="script">{scriptName}</option>
           <option value="stats">통계</option>
           {structures.length > 0 && (
             <optgroup label="3막 구조">

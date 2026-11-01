@@ -20,13 +20,19 @@ import type { ScriptLine } from "../editor/lineStyles";
 import type { ScriptNote } from "../editor/notes";
 import { isLineStyle } from "../editor/styles";
 import { fromFountain, toFountain } from "../fountain/fountain";
+import type { ImportResult } from "../importer/ImportResultDialog";
+import type { Answers, Question } from "../importer/types";
 import { FONT_PATHS, type FontFiles } from "../pdf/fonts";
 import {
+  BLANK_SCRIPT_LINES,
   PROJECT_EXTENSION,
+  ProjectError,
   createProject,
+  newId,
   projectTitleFromPath,
   walkDocs,
   type DocNode,
+  type FolderNode,
   type ProjectManifest,
   type ProjectNode,
 } from "./model";
@@ -47,10 +53,17 @@ import { buildExtraSection, type ExtraSection } from "../export/extras";
 import { DEFAULT_CHARACTER_PRESET, formatPresetText, loadPresets, type DocPreset } from "./presets";
 import { loadSettings } from "../settings/settings";
 import { createDefaultStructureBoard, serializeStructureBoard } from "../structure/structureModel";
+import { compactSettings, sceneStartOf, type ScriptSettings } from "./scriptSettings";
+import { applyCoverToggles } from "../titlepage/titlePage";
+import { clearScope, inheritedScope, mergeNotes, notesOfScript, revisionsOfScript, scriptDocs, setNodeScope, visibleTreeFor } from "./scripts";
 import {
+  findNameConflict,
   findNode,
+  findParent,
+  folderNamed,
   insertNode,
   makeDoc,
+  makeDivider,
   makeFolder,
   moveNode,
   removeNode,
@@ -60,6 +73,7 @@ import {
   type DropPosition,
 } from "./tree";
 
+const DOCUMENT_FILTERS = [{ name: "PDF, Word, hwpx 파일만 분석이 가능합니다", extensions: ["pdf", "docx", "hwpx"] }];
 const SCRIPT_FILTERS = [{ name: "Fountain 시나리오", extensions: ["fountain", "spmd", "txt"] }];
 const LAST_KEY = "dropkick.last";
 
@@ -191,6 +205,32 @@ async function notify(text: string, kind: "info" | "warning" = "info") {
   else window.alert(text);
 }
 
+/**
+ * 같은 이름이 이미 있을 때 어떻게 할지 묻는다.
+ * - replace(대치): 기존 문서를 지우고(휴지통) 그 이름을 쓴다. 문서끼리일 때만 고를 수 있다.
+ * - keep(둘 다 보존): 나중 것의 이름 뒤에 2를 붙인다.
+ */
+async function askNameConflict(name: string, existing: ProjectNode, canReplace: boolean): Promise<"replace" | "keep" | "cancel"> {
+  const kind = existing.type === "folder" ? "폴더" : existing.type === "script" ? "스크립트" : "문서";
+  const text = `같은 이름의 ${kind}가 이미 있습니다.\n"${name}"`;
+  if (!canReplace || !isTauri()) {
+    return (await ask(`${text}\n\n둘 다 두고, 나중 것의 이름 뒤에 2를 붙일까요?`, "둘 다 보존")) ? "keep" : "cancel";
+  }
+  const answer = await message(
+    `${text}\n\n· 대치: 기존 문서를 지우고(저장하면 휴지통으로) 이 이름을 씁니다.\n· 둘 다 보존: 나중 것의 이름 뒤에 2를 붙입니다.`,
+    { title: "DropKick", kind: "warning", buttons: { yes: "대치", no: "둘 다 보존", cancel: "취소" } },
+  );
+  if (answer === "대치" || answer === "Yes") return "replace";
+  if (answer === "둘 다 보존" || answer === "No") return "keep";
+  return "cancel";
+}
+
+/** 대치로 지울 수 있는 것: 문서끼리일 때만 (폴더나 스크립트는 통째로 지워지므로 안 된다) */
+function canReplaceNode(moving: ProjectNode, existing: ProjectNode): boolean {
+  const plain = (n: ProjectNode) => n.type !== "folder" && n.type !== "script";
+  return plain(moving) && plain(existing);
+}
+
 // ---------- 저장 안 한 새 프로젝트 복구 ----------
 
 type Recovery = {
@@ -298,7 +338,14 @@ export function useProject(
     if (id === session.manifest.mainScript) continue;
     if (session.savedTexts.get(id) !== text) dirtyDocIds.add(id);
   }
-  if (scriptDirty || session.titlePage !== session.savedTitlePage) dirtyDocIds.add(session.manifest.mainScript);
+  // 활성 스크립트: 편집기에서 고쳤거나, 다른 스크립트로 갔다 오며 저장 안 한 글이 남아 있을 때
+  if (
+    scriptDirty ||
+    session.titlePage !== session.savedTitlePage ||
+    session.texts.get(session.manifest.mainScript) !== session.savedTexts.get(session.manifest.mainScript)
+  ) {
+    dirtyDocIds.add(session.manifest.mainScript);
+  }
   const treeDirty = session.treeChanged || session.deleted.length > 0;
   const dirty = dirtyDocIds.size > 0 || treeDirty;
   const dirtyRef = useRef(dirty);
@@ -315,8 +362,19 @@ export function useProject(
     [refresh],
   );
 
+  /** 활성 스크립트의 설정 (표지 항목 켜고 끄기, 씬 번호 시작, 워터마크) */
+  const settingsOf = (manifest: ProjectManifest): ScriptSettings | undefined => manifest.scriptSettings?.[manifest.mainScript];
+
+  /** 편집기가 매길 첫 씬 번호를 이 프로젝트의 활성 스크립트 설정에 맞춘다. (원고를 불러오기 전에 부른다) */
+  const applySceneStart = (manifest: ProjectManifest) =>
+    editorRef.current?.setSceneStart(sceneStartOf(settingsOf(manifest)));
+
   const currentScriptText = () =>
-    toFountain({ titlePage: sessionRef.current.titlePage, lines: editorRef.current?.getLines() ?? [] });
+    toFountain({
+      titlePage: sessionRef.current.titlePage,
+      lines: editorRef.current?.getLines() ?? [],
+      sceneStart: sceneStartOf(settingsOf(sessionRef.current.manifest)),
+    });
 
   // ---------- 저장 ----------
 
@@ -334,7 +392,8 @@ export function useProject(
       setSaveStatus((s) => ({ ...s, state: "saving" }));
       try {
         const token = editor.captureSaveState();
-        const notes = editor.getNotes();
+        const mainId = start.manifest.mainScript;
+        const notes = mergeNotes(start.manifest.notes, mainId, editor.getNotes(), mainId);
         const manifest = {
           ...start.manifest,
           title: projectTitleFromPath(path),
@@ -368,12 +427,23 @@ export function useProject(
         const current = sessionRef.current;
         const files = new Map(walkDocs(saved.tree).map((d) => [d.id, d.file]));
         const applyFiles = (nodes: ProjectNode[]): ProjectNode[] =>
-          nodes.map((n) => (n.type === "folder" ? { ...n, children: applyFiles(n.children) } : { ...n, file: files.get(n.id) ?? n.file }));
+          nodes.map((n) =>
+            n.type === "folder"
+              ? { ...n, children: applyFiles(n.children) }
+              : n.type === "divider"
+                ? n
+                : { ...n, file: files.get(n.id) ?? n.file },
+          );
         const treeUnchanged = current.manifest.tree === start.manifest.tree;
         sessionRef.current = {
           ...current,
           path,
           manifest: treeUnchanged ? saved : { ...current.manifest, title: saved.title, tree: applyFiles(current.manifest.tree) },
+          // 저장한 활성 스크립트의 글을 기준으로 삼는다. (다른 스크립트로 바꾸지 않았을 때)
+          texts:
+            current.manifest.mainScript === start.manifest.mainScript
+              ? new Map(current.texts).set(start.manifest.mainScript, texts.get(start.manifest.mainScript) ?? "")
+              : current.texts,
           savedManifest: saved,
           savedTexts: texts,
           savedTitlePage: start.titlePage,
@@ -399,9 +469,11 @@ export function useProject(
   const setNotes = useCallback(
     (notes: ScriptNote[]) => {
       const current = sessionRef.current;
+      const mainId = current.manifest.mainScript;
+      const merged = mergeNotes(current.manifest.notes, mainId, notes, mainId);
       sessionRef.current = {
         ...current,
-        manifest: { ...current.manifest, notes: notes.length > 0 ? notes : undefined },
+        manifest: { ...current.manifest, notes: merged.length > 0 ? merged : undefined },
         treeChanged: true,
       };
       refresh();
@@ -441,10 +513,13 @@ export function useProject(
     async (path: string, quiet = false) => {
       const loaded = await loadProject(tauriFs, path);
       const { titlePage, lines } = scriptLinesOf(loaded.texts.get(loaded.manifest.mainScript) ?? "");
+      applySceneStart(loaded.manifest);
       editorRef.current?.load(lines);
-      editorRef.current?.setNotes(loaded.manifest.notes ?? []);
+      editorRef.current?.setNotes(notesOfScript(loaded.manifest.notes, loaded.manifest.mainScript, loaded.manifest.mainScript));
       setScriptDirty(false);
-      const reopen = loaded.manifest.lastOpened && findNode(loaded.manifest.tree, loaded.manifest.lastOpened);
+      // 마지막으로 연 문서를 다시 연다. (스크립트는 활성 스크립트 하나만 편집기에 열린다)
+      const last = loaded.manifest.lastOpened ? findNode(loaded.manifest.tree, loaded.manifest.lastOpened) : null;
+      const reopen = last && (last.type !== "script" || last.id === loaded.manifest.mainScript);
       setSession(
         newSession(path, loaded.manifest, loaded.texts, titlePage, !loaded.recovered),
         reopen ? loaded.manifest.lastOpened : loaded.manifest.mainScript,
@@ -489,9 +564,11 @@ export function useProject(
     if (!(await confirmDiscard())) return;
     const { manifest, texts } = createProject("제목 없음");
     const { titlePage, lines } = scriptLinesOf(texts.get(manifest.mainScript) ?? "");
+    applySceneStart(manifest);
     editorRef.current?.load(lines);
     setScriptDirty(false);
     setSession(newSession(null, manifest, texts, titlePage, false), manifest.mainScript);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [confirmDiscard, editorRef, setScriptDirty, setSession]);
 
   /** 특정 원고 내용(예: 예시 스크립트)으로 새 프로젝트를 시작한다 */
@@ -500,6 +577,7 @@ export function useProject(
       if (!(await confirmDiscard())) return false;
       const { titlePage, lines } = scriptLinesOf(fountainText);
       const { manifest, texts } = createProject(title, { titlePage, lines });
+      applySceneStart(manifest);
       editorRef.current?.load(lines.length > 0 ? lines : [{ style: "action", text: "" }]);
       setScriptDirty(false);
       setSession(newSession(null, manifest, texts, titlePage, false), manifest.mainScript);
@@ -516,6 +594,7 @@ export function useProject(
     writeRecents([]);
     const { manifest, texts } = createProject("제목 없음");
     const { titlePage, lines } = scriptLinesOf(texts.get(manifest.mainScript) ?? "");
+    applySceneStart(manifest);
     editorRef.current?.load(lines);
     setScriptDirty(false);
     setSession(newSession(null, manifest, texts, titlePage, false), manifest.mainScript);
@@ -531,6 +610,7 @@ export function useProject(
     try {
       const { titlePage, lines } = scriptLinesOf(await invoke<string>("read_script", { path: chosen }));
       const { manifest, texts } = createProject(fileTitle(chosen), { titlePage, lines });
+      applySceneStart(manifest);
       editorRef.current?.load(lines.length > 0 ? lines : [{ style: "action", text: "" }]);
       setScriptDirty(false);
       setSession(newSession(null, manifest, texts, titlePage, false), manifest.mainScript);
@@ -539,6 +619,42 @@ export function useProject(
       refresh();
     } catch (error) {
       await showError("Fountain 파일을 가져오지 못했습니다.", error);
+    }
+  }, [confirmDiscard, editorRef, refresh, setScriptDirty, setSession]);
+
+  /**
+   * PDF·Word 시나리오 가져오기: 글자 위치와 모양으로 줄 스타일을 알아내 새 프로젝트로 연다.
+   * (원래 파일은 그대로. 어색한 곳은 끝나고 알려 준다)
+   */
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importAsk, setImportAsk] = useState<{ questions: Question[]; resolve: (answers: Answers | null) => void } | null>(null);
+  const importDocument = useCallback(async () => {
+    if (!(await confirmDiscard())) return;
+    const chosen = await open({ multiple: false, directory: false, filters: DOCUMENT_FILTERS, title: "PDF, Word, hwpx 파일만 분석이 가능합니다." });
+    if (typeof chosen !== "string") return;
+    try {
+      const { documentKind, importDocumentBytes } = await import("../importer/importDocument");
+      const kind = documentKind(chosen);
+      if (!kind) throw new ProjectError("Word(.docx), 한글(.hwpx), PDF 파일만 가져올 수 있습니다. 한글(.hwp) 파일은 한글에서 hwpx나 PDF로 저장한 뒤 가져와 주세요.");
+      const bytes = new Uint8Array(await invoke<ArrayBuffer>("read_binary", { path: chosen }));
+      const imported = await importDocumentBytes(kind, bytes, (questions) => new Promise((resolve) => setImportAsk({ questions, resolve })));
+      setImportAsk(null);
+      if (!imported) return; // 질문에서 취소
+      if (imported.lines.length === 0) throw new ProjectError("글을 찾지 못했습니다. 글자가 이미지로만 된 스캔 문서일 수 있습니다.");
+      const name = fileTitle(chosen);
+      const title = imported.title ?? name;
+      const lines = imported.lines;
+      const { manifest, texts } = createProject(name, { titlePage: `Title: ${title}`, lines });
+      applySceneStart(manifest);
+      editorRef.current?.load(lines);
+      setScriptDirty(false);
+      setSession(newSession(null, manifest, texts, `Title: ${title}`, false), manifest.mainScript);
+      sessionRef.current = { ...sessionRef.current, treeChanged: true };
+      refresh();
+      setImportResult({ fileName: name, kind, report: imported.report });
+    } catch (error) {
+      setImportAsk(null);
+      await showError("시나리오 문서를 가져오지 못했습니다.", error);
     }
   }, [confirmDiscard, editorRef, refresh, setScriptDirty, setSession]);
 
@@ -570,23 +686,146 @@ export function useProject(
     // 되돌린 뒤에도 그사이 쓴 글은 남기고, 트리만 되돌린다.
     const texts = new Map(saved.session.texts);
     for (const [id, text] of current.texts) if (texts.has(id)) texts.set(id, text);
+    // 그사이 스크립트를 바꾸거나 메모·수정고를 남겼다면 그것은 그대로 둔다.
+    const restored = saved.session.manifest;
+    const savedActive = findNode(restored.tree, saved.activeDocId);
     sessionRef.current = {
       ...current,
-      manifest: saved.session.manifest,
+      manifest: {
+        ...restored,
+        mainScript: current.manifest.mainScript,
+        lastOpened: current.manifest.lastOpened,
+        notes: current.manifest.notes,
+        revisions: current.manifest.revisions,
+        scriptSettings: current.manifest.scriptSettings,
+      },
       texts,
       deleted: saved.session.deleted,
       treeChanged: true,
     };
-    if (findNode(saved.session.manifest.tree, saved.activeDocId)) setActiveDocId(saved.activeDocId);
+    if (savedActive && (savedActive.type !== "script" || savedActive.id === current.manifest.mainScript)) {
+      setActiveDocId(saved.activeDocId);
+    }
     refresh();
   }, [refresh]);
 
   const dismissTreeUndo = useCallback(() => setTreeUndo(null), []);
 
-  const openDoc = useCallback((id: string) => {
-    if (findNode(sessionRef.current.manifest.tree, id)?.type === "folder") return;
-    setActiveDocId(id);
+  /** 트리 작업 되돌리기 기록을 비운다. (스크립트를 만들거나 지운 뒤에는 되돌릴 수 없다) */
+  const clearTreeUndo = useCallback(() => {
+    undoRef.current = null;
+    setTreeUndo(null);
   }, []);
+
+  /**
+   * 활성 스크립트를 바꾼다: 지금 스크립트의 글과 메모를 보관하고, 고른 스크립트를 편집기에 불러온다.
+   * 통계, 씬 목록, 내보내기, 수정고, 메모는 새 스크립트를 따라간다. (실행 취소 기록은 스크립트마다 새로 시작한다)
+   */
+  const switchScript = useCallback(
+    (id: string): boolean => {
+      const current = sessionRef.current;
+      const editor = editorRef.current;
+      const main = current.manifest.mainScript;
+      const target = findNode(current.manifest.tree, id);
+      if (!editor || !target || target.type !== "script" || id === main) return false;
+
+      const texts = new Map(current.texts);
+      if (scriptDirtyRef.current || current.titlePage !== current.savedTitlePage) texts.set(main, currentScriptText());
+      const notes = mergeNotes(current.manifest.notes, main, editor.getNotes(), main);
+      const { titlePage, lines } = scriptLinesOf(texts.get(id) ?? "");
+      editor.setSceneStart(sceneStartOf(current.manifest.scriptSettings?.[id]));
+      editor.load(lines.length > 0 ? lines : BLANK_SCRIPT_LINES);
+      editor.setNotes(notesOfScript(notes, id, id));
+      setScriptDirty(false);
+      sessionRef.current = {
+        ...current,
+        texts,
+        titlePage,
+        savedTitlePage: titlePage,
+        manifest: { ...current.manifest, mainScript: id, lastOpened: id, notes: notes.length > 0 ? notes : undefined },
+      };
+      setActiveDocId(id);
+      refresh();
+      return true;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editorRef, refresh, setScriptDirty],
+  );
+
+  const openDoc = useCallback(
+    (id: string) => {
+      const node = findNode(sessionRef.current.manifest.tree, id);
+      if (!node || node.type === "folder" || node.type === "divider") return;
+      // 다른 스크립트는 편집기에 불러와서 연다.
+      if (node.type === "script" && id !== sessionRef.current.manifest.mainScript) {
+        switchScript(id);
+        return;
+      }
+      setActiveDocId(id);
+    },
+    [switchScript],
+  );
+
+  /** 편집기에 열린(활성) 스크립트를 앞에 보여 준다. */
+  const openMainScript = useCallback(() => setActiveDocId(sessionRef.current.manifest.mainScript), []);
+
+  /** 새 스크립트: 폴더 안(없으면 다른 스크립트들 바로 뒤)에 빈 원고를 만들고 연다. */
+  const addScript = useCallback(
+    (parentId: string | null): string => {
+      const current = sessionRef.current;
+      const made = makeDoc(current.manifest.tree, "script", parentId);
+      let tree = insertNode(current.manifest.tree, made, parentId);
+      if (parentId === null) {
+        const lastScript = [...tree].reverse().find((n) => n.type === "script" && n.id !== made.id);
+        if (lastScript) tree = moveNode(tree, made.id, lastScript.id, "after");
+      }
+      const texts = new Map(current.texts);
+      texts.set(made.id, toFountain({ titlePage: `Title: ${sessionTitle(current)}`, lines: BLANK_SCRIPT_LINES }));
+      clearTreeUndo();
+      updateTree(tree, { texts });
+      switchScript(made.id);
+      return made.id;
+    },
+    [clearTreeUndo, switchScript, updateTree],
+  );
+
+  /** 스크립트를 복제해서 새 버전으로 만들고 연다. (글과 메모만 복사한다. 수정고는 복사하지 않는다) */
+  const duplicateScript = useCallback(
+    (id: string): string | null => {
+      const current = sessionRef.current;
+      const editor = editorRef.current;
+      const source = findNode(current.manifest.tree, id);
+      if (!editor || !source || source.type !== "script") return null;
+      const main = current.manifest.mainScript;
+      const parent = findParent(current.manifest.tree, id);
+      const siblings = parent ? parent.children : current.manifest.tree;
+      const doc: DocNode = { id: newId("script"), type: "script", name: uniqueName(siblings, `${source.name} 복사본`), file: "" };
+
+      const texts = new Map(current.texts);
+      texts.set(doc.id, id === main ? currentScriptText() : (current.texts.get(id) ?? ""));
+      const all = mergeNotes(current.manifest.notes, main, editor.getNotes(), main);
+      const copied = notesOfScript(all, id, main).map((n) => ({ ...n, id: newId("note"), script: doc.id }));
+
+      let tree = insertNode(current.manifest.tree, doc, parent?.id ?? null);
+      tree = moveNode(tree, doc.id, id, "after");
+      clearTreeUndo();
+      updateTree(tree, { texts });
+      const now = sessionRef.current;
+      const notes = [...all, ...copied];
+      const sourceSettings = now.manifest.scriptSettings?.[id];
+      sessionRef.current = {
+        ...now,
+        manifest: {
+          ...now.manifest,
+          notes: notes.length > 0 ? notes : undefined,
+          ...(sourceSettings ? { scriptSettings: { ...now.manifest.scriptSettings, [doc.id]: { ...sourceSettings } } } : {}),
+        },
+      };
+      switchScript(doc.id);
+      return doc.id;
+    },
+    [clearTreeUndo, editorRef, switchScript, updateTree],
+  );
 
   /**
    * 새 문서를 폴더 안에 만들고 연다. 만든 문서의 id를 돌려준다.
@@ -595,13 +834,20 @@ export function useProject(
    * - structure: 3막 구조 보드 (세이브 더 캣 15단계)
    */
   const addDoc = useCallback(
-    (parentId: string | null, type: "memo" | "character" | "structure" = "memo", name?: string) => {
+    (parentId: string | null, type: "memo" | "character" | "structure" = "memo", name?: string, scoped = false) => {
       const current = sessionRef.current;
       const tree = current.manifest.tree;
       const parent = parentId;
       const made = makeDoc(tree, type, parent);
       const siblings = parent ? ((findNode(tree, parent) as { children?: ProjectNode[] })?.children ?? []) : tree;
-      const doc = name ? { ...made, name: uniqueName(siblings, name.trim() || made.name) } : made;
+      // 스크립트 전용 폴더 안에 만들면 그 스크립트 전용이 된다. 3막 구조는 스크립트의 씬을 가리키므로,
+      // 스크립트가 여럿이면 지금 스크립트 전용으로 만든다. (scoped: 호출한 쪽이 전용으로 만들겠다고 한 경우)
+      const multi = scriptDocs(tree).length > 1;
+      const scriptId =
+        inheritedScope(tree, parent) ?? (multi && (type === "structure" || scoped) ? current.manifest.mainScript : undefined);
+      // 다른 스크립트 전용 문서와는 같은 이름이어도 된다.
+      const named = name ? { ...made, name: uniqueName(siblings, name.trim() || made.name, undefined, scriptId) } : made;
+      const doc: DocNode = scriptId ? { ...named, scriptId } : named;
       const texts = new Map(current.texts);
       if (type === "character") {
         const charPreset = loadPresets().find((p) => p.docType === "character") ?? DEFAULT_CHARACTER_PRESET;
@@ -618,6 +864,34 @@ export function useProject(
     [updateTree],
   );
 
+  /**
+   * 통계에서 "인물 설정 만들기": 인물 설정 문서를 만든다.
+   * 스크립트가 여럿이면 지금 스크립트 전용으로 만들고, 인물 설정 폴더가 다른 스크립트 전용이면
+   * 지금 스크립트 전용 폴더를 새로 만들어 그 안에 둔다.
+   */
+  const addCharacterProfile = useCallback(
+    (name: string): string => {
+      const current = sessionRef.current;
+      const tree = current.manifest.tree;
+      const main = current.manifest.mainScript;
+      if (scriptDocs(tree).length <= 1) return addDoc(folderNamed(tree, "인물 설정"), "character", name);
+      const shown = visibleTreeFor(tree, main).tree;
+      let folderId = folderNamed(shown, "인물 설정");
+      if (!folderId && folderNamed(tree, "인물 설정")) {
+        const scriptName = findNode(tree, main)?.name ?? "";
+        const folder: FolderNode = {
+          ...makeFolder(tree, null),
+          name: uniqueName(tree, `인물 설정 (${scriptName})`, undefined, undefined, true),
+          scriptId: main,
+        };
+        updateTree(insertNode(tree, folder, null), {});
+        folderId = folder.id;
+      }
+      return addDoc(folderId, "character", name, true);
+    },
+    [addDoc, updateTree],
+  );
+
   /** 양식으로 새 문서를 폴더 안에 만들고 연다. */
   const addDocWithPreset = useCallback(
     (parentId: string | null, preset: DocPreset, name?: string) => {
@@ -629,18 +903,27 @@ export function useProject(
       const baseName = name?.trim() || preset.defaultDocName.trim() || made.name;
       const defaultIcon = preset.docType === "character" ? "person" : preset.docType === "script" ? "film" : "doc.text";
       const customIcon = preset.icon && preset.icon !== defaultIcon ? preset.icon : undefined;
+      const inherited = made.type === "script" ? undefined : inheritedScope(tree, parent);
       const doc: DocNode = {
         ...made,
-        name: uniqueName(siblings, baseName),
+        name: uniqueName(siblings, baseName, undefined, inherited),
         ...(customIcon ? { icon: customIcon } : {}),
+        ...(inherited ? { scriptId: inherited } : {}),
       };
       const texts = new Map(current.texts);
       texts.set(doc.id, formatPresetText(preset, doc.name));
+      if (doc.type === "script") {
+        // 스크립트 양식은 새 스크립트로 만들어 연다.
+        clearTreeUndo();
+        updateTree(insertNode(tree, doc, parent), { texts });
+        switchScript(doc.id);
+        return doc.id;
+      }
       updateTree(insertNode(tree, doc, parent), { texts }, `"${doc.name}"을(를) 만들었습니다`);
       setActiveDocId(doc.id);
       return doc.id;
     },
-    [updateTree],
+    [clearTreeUndo, switchScript, updateTree],
   );
 
   /** 이미 열려 있는 일반 문서에 양식을 적용한다. */
@@ -666,44 +949,170 @@ export function useProject(
   const addFolder = useCallback(
     (parentId: string | null = null) => {
       const current = sessionRef.current;
-      const folder = makeFolder(current.manifest.tree, parentId);
+      const made = makeFolder(current.manifest.tree, parentId);
+      const inherited = inheritedScope(current.manifest.tree, parentId);
+      const folder: FolderNode = inherited ? { ...made, scriptId: inherited } : made;
       updateTree(insertNode(current.manifest.tree, folder, parentId), {}, `"${folder.name}" 폴더를 만들었습니다`);
       return folder.id;
     },
     [updateTree],
   );
 
-  const rename = useCallback(
-    (id: string, name: string) => {
+  /** 구분선을 만든다. afterId가 있으면 그 항목 바로 뒤에, 없으면 폴더(또는 맨 위)의 맨 끝에 둔다. */
+  const addDivider = useCallback(
+    (parentId: string | null = null, afterId?: string) => {
       const current = sessionRef.current;
-      const node = findNode(current.manifest.tree, id);
-      if (!node || node.name === name.trim()) return;
-      const tree = renameNode(current.manifest.tree, id, name);
-      // 본문 첫 제목이 옛 이름 그대로면 새 이름으로 함께 바꾼다. ("# 새 인물" → "# 민재")
-      const renamed = findNode(tree, id);
-      const text = current.texts.get(id);
-      const heading = `# ${node.name}`;
-      if (renamed && text !== undefined && (text === heading || text.startsWith(`${heading}\n`))) {
-        const texts = new Map(current.texts);
-        texts.set(id, `# ${renamed.name}${text.slice(heading.length)}`);
-        updateTree(tree, { texts }, `이름을 "${renamed.name}"(으)로 바꿨습니다`);
-      } else {
-        updateTree(tree, {}, `이름을 "${renamed?.name ?? name}"(으)로 바꿨습니다`);
-      }
+      const divider = makeDivider();
+      let tree = insertNode(current.manifest.tree, divider, parentId);
+      if (afterId) tree = moveNode(tree, divider.id, afterId, "after");
+      updateTree(tree, {}, "구분선을 추가했습니다");
+      return divider.id;
     },
     [updateTree],
   );
 
+  /** 문서 하나를 트리와 글에서 뺀다 (저장할 때 파일은 휴지통으로). 대치할 때 쓴다. */
+  const dropDoc = (session: Session, docId: string) => {
+    const result = removeNode(session.manifest.tree, docId);
+    const savedIds = new Set(session.savedManifest ? walkDocs(session.savedManifest.tree).map((d) => d.id) : []);
+    const texts = new Map(session.texts);
+    for (const doc of result.removed) texts.delete(doc.id);
+    return {
+      tree: result.tree,
+      extra: { texts, deleted: [...session.deleted, ...result.removed.filter((d) => savedIds.has(d.id))] } as Partial<Session>,
+    };
+  };
+
+  // 이름 입력칸이 Enter와 포커스 이동으로 두 번 알려도 묻는 창은 한 번만 띄운다.
+  const renamingRef = useRef(new Set<string>());
+
+  const rename = useCallback(
+    async (id: string, name: string) => {
+      if (renamingRef.current.has(id)) return;
+      renamingRef.current.add(id);
+      try {
+        await renameAsk(id, name);
+      } finally {
+        renamingRef.current.delete(id);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const renameAsk = async (id: string, name: string) => {
+    const first = sessionRef.current;
+    const node = findNode(first.manifest.tree, id);
+    const trimmed = name.trim();
+    if (!node || node.type === "divider" || !trimmed || node.name === trimmed) return;
+
+    // 같은 폴더에 같은 이름이 있으면 어떻게 할지 묻는다.
+    const parent = findParent(first.manifest.tree, id);
+    const siblings = parent ? parent.children : first.manifest.tree;
+    const scope = node.type === "folder" ? undefined : node.scriptId;
+    const conflict = findNameConflict(siblings, trimmed, id, scope, node.type === "folder");
+    let replaceId: string | null = null;
+    if (conflict) {
+      const choice = await askNameConflict(trimmed, conflict, canReplaceNode(node, conflict));
+      if (choice === "cancel") return;
+      if (choice === "replace") replaceId = conflict.id;
+    }
+
+    const current = sessionRef.current;
+    let base = current;
+    let extra: Partial<Session> = {};
+    if (replaceId && findNode(current.manifest.tree, replaceId)) {
+      const dropped = dropDoc(current, replaceId);
+      base = { ...current, manifest: { ...current.manifest, tree: dropped.tree } };
+      extra = dropped.extra;
+      if (activeRef.current === replaceId) setActiveDocId(current.manifest.mainScript);
+    }
+    const tree = renameNode(base.manifest.tree, id, trimmed);
+    // 본문 첫 제목이 옛 이름 그대로면 새 이름으로 함께 바꾼다. ("# 새 인물" → "# 민재")
+    const renamed = findNode(tree, id);
+    const texts = extra.texts ?? current.texts;
+    const text = texts.get(id);
+    const heading = `# ${node.name}`;
+    const label = replaceId ? `"${renamed?.name ?? trimmed}"(으)로 바꾸고 같은 이름의 문서를 지웠습니다` : `이름을 "${renamed?.name ?? trimmed}"(으)로 바꿨습니다`;
+    if (renamed && text !== undefined && (text === heading || text.startsWith(`${heading}\n`))) {
+      const next = new Map(texts);
+      next.set(id, `# ${renamed.name}${text.slice(heading.length)}`);
+      updateTree(tree, { ...extra, texts: next }, label);
+    } else {
+      updateTree(tree, extra, label);
+    }
+  };
+
   const remove = useCallback(
     async (id: string) => {
-      const current = sessionRef.current;
-      const node = findNode(current.manifest.tree, id);
+      const first = sessionRef.current;
+      const node = findNode(first.manifest.tree, id);
       if (!node) return;
-      const docs = node.type === "folder" ? walkDocs(node.children) : [node];
-      if (docs.some((d) => d.id === current.manifest.mainScript)) {
-        await notify("시나리오 문서는 지울 수 없습니다.", "warning");
+      // 구분선은 묻지 않고 바로 지운다. (되돌리기 알림에서 되돌릴 수 있다)
+      if (node.type === "divider") {
+        updateTree(removeNode(first.manifest.tree, id).tree, {}, "구분선을 지웠습니다");
         return;
       }
+      const docs = node.type === "folder" ? walkDocs(node.children) : [node];
+      if (node.type === "folder" && docs.some((d) => d.type === "script")) {
+        await notify("스크립트가 들어 있는 폴더는 지울 수 없습니다.\n스크립트를 먼저 지우거나 폴더 밖으로 옮겨 주세요.", "warning");
+        return;
+      }
+
+      if (node.type === "script") {
+        const all = scriptDocs(first.manifest.tree);
+        if (all.length <= 1) {
+          await notify("스크립트는 하나 이상 있어야 합니다.\n지우려면 먼저 다른 스크립트를 만들어 주세요.", "warning");
+          return;
+        }
+        const main = first.manifest.mainScript;
+        const revs = revisionsOfScript(first.manifest.revisions, id, main);
+        const extra = revs.length > 0 ? `\n수정고 ${revs.length}개와 메모도 함께 지워집니다.` : "\n이 스크립트의 메모도 함께 지워집니다.";
+        if (!(await ask(`"${node.name}" 스크립트를 지울까요?${extra}\n저장하면 파일이 휴지통으로 옮겨집니다.`, "지우기"))) return;
+        // 수정고 폴더는 바로 휴지통으로 옮긴다.
+        for (const rev of revs) memoryRevisions.current.delete(rev.id);
+        if (isTauri() && first.path) {
+          try {
+            for (const rev of revs) await tauriFs.trash(joinPath(first.path, rev.dir));
+          } catch (error) {
+            await showError("수정고를 지우지 못했습니다.", error);
+            return;
+          }
+        }
+        // 지우는 스크립트가 열려 있으면 이웃 스크립트로 먼저 옮겨 간다.
+        if (sessionRef.current.manifest.mainScript === id) {
+          const index = all.findIndex((d) => d.id === id);
+          switchScript((all[index + 1] ?? all[index - 1]).id);
+        }
+        const current = sessionRef.current;
+        const result = removeNode(current.manifest.tree, id);
+        const savedIds = new Set(current.savedManifest ? walkDocs(current.savedManifest.tree).map((d) => d.id) : []);
+        const texts = new Map(current.texts);
+        texts.delete(id);
+        const notes = (current.manifest.notes ?? []).filter((n) => n.script !== id);
+        const revisions = (current.manifest.revisions ?? []).filter((r) => r.script !== id);
+        const scriptSettings = { ...current.manifest.scriptSettings };
+        delete scriptSettings[id];
+        clearTreeUndo();
+        updateTree(clearScope(result.tree, id), {
+          texts,
+          deleted: [...current.deleted, ...result.removed.filter((d) => savedIds.has(d.id))],
+        });
+        const now = sessionRef.current;
+        sessionRef.current = {
+          ...now,
+          manifest: {
+            ...now.manifest,
+            notes: notes.length > 0 ? notes : undefined,
+            revisions: revisions.length > 0 ? revisions : undefined,
+            scriptSettings: Object.keys(scriptSettings).length > 0 ? scriptSettings : undefined,
+          },
+        };
+        refresh();
+        return;
+      }
+
+      const current = first;
       const what = node.type === "folder" ? `"${node.name}" 폴더와 안의 문서 ${docs.length}개` : `"${node.name}"`;
       if (!(await ask(`${what}를 지울까요?\n저장하면 파일이 휴지통으로 옮겨집니다.`, "지우기"))) return;
       const result = removeNode(current.manifest.tree, id);
@@ -717,15 +1126,62 @@ export function useProject(
       );
       if (result.removed.some((d) => d.id === activeRef.current)) setActiveDocId(current.manifest.mainScript);
     },
+    [clearTreeUndo, refresh, switchScript, updateTree],
+  );
+
+  /** 문서나 폴더를 볼 스크립트를 정한다. scriptId가 없으면 모든 스크립트에서 보이는 공통 항목이 된다. */
+  const setScope = useCallback(
+    (id: string, scriptId?: string) => {
+      const current = sessionRef.current;
+      const node = findNode(current.manifest.tree, id);
+      if (!node || node.type === "script" || (node.scriptId ?? undefined) === scriptId) return;
+      const target = scriptId ? findNode(current.manifest.tree, scriptId) : null;
+      const label = target ? `"${node.name}"을(를) "${target.name}" 전용으로 정했습니다` : `"${node.name}"을(를) 모든 스크립트에서 보이게 했습니다`;
+      updateTree(setNodeScope(current.manifest.tree, id, scriptId), {}, label);
+    },
     [updateTree],
   );
 
   const move = useCallback(
-    (id: string, targetId: string, position: DropPosition) => {
+    async (id: string, targetId: string, position: DropPosition) => {
+      const first = sessionRef.current;
+      const tree = first.manifest.tree;
+      const node = findNode(tree, id);
+      const target = findNode(tree, targetId);
+      if (!node || !target || id === targetId) return;
+
+      // 다른 폴더로 옮겨 가는데 거기에 같은 이름이 있으면 어떻게 할지 묻는다.
+      const destId = position === "inside" ? targetId : (findParent(tree, targetId)?.id ?? null);
+      const sameFolder = (findParent(tree, id)?.id ?? null) === destId;
+      const scope = node.type === "folder" ? undefined : (inheritedScope(tree, destId) ?? node.scriptId);
+      let replaceId: string | null = null;
+      if (!sameFolder && node.type !== "divider" && !(position === "inside" && target.type !== "folder")) {
+        const destFolder = destId ? findNode(tree, destId) : null;
+        const siblings = destFolder && destFolder.type === "folder" ? destFolder.children : tree;
+        const conflict = findNameConflict(siblings, node.name, id, scope, node.type === "folder");
+        if (conflict) {
+          const choice = await askNameConflict(node.name, conflict, canReplaceNode(node, conflict));
+          if (choice === "cancel") return;
+          if (choice === "replace") replaceId = conflict.id;
+        }
+      }
+
       const current = sessionRef.current;
-      const next = moveNode(current.manifest.tree, id, targetId, position);
-      const node = findNode(current.manifest.tree, id);
-      if (next !== current.manifest.tree) updateTree(next, {}, `"${node?.name ?? ""}"을(를) 옮겼습니다`);
+      let base = current;
+      let extra: Partial<Session> = {};
+      if (replaceId && findNode(current.manifest.tree, replaceId)) {
+        const dropped = dropDoc(current, replaceId);
+        base = { ...current, manifest: { ...current.manifest, tree: dropped.tree } };
+        extra = dropped.extra;
+        if (activeRef.current === replaceId) setActiveDocId(current.manifest.mainScript);
+      }
+      let next = moveNode(base.manifest.tree, id, targetId, position, scope);
+      // 스크립트 전용 폴더로 옮기면 그 스크립트 전용이 된다.
+      if (next !== base.manifest.tree) {
+        const inherited = inheritedScope(next, findParent(next, id)?.id ?? null);
+        if (inherited && node.type !== "script") next = setNodeScope(next, id, inherited);
+        updateTree(next, extra, `"${node.name}"을(를) 옮겼습니다`);
+      }
     },
     [updateTree],
   );
@@ -762,6 +1218,26 @@ export function useProject(
     [refresh],
   );
 
+  /** 활성 스크립트의 설정을 바꾼다. (표지 항목 켜고 끄기, 첫 씬 번호, 워터마크) */
+  const setScriptSettings = useCallback(
+    (patch: ScriptSettings) => {
+      const current = sessionRef.current;
+      const main = current.manifest.mainScript;
+      const next = compactSettings({ ...current.manifest.scriptSettings?.[main], ...patch });
+      const all = { ...current.manifest.scriptSettings };
+      if (next) all[main] = next;
+      else delete all[main];
+      sessionRef.current = {
+        ...current,
+        manifest: { ...current.manifest, scriptSettings: Object.keys(all).length > 0 ? all : undefined },
+        treeChanged: true,
+      };
+      editorRef.current?.setSceneStart(sceneStartOf(next));
+      refresh();
+    },
+    [editorRef, refresh],
+  );
+
   // ---------- 수정고 ----------
 
   // 브라우저 미리보기(개발용)에서는 디스크 대신 메모리에 보관한다.
@@ -786,11 +1262,13 @@ export function useProject(
         createdAt: now.toISOString(),
         dir: revisionDir(name.trim() || "고", now),
         ...(stats ? { stats } : {}),
+        script: current.manifest.mainScript,
       };
       const content: RevisionContent = {
         meta,
         script: currentScriptText(),
-        docs: settingsDocs(current.manifest.tree).map(({ doc, folders }) => ({
+        // 이 스크립트에서 보이는 설정 문서(공통 + 이 스크립트 전용)를 함께 보관한다.
+        docs: settingsDocs(visibleTreeFor(current.manifest.tree, current.manifest.mainScript).tree).map(({ doc, folders }) => ({
           doc: { id: doc.id, type: doc.type, name: doc.name, folders },
           text: current.texts.get(doc.id) ?? "",
         })),
@@ -845,6 +1323,10 @@ export function useProject(
         "되돌리기",
       );
       if (!ok) return false;
+      if ((meta.script ?? sessionRef.current.manifest.mainScript) !== sessionRef.current.manifest.mainScript) {
+        await notify("다른 스크립트의 수정고입니다. 그 스크립트를 연 뒤에 되돌려 주세요.", "warning");
+        return false;
+      }
       const content = await loadRevision(meta);
       if (!content) return false;
       const stamp = new Date().toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -852,7 +1334,8 @@ export function useProject(
 
       const { titlePage, lines } = scriptLinesOf(content.script);
       editorRef.current?.load(lines.length > 0 ? lines : [{ style: "action", text: "" }]);
-      editorRef.current?.setNotes(sessionRef.current.manifest.notes ?? []);
+      const restoredFrom = sessionRef.current.manifest;
+      editorRef.current?.setNotes(notesOfScript(restoredFrom.notes, restoredFrom.mainScript, restoredFrom.mainScript));
       setScriptDirty(true);
       const current = sessionRef.current;
       const restored = restoreSettings(current.manifest.tree, current.texts, content.docs);
@@ -898,12 +1381,30 @@ export function useProject(
 
   // ---------- PDF & Word ----------
 
+  /** 내보낼 원고: 스크립트 설정을 반영한다. (표지에서 끈 항목은 빼고, 첫 씬 번호를 쓴다) */
+  const exportDocument = (doc: { titlePage: string | null; lines: ScriptLine[] }) => {
+    const settings = settingsOf(sessionRef.current.manifest);
+    return {
+      titlePage: applyCoverToggles(doc.titlePage, settings?.coverOff),
+      lines: doc.lines,
+      sceneStart: sceneStartOf(settings),
+    };
+  };
+
+  /** 스크립트가 여럿이면 파일 이름에 지금 스크립트 이름을 붙인다. */
+  const scriptLabel = () => {
+    const { manifest } = sessionRef.current;
+    if (scriptDocs(manifest.tree).length <= 1) return "";
+    const name = findNode(manifest.tree, manifest.mainScript)?.name;
+    return name ? ` ${name}` : "";
+  };
+
   /** PDF로 내보내기. source를 주면(예: 수정고) 그 원고를, 없으면 지금 원고를 내보낸다. */
   const exportPdf = useCallback(async (source?: { name: string; script: string }, bundle?: ExportBundle) => {
     const editor = editorRef.current;
     if (!editor) return;
     const chosen = await save({
-      defaultPath: `${sessionTitle(sessionRef.current)}${source ? ` ${source.name}` : ""}${bundle?.script === false ? " 문서" : ""}.pdf`,
+      defaultPath: `${sessionTitle(sessionRef.current)}${scriptLabel()}${source ? ` ${source.name}` : ""}${bundle?.script === false ? " 문서" : ""}.pdf`,
       filters: [{ name: "PDF", extensions: ["pdf"] }],
     });
     if (!chosen) return;
@@ -911,12 +1412,9 @@ export function useProject(
     try {
       // PDF 만드는 코드는 필요할 때만 불러온다. (앱 시작을 가볍게)
       const { buildPdf } = await import("../pdf/buildPdf");
-      const doc = bundle?.script === false
-        ? null
-        : source
-          ? scriptLinesOf(source.script)
-          : { titlePage: sessionRef.current.titlePage, lines: editor.getLines() };
-      const bytes = await buildPdf(doc, await loadFonts(), bundle?.extras);
+      const settings = settingsOf(sessionRef.current.manifest);
+      const doc = bundle?.script === false ? null : exportDocument(source ? scriptLinesOf(source.script) : { titlePage: sessionRef.current.titlePage, lines: editor.getLines() });
+      const bytes = await buildPdf(doc, await loadFonts(), bundle?.extras, { watermark: settings?.watermark });
       await invoke("write_binary", bytes, { headers: { path: encodeURIComponent(path) } });
     } catch (error) {
       await showError("PDF를 만들지 못했습니다.", error);
@@ -928,18 +1426,14 @@ export function useProject(
     const editor = editorRef.current;
     if (!editor) return;
     const chosen = await save({
-      defaultPath: `${sessionTitle(sessionRef.current)}${source ? ` ${source.name}` : ""}${bundle?.script === false ? " 문서" : ""}.docx`,
+      defaultPath: `${sessionTitle(sessionRef.current)}${scriptLabel()}${source ? ` ${source.name}` : ""}${bundle?.script === false ? " 문서" : ""}.docx`,
       filters: [{ name: "Word 문서", extensions: ["docx"] }],
     });
     if (!chosen) return;
     const path = /\.docx$/i.test(chosen) ? chosen : `${chosen}.docx`;
     try {
       const { buildDocx } = await import("../docx/buildDocx");
-      const doc = bundle?.script === false
-        ? null
-        : source
-          ? scriptLinesOf(source.script)
-          : { titlePage: sessionRef.current.titlePage, lines: editor.getLines() };
+      const doc = bundle?.script === false ? null : exportDocument(source ? scriptLinesOf(source.script) : { titlePage: sessionRef.current.titlePage, lines: editor.getLines() });
       const bytes = await buildDocx(doc, bundle?.extras);
       await invoke("write_binary", bytes, { headers: { path: encodeURIComponent(path) } });
     } catch (error) {
@@ -999,6 +1493,8 @@ export function useProject(
           return runExclusive(openProjectFolder);
         case "import_fountain":
           return runExclusive(importFountain);
+        case "import_document":
+          return runExclusive(importDocument);
         case "save":
           return runExclusive(saveCurrent);
         case "save_as":
@@ -1096,6 +1592,7 @@ export function useProject(
     exportDocx,
     exportPdf,
     importFountain,
+    importDocument,
     newProject,
     openProjectAt,
     openProjectFolder,
@@ -1133,8 +1630,11 @@ export function useProject(
         if (restore) {
           const texts = new Map(recovery.texts);
           const { lines } = scriptLinesOf(texts.get(recovery.manifest.mainScript) ?? "");
+          applySceneStart(recovery.manifest);
           editorRef.current?.load(lines.length > 0 ? lines : [{ style: "action", text: "" }]);
-          editorRef.current?.setNotes(recovery.manifest.notes ?? []);
+          editorRef.current?.setNotes(
+            notesOfScript(recovery.manifest.notes, recovery.manifest.mainScript, recovery.manifest.mainScript),
+          );
           sessionRef.current = newSession(null, recovery.manifest, texts, recovery.titlePage, false);
           setActiveDocId(recovery.manifest.mainScript);
           refresh();
@@ -1197,7 +1697,7 @@ export function useProject(
 
   const activeNode = findNode(session.manifest.tree, activeDocId);
   const activeDoc: DocNode =
-    activeNode && activeNode.type !== "folder"
+    activeNode && activeNode.type !== "folder" && activeNode.type !== "divider"
       ? activeNode
       : (findNode(session.manifest.tree, session.manifest.mainScript) as DocNode);
 
@@ -1212,15 +1712,26 @@ export function useProject(
     dirty,
     titlePage: session.titlePage,
     setTitlePage,
+    /** 활성 스크립트의 설정 */
+    scriptSettings: settingsOf(session.manifest),
+    setScriptSettings,
     saveStatus,
     autosaving: Boolean(session.path),
+    importAsk,
+    answerImport: (answers: Answers | null) => {
+      importAsk?.resolve(answers);
+      setImportAsk(null);
+    },
+    importResult,
+    dismissImportResult: () => setImportResult(null),
     treeUndo,
     undoTree,
     dismissTreeUndo,
     dirtyDocIds,
     /** 앱을 끝내거나 다시 시작하기 전: 저장 안 한 내용이 있으면 저장하거나 묻는다 */
     prepareToClose: confirmDiscard,
-    revisions: session.manifest.revisions ?? [],
+    /** 지금(활성) 스크립트의 수정고 */
+    revisions: revisionsOfScript(session.manifest.revisions, session.manifest.mainScript, session.manifest.mainScript),
     exportRevisionPdf: (name: string, script: string) => runExclusive(() => exportPdf({ name, script })),
     exportRevisionDocx: (name: string, script: string) => runExclusive(() => exportDocx({ name, script })),
     /** 내보내기 창에서 고른 내용으로 PDF나 Word 파일을 만든다. */
@@ -1230,7 +1741,7 @@ export function useProject(
         const nodes = new Map(walkDocs(session.manifest.tree).map((n) => [n.id, n]));
         const extras = selection.docIds.flatMap((id) => {
           const node = nodes.get(id);
-          if (!node || node.id === session.manifest.mainScript) return [];
+          if (!node || node.type === "script") return [];
           return [buildExtraSection(node.type, node.name, session.texts.get(id) ?? "")];
         });
         const bundle = { script: selection.script, extras };
@@ -1246,6 +1757,12 @@ export function useProject(
     setScriptDirty,
     setDocText,
     openDoc,
+    openMainScript,
+    addDivider,
+    addCharacterProfile,
+    addScript,
+    duplicateScript,
+    setScope,
     addDoc,
     addDocWithPreset,
     applyPresetToDoc,
