@@ -50,6 +50,9 @@ npm run tauri build
 | [pdf-lib](https://github.com/Hopding/pdf-lib), [@pdf-lib/fontkit](https://github.com/Hopding/fontkit) | MIT |
 | [Courier Prime](https://github.com/quoteunquoteapps/CourierPrime) 글꼴 | OFL-1.1 (`public/fonts/OFL-CourierPrime.txt`) |
 | [나눔고딕코딩](https://github.com/google/fonts/tree/main/ofl/nanumgothiccoding) 글꼴 | OFL-1.1 (`public/fonts/OFL-NanumGothicCoding.txt`) |
+| [pdf.js (pdfjs-dist)](https://github.com/mozilla/pdf.js) — 외부 PDF 시나리오 읽기 | Apache-2.0 |
+| [fflate](https://github.com/101arrowz/fflate) — Word·hwpx 파일(zip) 풀기 | MIT |
+| [docx](https://github.com/dolanmiu/docx) — Word 내보내기 | MIT |
 | [Tauri Dialog 플러그인](https://github.com/tauri-apps/plugins-workspace) | Apache-2.0 / MIT |
 | [Vitest](https://github.com/vitest-dev/vitest) | MIT |
 
