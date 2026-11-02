@@ -2,6 +2,7 @@
  * DropKick 앱 설정 관리 (로컬 저장소에 보관)
  */
 import type { LineStyle } from "../editor/styles";
+import { limitCustomQuotes } from "../footer/quoteFlow";
 import { DEFAULT_APP_SHORTCUTS, parseAppShortcuts, type AppShortcuts } from "./appShortcuts";
 
 export type ThemeMode = "system" | "light" | "dark";
@@ -54,6 +55,10 @@ export type AppSettings = {
   zoom: ZoomPercent;
   /** 원고에서 현재 커서가 있는 줄 강조 표시 */
   highlightCurrentLine: boolean;
+  /** 하단 푸터 가운데에 가끔 한국 영화 명대사를 보여 준다 */
+  showFooterQuotes: boolean;
+  /** 나만의 명대사: 최대 두 줄, 한 줄에 하나. 기본 명대사에 섞여 나온다 */
+  customQuotes: string;
   /** 표지 기본 작가 이름 */
   defaultAuthor: string;
   /** 표지 기본 연락처 */
@@ -84,6 +89,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
   zoom: 100,
   highlightCurrentLine: true,
+  showFooterQuotes: true,
+  customQuotes: "",
   defaultAuthor: "",
   defaultContact: "",
   characterAutocomplete: true,
@@ -143,6 +150,8 @@ export function loadSettings(): AppSettings {
       zoom,
       highlightCurrentLine:
         typeof p.highlightCurrentLine === "boolean" ? p.highlightCurrentLine : true,
+      showFooterQuotes: typeof p.showFooterQuotes === "boolean" ? p.showFooterQuotes : true,
+      customQuotes: typeof p.customQuotes === "string" ? limitCustomQuotes(p.customQuotes) : "",
       defaultAuthor: typeof p.defaultAuthor === "string" ? p.defaultAuthor : "",
       defaultContact: typeof p.defaultContact === "string" ? p.defaultContact : "",
       characterAutocomplete:

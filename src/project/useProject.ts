@@ -1416,7 +1416,7 @@ export function useProject(
       const doc = bundle?.script === false ? null : exportDocument(source ? scriptLinesOf(source.script) : { titlePage: sessionRef.current.titlePage, lines: editor.getLines() });
       const bytes = await buildPdf(doc, await loadFonts(), bundle?.extras, { watermark: settings?.watermark });
       await invoke("write_binary", bytes, { headers: { path: encodeURIComponent(path) } });
-      if (bundle?.reveal) await invoke("reveal_in_finder", { path });
+      if (bundle?.reveal) await invoke("reveal_in_finder", { path }).catch(() => {}); // 파일은 이미 저장했으니 Finder를 못 열어도 오류로 알리지 않는다
     } catch (error) {
       await showError("PDF를 만들지 못했습니다.", error);
     }
@@ -1437,7 +1437,7 @@ export function useProject(
       const doc = bundle?.script === false ? null : exportDocument(source ? scriptLinesOf(source.script) : { titlePage: sessionRef.current.titlePage, lines: editor.getLines() });
       const bytes = await buildDocx(doc, bundle?.extras);
       await invoke("write_binary", bytes, { headers: { path: encodeURIComponent(path) } });
-      if (bundle?.reveal) await invoke("reveal_in_finder", { path });
+      if (bundle?.reveal) await invoke("reveal_in_finder", { path }).catch(() => {}); // 파일은 이미 저장했으니 Finder를 못 열어도 오류로 알리지 않는다
     } catch (error) {
       await showError("Word 문서를 만들지 못했습니다.", error);
     }

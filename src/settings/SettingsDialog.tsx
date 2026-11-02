@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { limitCustomQuotes } from "../footer/quoteFlow";
 import { LINE_STYLES, STYLE_LABELS, type LineStyle } from "../editor/styles";
 import {
   APP_SHORTCUT_IDS,
@@ -226,6 +227,36 @@ export function SettingsDialog({
                   onChange={(e) => patch({ highlightCurrentLine: e.target.checked })}
                 />
               </label>
+
+              <div className="settings-item">
+                <div className="settings-item-label">
+                  <div className="settings-item-head">
+                    <strong>하단 명대사</strong>
+                    <input
+                      type="checkbox"
+                      aria-label="하단 명대사 보이기"
+                      checked={settings.showFooterQuotes}
+                      onChange={(e) => patch({ showFooterQuotes: e.target.checked })}
+                    />
+                  </div>
+                  <span>화면 아래쪽 가운데에 한국 영화 명대사가 가끔 올라왔다 내려갑니다.</span>
+                  <span className="settings-source">출처: 한국영상자료원 한국영화박물관 기획전시 &lt;대사극장: 한국영화를 만든 위대한 대사들&gt; 중에서</span>
+                </div>
+                <div className="settings-item-label settings-custom-head">
+                  <span className="settings-subtitle">나만의 명대사</span>
+                  <span>
+                    최대 두 줄, 한 줄에 하나씩(줄마다 100자까지) 적으면 기본 명대사에 섞여 나옵니다. 적은 그대로 보이니 따옴표나 &lt;작품명&gt;도 직접 적어 주세요.
+                  </span>
+                </div>
+                <textarea
+                  className="settings-custom-quotes"
+                  rows={2}
+                  value={settings.customQuotes}
+                  placeholder={'예: "살아있네!" <범죄와의 전쟁>'}
+                  disabled={!settings.showFooterQuotes}
+                  onChange={(e) => patch({ customQuotes: limitCustomQuotes(e.target.value) })}
+                />
+              </div>
             </div>
           )}
 

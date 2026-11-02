@@ -330,7 +330,7 @@ fn open_auxiliary_window(app: AppHandle, window_type: String) -> Result<(), Stri
     }
 
     let (title, url, width, height, min_w, min_h) = match window_type.as_str() {
-        "settings" => ("설정", "index.html?aux=settings", 780.0, 620.0, 640.0, 480.0),
+        "settings" => ("설정", "index.html?aux=settings", 780.0, 760.0, 640.0, 480.0),
         "guide" => ("시나리오 작성 가이드", "index.html?aux=guide", 1120.0, 890.0, 840.0, 560.0),
         _ => return Err(format!("알 수 없는 창 종류입니다: {window_type}")),
     };

@@ -3511,6 +3511,71 @@ em.minus {
   color: var(--ink);
 }
 
+/* 설정 창: 명대사 출처(작게)와 나만의 명대사 입력 */
+.settings-source {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+/* 제목 줄: 이름은 왼쪽, 체크 상자는 오른쪽 끝 */
+.settings-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.settings-item-head input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--caret);
+  flex-shrink: 0;
+}
+
+/* 나만의 명대사: 위 제목과 달리 굵지 않게 */
+.settings-custom-head {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-item-label .settings-subtitle {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.settings-custom-quotes {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 62px;
+  overflow: hidden;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+  resize: none;
+}
+
+.settings-custom-quotes:focus {
+  border-color: var(--caret);
+}
+
+.settings-custom-quotes::placeholder {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.settings-custom-quotes:disabled {
+  opacity: 0.5;
+}
+
 .pane-header-button:disabled {
   opacity: 0.35;
   cursor: default;
@@ -3905,7 +3970,7 @@ body.pane-resizing .pane-body {
 }
 
 /* 왼쪽은 입력, 오른쪽은 미니 페이지 미리보기 */
-.settings-body {
+.script-settings-body {
   display: flex;
   gap: 20px;
   align-items: flex-start;

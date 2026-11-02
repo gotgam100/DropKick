@@ -93,7 +93,7 @@ export function ScriptSettingsDialog({ scriptName, titlePage, settings, onSave, 
         <h2>스크립트 설정</h2>
         <p className="dialog-hint">"{scriptName}" 스크립트에만 적용됩니다.</p>
 
-        <div className="settings-body">
+        <div className="script-settings-body">
           <div className="settings-form">
         <div className="settings-tabs" role="tablist">
           <button type="button" role="tab" aria-selected={tab === "cover"} className={tab === "cover" ? "active" : ""} onClick={() => setTab("cover")}>

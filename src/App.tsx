@@ -61,6 +61,7 @@ import {
   type PaneTarget,
 } from "./split/paneTargets";
 import { PaneHeader } from "./split/PaneHeader";
+import { FooterQuote } from "./footer/FooterQuote";
 import { SplitDivider } from "./split/SplitDivider";
 import { useElementWidth } from "./split/useElementWidth";
 import "./App.css";
@@ -1313,6 +1314,7 @@ function App() {
       </div>
 
       <footer className="statusbar">
+        {settings.showFooterQuotes && <FooterQuote customQuotes={settings.customQuotes} />}
         {isScript ? (
           <>
             <span className="status-style">{STYLE_LABELS[info.style]}</span>

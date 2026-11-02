@@ -524,6 +524,54 @@ body {
   font-variant-numeric: tabular-nums;
   user-select: none;
   flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 푸터 가운데 명대사: 아래에서 올라와 잠시 머물다 내려간다 */
+.status-quote {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.status-quote[hidden] {
+  display: none;
+}
+
+.status-quote-text {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transform: translateY(120%);
+  transition:
+    transform 0.5s ease,
+    opacity 0.5s ease;
+}
+
+.status-quote-text.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (max-width: 900px), (prefers-reduced-motion: reduce) {
+  .status-quote-text {
+    transform: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .status-quote {
+    display: none;
+  }
 }
 
 .status-style {
