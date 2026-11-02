@@ -350,6 +350,7 @@ fn open_auxiliary_window(app: AppHandle, window_type: String) -> Result<(), Stri
 
 /// 앱스토어의 개발자(Seunghwa Baek) 페이지: iOS 앱과 macOS 앱이 함께 나온다.
 const SISTER_APPS_URL: &str = "https://apps.apple.com/kr/developer/seunghwa-baek/id1892791489";
+const FEEDBACK_URL: &str = "https://forms.gle/wvM2BMZYv3guuYWx7";
 
 fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let item =
@@ -364,6 +365,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item("open_settings", "설정…", Some("CmdOrCtrl+,"))?,
             &item("check_update", "업데이트 확인…", None)?,
             &item("sister_apps", "자매품", None)?,
+            &item("feedback", "버그 제보 및 의견", None)?,
             &PredefinedMenuItem::separator(app)?,
             &item("quit", "DropKick 종료", Some("CmdOrCtrl+Q"))?,
         ],
@@ -550,6 +552,12 @@ pub fn run() {
                 let _ = app
                     .opener()
                     .open_url(SISTER_APPS_URL, None::<&str>);
+                return;
+            }
+            if id == "feedback" {
+                // 버그 제보와 의견은 구글 폼으로 받는다 (깃허브 계정이 없어도 쓸 수 있게).
+                use tauri_plugin_opener::OpenerExt;
+                let _ = app.opener().open_url(FEEDBACK_URL, None::<&str>);
                 return;
             }
             if id == "open_guide" {
