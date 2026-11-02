@@ -1,7 +1,7 @@
 # AGENTS.md — DropKick 작업 안내 (AI 코딩 도구용)
 
 이 파일은 이 저장소에서 일하는 AI(제미나이, Claude 등)가 **가장 먼저 읽는 안내서**다.
-자세한 결정 기록은 `PLAN.md`, 배포 절차는 `docs/RELEASE.md`, 실행 방법은 `README.md`에 있다.
+배포 절차는 `docs/RELEASE.md`, 개발 환경과 실행 방법은 `docs/DEVELOPMENT.md`, 사용자용 소개는 `README.md`에 있다.
 
 ## 1. 어떤 앱인가
 
@@ -9,9 +9,8 @@
 - 혼자 개발하는 개인 프로젝트. 사용자는 시나리오 작가이며 **개발자가 아니다**. 설명은 쉬운 한국어로 한다.
 - 기술: **Tauri 2** (Rust) + **Vite + React + TypeScript** + **CodeMirror 6**. 라이선스 MIT.
 - 앱 식별자 `com.baekmac.dropkick`, 최소 macOS 13, 유니버설 빌드(Apple Silicon + 인텔).
-- 저장소
-  - 코드: `gotgam100/DropKick` (**비공개**, `main` 브랜치에서 바로 작업)
-  - 배포 전용: `gotgam100/DropKick_releases` (**공개**, README와 릴리즈 파일만. 코드는 절대 올리지 않는다)
+- 저장소: `gotgam100/DropKick` (**공개 오픈소스**, `main` 브랜치에서 바로 작업). 코드, 소개글(README), 릴리즈 파일이 모두 여기에 있다. (예전 배포 전용 저장소 `DropKick_releases`는 보관만 해 두었다)
+  - 공개 저장소이므로 비밀번호, 열쇠, 개인 원고, 개인 메모는 코드·문서·커밋에 넣지 않는다.
 
 ## 2. 명령어
 
@@ -111,14 +110,14 @@ npx tsc --noEmit      # 타입 검사
 2. **자동 업데이트 실제 시험** — 0.1.1이 설치된 맥에서 0.1.2가 자동으로 받아지는지.
 3. 코드 저장소를 공개할 때: 예전 커밋에 들어간 테스트 프로젝트를 git 기록에서 지울지 결정.
 
-(AI 분석 기능은 만들었다가 취소했다. 다시 시작할 때는 `PLAN.md` 3-5절과 2차 단계를 참고한다.)
+(AI 분석 기능은 만들었다가 취소했다.)
 
 ## 7. 배포 (요약, 자세한 것은 `docs/RELEASE.md`)
 
 1. `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`의 version을 함께 올린다.
 2. `release-notes/<버전>.md`에 바뀐 점을 쓴다 (앱 업데이트 알림에 그대로 보인다).
 3. `APPLE_SIGNING_IDENTITY="Developer ID Application: …" ./scripts/release.sh`
-   - 테스트 → 유니버설 빌드·서명 → 애플 공증(키체인 프로필 `dropkick-notary`) → 업데이트 파일 서명(`~/.tauri/dropkick-updater.key`, 암호는 키체인 `dropkick-updater-key`) → `gotgam100/DropKick_releases`에 올리기
+   - 테스트 → 유니버설 빌드·서명 → 애플 공증(키체인 프로필 `dropkick-notary`) → 업데이트 파일 서명(`~/.tauri/dropkick-updater.key`, 암호는 키체인 `dropkick-updater-key`) → `gotgam100/DropKick`의 Release에 올리기
    - 키체인 허용 창이 뜨면 사용자가 직접 누른다. 비밀번호를 대신 다루지 않는다.
 4. 앱은 `releases/latest/download/latest.json`을 보고 업데이트한다. **업데이트 서명 열쇠를 잃어버리면 기존 사용자에게 업데이트를 보낼 수 없다.**
 

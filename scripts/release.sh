@@ -1,7 +1,7 @@
 #!/bin/bash
 # 배포용 DropKick 만들고 올리기
 #   테스트 → 서명된 유니버설 앱/디스크 이미지 → 애플 공증 → 자동 업데이트 파일 서명
-#   → GitHub Release(gotgam100/DropKick_releases)에 올리기
+#   → GitHub Release(gotgam100/DropKick)에 올리기
 #
 # 처음 한 번 준비 (docs/RELEASE.md 참고):
 #   1) 키체인에 "Developer ID Application" 인증서
@@ -21,7 +21,7 @@ PUBLISH=1
 
 : "${APPLE_SIGNING_IDENTITY:?APPLE_SIGNING_IDENTITY에 Developer ID Application 인증서 이름을 넣어 주세요}"
 PROFILE="${NOTARY_PROFILE:-dropkick-notary}"
-RELEASE_REPO="gotgam100/DropKick_releases"
+RELEASE_REPO="gotgam100/DropKick"
 UPDATER_KEY="${UPDATER_KEY:-$HOME/.tauri/dropkick-updater.key}"
 # shellcheck disable=SC1091
 source "$HOME/.cargo/env" 2>/dev/null || true

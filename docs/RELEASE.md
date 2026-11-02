@@ -51,7 +51,7 @@ npx tauri signer generate -w ~/.tauri/dropkick-updater.key && security add-gener
 APPLE_SIGNING_IDENTITY="Developer ID Application: 이름 (팀ID)" ./scripts/release.sh
 ```
 
-- 테스트 → 서명된 앱과 `.dmg` 만들기 → 애플 공증(몇 분) → 공증 결과 붙이기 → 자동 업데이트 파일 서명 → **[gotgam100/DropKick_releases](https://github.com/gotgam100/DropKick_releases) Release에 올리기** 순서로 진행됩니다.
+- 테스트 → 서명된 앱과 `.dmg` 만들기 → 애플 공증(몇 분) → 공증 결과 붙이기 → 자동 업데이트 파일 서명 → **[gotgam100/DropKick](https://github.com/gotgam100/DropKick) Release에 올리기** 순서로 진행됩니다.
 - 새 버전을 낼 때는 먼저 `package.json`과 `src-tauri/tauri.conf.json`의 `version`을 올리고, `release-notes/<버전>.md`에 바뀐 점을 씁니다. 이 내용이 앱의 업데이트 안내 창에 나옵니다.
 - 올리지 않고 파일만 만들려면 `./scripts/release.sh --no-publish`
 - 처음 서명할 때 키체인 접근을 허용할지 묻는 창이 뜨면 **항상 허용**을 누르세요.
@@ -60,7 +60,7 @@ APPLE_SIGNING_IDENTITY="Developer ID Application: 이름 (팀ID)" ./scripts/rele
 
 ## 받는 사람
 
-[github.com/gotgam100/DropKick_releases](https://github.com/gotgam100/DropKick_releases) 링크를 알려 주면 됩니다. "최신 버전 받기"에서 `.dmg`를 받습니다.
+[github.com/gotgam100/DropKick](https://github.com/gotgam100/DropKick) 링크를 알려 주면 됩니다. "최신 버전 받기"에서 `.dmg`를 받습니다.
 
 
 1. `.dmg`를 열고 DropKick을 응용 프로그램 폴더로 끌어 놓습니다.
@@ -70,7 +70,7 @@ APPLE_SIGNING_IDENTITY="Developer ID Application: 이름 (팀ID)" ./scripts/rele
 
 ## 자동 업데이트 동작
 
-- 앱은 켜고 5초 뒤 `https://github.com/gotgam100/DropKick_releases/releases/latest/download/latest.json`을 확인합니다.
+- 앱은 켜고 5초 뒤 `https://github.com/gotgam100/DropKick/releases/latest/download/latest.json`을 확인합니다.
 - 새 버전이면 바뀐 점과 함께 "지금 설치 / 나중에"를 묻고, 설치 전에 작업 중인 프로젝트를 저장합니다.
 - 업데이트 파일 서명과 버전을 확인한 뒤에만 설치하고, 앱을 다시 시작합니다.
 

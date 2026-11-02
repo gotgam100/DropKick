@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 const [version, sigFile, assetName, notesFile, outFile] = process.argv.slice(2);
-const url = `https://github.com/gotgam100/DropKick_releases/releases/download/v${version}/${assetName}`;
+const url = `https://github.com/gotgam100/DropKick/releases/download/v${version}/${assetName}`;
 const signature = readFileSync(sigFile, "utf8").trim();
 const platform = { signature, url };
 const manifest = {

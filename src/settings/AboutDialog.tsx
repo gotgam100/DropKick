@@ -7,7 +7,7 @@ type Props = {
   onClose: () => void;
 };
 
-const GITHUB_RELEASES_URL = "https://github.com/gotgam100/DropKick_releases";
+const GITHUB_RELEASES_URL = "https://github.com/gotgam100/DropKick";
 
 export function AboutDialog({ onClose }: Props) {
   // 설치된 앱의 실제 버전을 보여 준다 (버전을 올려도 이 파일은 고치지 않아도 된다)
