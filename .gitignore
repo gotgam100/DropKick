@@ -27,8 +27,10 @@ dist-ssr
 src-tauri/target
 src-tauri/gen/schemas
 
-# 테스트 원고로 내보낸 PDF
-samples/*.pdf
+# samples 폴더에는 테스트에 쓰는 샘플 원고 두 개만 올린다. 그 밖의 파일(내 원고, 내보낸 PDF·Word 등)은 모두 올리지 않는다.
+samples/*
+!samples/short-5p.fountain
+!samples/long-100p.fountain
 
 # 테스트·작업용 DropKick 프로젝트 (내 맥에만 둔다)
 *.dropkick/
