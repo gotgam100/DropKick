@@ -798,7 +798,7 @@
 }
 
 .tree-submenu-arrow {
-  font-size: 17px;
+  font-size: 20px;
   line-height: 1;
   opacity: 0.85;
 }
@@ -1389,6 +1389,7 @@
 }
 
 .revision-actions {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1418,7 +1419,48 @@
   font-weight: 600;
 }
 
-.revision-actions button.danger {
+.revision-actions button.revision-more {
+  width: 30px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* ⋯ 를 누르면 나오는 메뉴: PDF로 내보내기, 지우기 */
+.revision-menu {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 130px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--chrome);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.revision-actions .revision-menu button {
+  height: auto;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.revision-actions .revision-menu button:hover:not(:disabled) {
+  background: var(--button-hover);
+}
+
+.revision-actions .revision-menu button:disabled {
+  opacity: 0.4;
+}
+
+.revision-actions button.danger,
+.revision-actions .revision-menu button.danger {
   color: var(--caret);
 }
 

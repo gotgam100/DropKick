@@ -1,6 +1,6 @@
 /**
  * 수정고 보기: 원고(읽기 전용), 설정 문서, 다른 고나 지금 원고와 비교.
- * 이 고로 되돌리기, PDF로 내보내기, 지우기.
+ * 이 고로 되돌리기가 맨 앞에 있고, PDF로 내보내기와 지우기는 ⋯ 메뉴에 있다.
  */
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import type { ScriptLine } from "../editor/lineStyles";
@@ -273,6 +273,22 @@ function Comparison({
 
 export function RevisionView({ meta, revisions, load, current, onRestore, onExportPdf, onDelete }: Props) {
   const [content, setContent] = useState<RevisionContent | null>(null);
+  // ⋯ 메뉴(PDF로 내보내기, 지우기)가 열려 있는지
+  const [moreOpen, setMoreOpen] = useState(false);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !(e.target as Element | null)?.closest(".revision-menu, .revision-more")) {
+        setMoreOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [moreOpen]);
   const [tab, setTab] = useState<string>("script");
   const [target, setTarget] = useState<string>("current");
   const [targetSnapshot, setTargetSnapshot] = useState<Snapshot | null>(null);
@@ -334,12 +350,43 @@ export function RevisionView({ meta, revisions, load, current, onRestore, onExpo
             <button type="button" className="primary" onClick={onRestore} disabled={!content}>
               이 고로 되돌리기
             </button>
-            <button type="button" onClick={() => content && onExportPdf(content.script)} disabled={!content}>
-              PDF로 내보내기
+            <button
+              type="button"
+              className="revision-more"
+              aria-label="더 보기"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              title="PDF로 내보내기 · 지우기"
+              onClick={() => setMoreOpen((open) => !open)}
+            >
+              ⋯
             </button>
-            <button type="button" className="danger" onClick={onDelete}>
-              지우기
-            </button>
+            {moreOpen && (
+              <div className="revision-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!content}
+                  onClick={() => {
+                    setMoreOpen(false);
+                    if (content) onExportPdf(content.script);
+                  }}
+                >
+                  PDF로 내보내기
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="danger"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    onDelete();
+                  }}
+                >
+                  지우기
+                </button>
+              </div>
+            )}
           </div>
         </div>
         <nav className="revision-tabs">
