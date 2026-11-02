@@ -269,6 +269,10 @@ function App() {
     zoom: [zoomOf(0), zoomOf(1)],
   };
   const showStats = paneShowing(paneState, { kind: "stats" }) !== null;
+  // 보기 메뉴의 ✓(사이드바, 통계)를 지금 화면 상태에 맞춘다
+  useEffect(() => {
+    if (isTauri()) invoke("set_view_menu_checks", { sidebar: showSidebar, stats: showStats }).catch(() => {});
+  }, [showSidebar, showStats]);
   const structureIndex = (() => {
     for (const i of split ? [0, 1] : [0]) {
       const t = paneState.panes[i];

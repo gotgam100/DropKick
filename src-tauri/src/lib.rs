@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use std::sync::Mutex;
 
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
 
 /// Finder에서 더블클릭해 연 프로젝트 경로. 화면이 준비되기 전에 들어오면 여기 모아 둔다.
@@ -234,7 +234,7 @@ fn prune_backups(project: String, keep: usize) -> Result<usize, String> {
     Ok(remove)
 }
 
-/// 폴더를 Finder에서 연다. (백업 폴더 보기)
+/// 폴더를 Finder에서 연다. (백업 보기)
 #[tauri::command]
 fn open_in_finder(path: String) -> Result<(), String> {
     if !Path::new(&path).is_dir() {
@@ -321,6 +321,21 @@ fn set_style_menu_shortcuts(app: AppHandle, shortcuts: Vec<(String, String)>) ->
     Ok(())
 }
 
+/// 보기 메뉴의 ✓ 표시를 지금 화면 상태에 맞춘다. (사이드바를 보이는지, 통계를 보이는지)
+#[tauri::command]
+fn set_view_menu_checks(app: AppHandle, sidebar: bool, stats: bool) -> Result<(), String> {
+    let Some(menu) = app.menu() else { return Ok(()) };
+    let Some(tauri::menu::MenuItemKind::Submenu(sub)) = menu.get("view_menu") else {
+        return Ok(());
+    };
+    for (id, checked) in [("toggle_scenes", sidebar), ("toggle_stats", stats)] {
+        if let Some(tauri::menu::MenuItemKind::Check(item)) = sub.get(id) {
+            let _ = item.set_checked(checked);
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn open_auxiliary_window(app: AppHandle, window_type: String) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(&window_type) {
@@ -376,8 +391,8 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "내보내기",
         true,
         &[
-            &item("export_pdf", "PDF로 내보내기…", Some("CmdOrCtrl+P"))?,
-            &item("export_docx", "Word (.docx)로 내보내기…", None)?,
+            &item("export_pdf", "PDF…", Some("CmdOrCtrl+P"))?,
+            &item("export_docx", "Word…", None)?,
         ],
     )?;
 
@@ -398,14 +413,15 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item("new_project", "새 프로젝트", Some("CmdOrCtrl+N"))?,
             &item("open", "프로젝트 열기…", Some("CmdOrCtrl+O"))?,
             &recent_menu,
+            &PredefinedMenuItem::separator(app)?,
             &item("import_document", "외부 시나리오 가져오기…", None)?,
             &item("import_fountain", "Fountain 가져오기…", None)?,
             &PredefinedMenuItem::separator(app)?,
             &item("save", "저장", Some("CmdOrCtrl+S"))?,
             &item("save_as", "다른 이름으로 저장…", Some("CmdOrCtrl+Shift+S"))?,
             &PredefinedMenuItem::separator(app)?,
-            &item("open_project_location", "프로젝트 위치 열기", None)?,
-            &item("open_backups", "백업 폴더 보기", None)?,
+            &item("open_project_location", "Finder에서 보기", None)?,
+            &item("open_backups", "백업 보기", None)?,
             &PredefinedMenuItem::separator(app)?,
             &export_menu,
             &PredefinedMenuItem::separator(app)?,
@@ -420,10 +436,10 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         true,
         &[
             &item("undo", "실행 취소", Some("CmdOrCtrl+Z"))?,
-            &item("redo", "실행 복귀", Some("CmdOrCtrl+Shift+Z"))?,
+            &item("redo", "다시 실행", Some("CmdOrCtrl+Shift+Z"))?,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::cut(app, Some("오려두기"))?,
-            &PredefinedMenuItem::copy(app, Some("복사하기"))?,
+            &PredefinedMenuItem::cut(app, Some("잘라내기"))?,
+            &PredefinedMenuItem::copy(app, Some("복사"))?,
             &PredefinedMenuItem::paste(app, Some("붙이기"))?,
             &PredefinedMenuItem::select_all(app, Some("전체 선택"))?,
             &PredefinedMenuItem::separator(app)?,
@@ -453,26 +469,21 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "화면 비율",
         true,
         &[
-            &item("zoom:70", "70%", None)?,
-            &item("zoom:80", "80%", None)?,
-            &item("zoom:90", "90%", None)?,
-            &item("zoom:100", "100% (기본)", None)?,
-            &item("zoom:120", "120%", None)?,
-            &item("zoom:150", "150%", None)?,
-            &item("zoom:200", "200%", None)?,
-            &PredefinedMenuItem::separator(app)?,
             &item("zoom:in", "확대", Some("CmdOrCtrl+="))?,
             &item("zoom:out", "축소", Some("CmdOrCtrl+-"))?,
+            &item("zoom:100", "기본 크기", Some("CmdOrCtrl+0"))?,
         ],
     )?;
 
-    let view_menu = Submenu::with_items(
+    // 사이드바와 통계는 켜져 있으면 ✓가 보인다. 켜짐 여부는 화면이 set_view_menu_checks로 알려 준다.
+    let view_menu = Submenu::with_id_and_items(
         app,
+        "view_menu",
         "보기",
         true,
         &[
-            &item("toggle_scenes", "사이드바 보기/숨기기", None)?,
-            &item("toggle_stats", "통계 보기/숨기기", None)?,
+            &CheckMenuItem::with_id(app, "toggle_scenes", "사이드바", true, true, None::<&str>)?,
+            &CheckMenuItem::with_id(app, "toggle_stats", "통계", true, false, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             &item("toggle_focus", "집중 모드", None)?,
             &PredefinedMenuItem::separator(app)?,
@@ -587,6 +598,7 @@ pub fn run() {
             quit_app,
             set_recent_projects,
             set_style_menu_shortcuts,
+            set_view_menu_checks,
             open_auxiliary_window
         ])
         .build(tauri::generate_context!())

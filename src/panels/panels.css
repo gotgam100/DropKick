@@ -1215,30 +1215,64 @@
   font-weight: 600;
 }
 
-/* 인물 행 아래 작은 버튼: 설정 열기/만들기, 이름 바꾸기 */
-.bar-actions {
-  display: flex;
-  gap: 4px;
-  margin: 0 0 6px 76px;
+/* 인물 줄 오른쪽 아래 ⋯ 와 그 메뉴: 설정 열기/만들기, 이름 바꾸기, 등장 씬 */
+.bar-list li {
+  position: relative;
 }
 
-.bar-actions button {
-  flex-shrink: 0;
-  white-space: nowrap;
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
+.bar-more {
+  position: absolute;
+  right: 2px;
+  bottom: 4px;
+  width: 24px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 11px;
+  font-size: 15px;
+  line-height: 1;
   cursor: default;
 }
 
-.bar-actions button:hover {
-  border-color: var(--caret);
+.bar-more:hover,
+.bar-more[aria-expanded="true"] {
+  background: var(--border);
   color: var(--ink);
+}
+
+.bar-menu {
+  position: absolute;
+  right: 2px;
+  bottom: 24px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--chrome);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.bar-menu button {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.bar-menu button:hover {
+  background: var(--button-hover);
 }
 
 /* 인물 설정 문서 위: 원고에서 이 인물의 정보 */

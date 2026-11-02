@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatEighths, type ScriptAnalysis, type SceneSummary } from "../analysis/analyze";
 import { groupScenesByPlace } from "../analysis/places";
 
@@ -34,6 +34,20 @@ export function StatsPanel({
   // 인물 · 장소를 눌러 펼친 씬 목록
   const [openCharacters, setOpenCharacters] = useState<Set<string>>(new Set());
   const [openPlaces, setOpenPlaces] = useState<Set<string>>(new Set());
+  // 인물 줄 오른쪽 ⋯ 메뉴가 열려 있는 인물
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (menuFor === null) return;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !(e.target as Element | null)?.closest(".bar-menu, .bar-more")) setMenuFor(null);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [menuFor]);
   const places = groupScenesByPlace(scenes);
   const toggleIn = (setter: typeof setOpenCharacters, key: string) =>
     setter((prev) => {
@@ -156,33 +170,55 @@ export function StatsPanel({
                       대사 {fmt.format(c.speeches)}회 · 씬 {c.scenes}개
                     </span>
                   </button>
-                  <div className="bar-actions">
-                    <button
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => onOpenProfile(c.name)}
-                      title={hasProfile(c.name) ? "인물 설정 문서 열기" : "인물 설정 문서 만들기"}
-                    >
-                      {hasProfile(c.name) ? "설정 열기" : "+ 설정 만들기"}
-                    </button>
-                    <button
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => onRenameCharacter(c.name)}
-                      title="원고 전체에서 이 인물 이름 바꾸기"
-                    >
-                      이름 바꾸기
-                    </button>
-                    <button
-                      type="button"
-                      aria-expanded={openCharacters.has(c.name)}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => toggleIn(setOpenCharacters, c.name)}
-                      title="이 인물이 나오는 씬 보기"
-                    >
-                      {openCharacters.has(c.name) ? "등장 씬 접기" : "등장 씬"}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className="bar-more"
+                    aria-label={`${c.name} 더 보기`}
+                    aria-haspopup="menu"
+                    aria-expanded={menuFor === c.name}
+                    title="설정 열기 · 이름 바꾸기 · 등장 씬"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setMenuFor(menuFor === c.name ? null : c.name)}
+                  >
+                    ⋯
+                  </button>
+                  {menuFor === c.name && (
+                    <div className="bar-menu" role="menu">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setMenuFor(null);
+                          onOpenProfile(c.name);
+                        }}
+                      >
+                        {hasProfile(c.name) ? "설정 열기" : "+ 설정 만들기"}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setMenuFor(null);
+                          onRenameCharacter(c.name);
+                        }}
+                      >
+                        이름 바꾸기
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setMenuFor(null);
+                          toggleIn(setOpenCharacters, c.name);
+                        }}
+                      >
+                        {openCharacters.has(c.name) ? "등장 씬 접기" : "등장 씬 보기"}
+                      </button>
+                    </div>
+                  )}
                   {openCharacters.has(c.name) && sceneChips(scenes.filter((sc) => sc.characters.includes(c.name)))}
                 </li>
               ))}

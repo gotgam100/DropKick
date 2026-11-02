@@ -798,7 +798,7 @@ export function ProjectTree(props: Props) {
                           setMenu(null);
                         }}
                       >
-                        복제해서 새 버전 만들기
+                        복제
                       </button>
                     )}
                     <hr />

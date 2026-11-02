@@ -156,7 +156,7 @@ export function SettingsDialog({
               className={tab === "view" ? "active" : ""}
               onClick={() => setTab("view")}
             >
-              화면 · 보기
+              화면
             </button>
             <button
               type="button"
@@ -165,7 +165,7 @@ export function SettingsDialog({
               className={tab === "writing" ? "active" : ""}
               onClick={() => setTab("writing")}
             >
-              집필 · 원고
+              집필
             </button>
             <button
               type="button"
@@ -174,7 +174,7 @@ export function SettingsDialog({
               className={tab === "shortcuts" ? "active" : ""}
               onClick={() => setTab("shortcuts")}
             >
-              단축키 · 줄바꿈
+              단축키
             </button>
             <button
               type="button"
@@ -183,7 +183,7 @@ export function SettingsDialog({
               className={tab === "backup" ? "active" : ""}
               onClick={() => setTab("backup")}
             >
-              저장 · 초기화
+              저장
             </button>
           </div>
         </header>

@@ -100,7 +100,7 @@ export function ScriptSettingsDialog({ scriptName, titlePage, settings, onSave, 
             표지
           </button>
           <button type="button" role="tab" aria-selected={tab === "script"} className={tab === "script" ? "active" : ""} onClick={() => setTab("script")}>
-            스크립트 설정
+            씬 번호 · 워터마크
           </button>
         </div>
 
