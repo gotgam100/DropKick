@@ -40,7 +40,7 @@ type Props = {
   onRename: (id: string, name: string) => void;
   /** 스크립트를 복제해 새 버전으로 만든다. 새 스크립트의 id를 돌려준다. */
   onDuplicateScript?: (id: string) => string | null;
-  /** 구분선 추가. afterId가 있으면 그 항목 바로 뒤에 둔다. */
+  /** 구분선 추가(우클릭 "+ 구분선"). afterId가 있으면 그 항목 바로 뒤에 둔다. */
   onAddDivider?: (parentId: string | null, afterId?: string) => void;
   /** 문서·폴더를 볼 스크립트를 정한다. scriptId가 없으면 모든 스크립트에서 보인다. */
   onSetScope?: (id: string, scriptId?: string) => void;
@@ -812,7 +812,7 @@ export function ProjectTree(props: Props) {
                     setMenu(null);
                   }}
                 >
-                  새 스크립트 추가{menu.node?.type === "folder" && <InFolderMark />}
+                  + 새 스크립트{menu.node?.type === "folder" && <InFolderMark />}
                 </button>
                 <button
                   type="button"
@@ -822,7 +822,7 @@ export function ProjectTree(props: Props) {
                     setMenu(null);
                   }}
                 >
-                  새 폴더 추가{menu.node?.type === "folder" && <InFolderMark />}
+                  + 새 폴더{menu.node?.type === "folder" && <InFolderMark />}
                 </button>
                 <button
                   type="button"
@@ -832,7 +832,7 @@ export function ProjectTree(props: Props) {
                     setMenu(null);
                   }}
                 >
-                  새 문서 추가{menu.node?.type === "folder" && <InFolderMark />}
+                  + 새 문서{menu.node?.type === "folder" && <InFolderMark />}
                 </button>
                 {presets && onAddPreset ? (
                   <div
@@ -841,7 +841,7 @@ export function ProjectTree(props: Props) {
                     aria-haspopup="menu"
                     onMouseEnter={() => adjustSubmenuPosition(submenuRef)}
                   >
-                    <span>양식 추가{menu.node?.type === "folder" && <InFolderMark />}</span>
+                    <span>+ 양식{menu.node?.type === "folder" && <InFolderMark />}</span>
                     <span className="tree-submenu-arrow" aria-hidden="true">
                       ▸
                     </span>
@@ -933,7 +933,7 @@ export function ProjectTree(props: Props) {
                       setMenu(null);
                     }}
                   >
-                    새 인물 설정{menu.node?.type === "folder" && <InFolderMark />}
+                    + 새 인물 설정{menu.node?.type === "folder" && <InFolderMark />}
                   </button>
                 )}
                 {onAddDivider && (
@@ -947,7 +947,7 @@ export function ProjectTree(props: Props) {
                       setMenu(null);
                     }}
                   >
-                    구분선 추가{menu.node?.type === "folder" && <InFolderMark />}
+                    + 구분선{menu.node?.type === "folder" && <InFolderMark />}
                   </button>
                 )}
                 {menu.node && multi && onSetScope && canScope(menu.node) && (
