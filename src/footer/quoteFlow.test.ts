@@ -100,7 +100,7 @@ describe("푸터 명대사: 순서와 시간", () => {
   });
 
   it("나만의 명대사처럼 같은 글이 여러 번 들어 있어도 연달아 나오지 않는다", () => {
-    for (let trial = 0; trial < 30; trial++) {
+    for (let trial = 0; trial < 300; trial++) {
       const next = createQuoteDeck(quotePool("내 대사\n두 번째 대사"));
       let prev = next().text;
       for (let i = 0; i < QUOTES.length * 3; i++) {

@@ -94,16 +94,24 @@ export function createQuoteDeck(quotes: readonly Quote[], random: () => number =
       const j = Math.floor(random() * (i + 1));
       [copy[i], copy[j]] = [copy[j], copy[i]];
     }
-    // 앞에서부터 보면서, 바로 앞(첫 자리는 방금 본 것)과 같은 글이면 뒤에 있는 다른 글과 바꾼다
+    // 섞은 차례를 되도록 지키면서, 같은 글이 이웃하지 않게 다시 놓는다.
+    // 한 글이 남은 자리의 절반을 넘게 남으면 그 글을 먼저 놓아야 끝에서 겹치지 않는다.
+    const rest = copy;
+    const out: Quote[] = [];
     let prev = last?.text;
-    for (let i = 0; i < copy.length; i++) {
-      if (copy[i].text === prev) {
-        const k = copy.findIndex((q, idx) => idx > i && q.text !== prev);
-        if (k !== -1) [copy[i], copy[k]] = [copy[k], copy[i]];
-      }
-      prev = copy[i].text;
+    while (rest.length > 0) {
+      const counts = new Map<string, number>();
+      for (const q of rest) counts.set(q.text, (counts.get(q.text) ?? 0) + 1);
+      let top = rest[0].text;
+      for (const [text, n] of counts) if (n > (counts.get(top) ?? 0)) top = text;
+      const mustPlaceTop = (counts.get(top) ?? 0) * 2 - 1 >= rest.length && top !== prev;
+      let at = mustPlaceTop ? rest.findIndex((q) => q.text === top) : rest.findIndex((q) => q.text !== prev);
+      if (at === -1) at = 0; // 남은 것이 모두 같은 글이면 어쩔 수 없다
+      const [picked] = rest.splice(at, 1);
+      out.push(picked);
+      prev = picked.text;
     }
-    return copy;
+    return out;
   };
   return () => {
     if (at >= queue.length) {
