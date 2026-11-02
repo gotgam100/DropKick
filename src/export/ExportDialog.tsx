@@ -7,7 +7,8 @@ type Props = {
   scriptName: string;
   /** 원고 말고 함께 담을 수 있는 문서들 (트리 순서) */
   docs: DocNode[];
-  onExport: (script: boolean, docIds: string[]) => void;
+  /** reveal이 true이면 내보낸 뒤 Finder에서 그 파일을 보여 준다 */
+  onExport: (script: boolean, docIds: string[], reveal: boolean) => void;
   onClose: () => void;
 };
 
@@ -42,7 +43,7 @@ export function ExportDialog({ format, scriptName, docs, onExport, onClose }: Pr
         onMouseDown={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault();
-          onExport(script, ids);
+          onExport(script, ids, false);
           onClose();
         }}
       >
@@ -81,6 +82,16 @@ export function ExportDialog({ format, scriptName, docs, onExport, onClose }: Pr
         <div className="dialog-actions">
           <button type="button" onClick={onClose}>
             취소
+          </button>
+          <button
+            type="button"
+            disabled={!script && ids.length === 0}
+            onClick={() => {
+              onExport(script, ids, true);
+              onClose();
+            }}
+          >
+            내보내고 폴더 열기
           </button>
           <button type="submit" className="primary" disabled={!script && ids.length === 0}>
             내보내기

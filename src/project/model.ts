@@ -244,7 +244,7 @@ export function serializeManifest(manifest: ProjectManifest): string {
 
 export type NewProject = { manifest: ProjectManifest; texts: Map<string, string> };
 
-/** 새 프로젝트의 기본 트리: 개요(시놉시스, 3막 구조 양식), 메인 스크립트, 인물 설정, 메모, 기타, 구분선, 수정고 */
+/** 새 프로젝트의 기본 트리: 개요(시놉시스, 3막 구조 양식), 메인 스크립트, 인물 설정, 메모, 기타 (수정고는 사이드바에 따로 있어 트리에 두지 않는다) */
 export const DEFAULT_FOLDERS_AFTER_SCRIPT = ["인물 설정", "메모", "기타"];
 export const SCRIPT_NAME = "메인 스크립트";
 
@@ -276,8 +276,6 @@ export function createProject(title: string, script?: { titlePage: string | null
       },
       { id: scriptId, type: "script", name: SCRIPT_NAME, file: `${SCRIPT_NAME}.fountain` },
       ...DEFAULT_FOLDERS_AFTER_SCRIPT.map(folder),
-      { id: newId("divider"), type: "divider", name: "구분선" },
-      folder("수정고"),
     ],
     lastOpened: scriptId,
   };

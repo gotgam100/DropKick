@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { findNode } from "../project/tree";
+import { ZOOM_STEPS } from "../settings/settings";
 import { visibleDocsFor } from "../project/scripts";
 import type { ProjectNode } from "../project/model";
 import type { RevisionMeta } from "../project/model";
@@ -12,6 +13,9 @@ type Props = {
   tree: ProjectNode[];
   mainScriptId: string;
   revisions: RevisionMeta[];
+  /** 이 화면의 화면 비율(%). 비율을 바꿀 수 없는 화면(통계, 3막 구조 등)이면 없다 */
+  zoom?: number;
+  onZoom: (direction: 1 | -1) => void;
   onChange: (target: PaneTarget) => void;
   onSwap: () => void;
   onClose: () => void;
@@ -38,6 +42,8 @@ export function PaneHeader({
   tree,
   mainScriptId,
   revisions,
+  zoom,
+  onZoom,
   onChange,
   onSwap,
   onClose,
@@ -97,6 +103,29 @@ export function PaneHeader({
         </select>
       </label>
       <span className="pane-header-spacer" />
+      {zoom !== undefined && (
+        <span className="pane-zoom" role="group" aria-label={`화면 ${index + 1} 비율`}>
+          <button
+            type="button"
+            className="pane-header-button"
+            title="이 화면만 줄이기"
+            disabled={zoom <= ZOOM_STEPS[0]}
+            onClick={() => onZoom(-1)}
+          >
+            −
+          </button>
+          <span className="pane-zoom-value">{zoom}%</span>
+          <button
+            type="button"
+            className="pane-header-button"
+            title="이 화면만 키우기"
+            disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
+            onClick={() => onZoom(1)}
+          >
+            +
+          </button>
+        </span>
+      )}
       <button type="button" className="pane-header-button" title="두 화면 서로 바꾸기" onClick={onSwap}>
         ⇄
       </button>

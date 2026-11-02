@@ -453,10 +453,13 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "화면 비율",
         true,
         &[
+            &item("zoom:70", "70%", None)?,
             &item("zoom:80", "80%", None)?,
+            &item("zoom:90", "90%", None)?,
             &item("zoom:100", "100% (기본)", None)?,
             &item("zoom:120", "120%", None)?,
             &item("zoom:150", "150%", None)?,
+            &item("zoom:200", "200%", None)?,
             &PredefinedMenuItem::separator(app)?,
             &item("zoom:in", "확대", Some("CmdOrCtrl+="))?,
             &item("zoom:out", "축소", Some("CmdOrCtrl+-"))?,

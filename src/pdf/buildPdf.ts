@@ -10,6 +10,7 @@ import fontkit from "@pdf-lib/fontkit";
 import type { ScriptDocument } from "../fountain/fountain";
 import { KOREAN_SCALE, splitRuns, textColumns } from "../layout/metrics";
 import { PAGE, paginate } from "../layout/paginate";
+import { COVER_TITLE_SCALE, WATERMARK } from "../project/scriptSettings";
 
 import type { ExtraSection } from "../export/extras";
 import { drawExtras } from "./extrasPdf";
@@ -30,21 +31,21 @@ const BASELINE = (LINE - SIZE) / 2 + 9.5;
 type Fonts = { regular: [PDFFont, PDFFont]; bold: [PDFFont, PDFFont] };
 
 /** 한 줄을 글꼴별 묶음으로 나눠, 칸 위치에 맞춰 찍는다. */
-function drawLine(page: PDFPage, fonts: Fonts, text: string, column: number, row: number, bold: boolean) {
+function drawLine(page: PDFPage, fonts: Fonts, text: string, column: number, row: number, bold: boolean, scale = 1) {
   const [courier, korean] = bold ? fonts.bold : fonts.regular;
   const y = HEIGHT - PAGE.topMarginIn * PT - row * LINE - BASELINE;
   for (const run of splitRuns(text)) {
     if (run.text.trim() === "") continue;
     page.drawText(run.text, {
-      x: LEFT + (column + run.column) * COLUMN,
+      x: LEFT + column * COLUMN + run.column * COLUMN * scale,
       y,
-      size: run.courier ? SIZE : SIZE * KOREAN_SCALE,
+      size: (run.courier ? SIZE : SIZE * KOREAN_SCALE) * scale,
       font: run.courier ? courier : korean,
     });
   }
 }
 
-/** 표지: Title / Credit / Author / Source 는 가운데, Draft date / Contact 는 아래 왼쪽 */
+/** 표지: Title / Credit / Source / Author 는 가운데, Draft date / Contact 는 아래 오른쪽(오른쪽 정렬) */
 function parseTitlePage(text: string): Map<string, string[]> {
   const fields = new Map<string, string[]>();
   let key = "";
@@ -64,23 +65,24 @@ function drawTitlePage(pdf: PDFDocument, fonts: Fonts, titlePage: string) {
   const fields = parseTitlePage(titlePage);
   const page = pdf.addPage([WIDTH, HEIGHT]);
   const centerColumn = PAGE.bodyColumns / 2;
-  const centered = (text: string, row: number, bold = false) =>
-    drawLine(page, fonts, text, centerColumn - textColumns(text) / 2, row, bold);
+  const centered = (text: string, row: number, bold = false, scale = 1) =>
+    drawLine(page, fonts, text, centerColumn - (textColumns(text) * scale) / 2, row, bold, scale);
 
   let row = Math.round(PAGE.linesPerPage / 3);
-  for (const line of fields.get("title") ?? []) centered(line.replace(/[*_]/g, ""), row++, true);
-  row += 3;
-  for (const key of ["credit", "author", "authors", "source"]) {
+  for (const line of fields.get("title") ?? []) centered(line.replace(/[*_]/g, ""), row++, true, COVER_TITLE_SCALE);
+  row += 1; // 제목 아래는 한 줄만 띄운다
+  for (const key of ["credit", "source", "author", "authors"]) {
     for (const line of fields.get(key) ?? []) centered(line, row++);
-    if (fields.has(key)) row++;
+    if (fields.has(key)) row += key === "source" ? 2 : 1; // 부제·원작과 작가 사이는 한 줄 더 띄운다
   }
 
   const bottom = [...(fields.get("draft date") ?? []), ...(fields.get("contact") ?? [])];
-  bottom.forEach((line, i) => drawLine(page, fonts, line, 0, PAGE.linesPerPage - bottom.length + i, false));
+  bottom.forEach((line, i) =>
+    drawLine(page, fonts, line, PAGE.bodyColumns - textColumns(line), PAGE.linesPerPage - bottom.length + i, false),
+  );
 }
 
 /** 워터마크 글자: 불투명도 10%, 기울어진 글씨가 쪽 전체에 반복된다. */
-export const WATERMARK = { opacity: 0.1, angle: 35, size: 22, maxWidth: 360 };
 
 /** 한 쪽 전체에 워터마크를 반복해서 찍는다. 글이 길면 글자를 줄여 한 줄이 쪽 안에 들어오게 한다. */
 export function drawWatermark(page: PDFPage, font: PDFFont, rawText: string) {

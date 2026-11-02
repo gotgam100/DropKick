@@ -51,3 +51,9 @@ export function parseScriptSettings(value: unknown, validIds: ReadonlySet<string
   }
   return result;
 }
+
+/** PDF 워터마크 모양: 불투명도, 기울기(도), 글자 크기와 한 줄 최대 폭(pt). 설정 창 미리보기도 이 값을 쓴다 */
+export const WATERMARK = { opacity: 0.1, angle: 35, size: 22, maxWidth: 360 };
+
+/** 표지 제목 글자 크기: 본문(12pt)보다 3pt 크다. PDF 표지와 설정 창 미리보기가 함께 쓴다 */
+export const COVER_TITLE_SCALE = 15 / 12;

@@ -17,7 +17,8 @@ import {
   clearAllAppStorage,
   loadSettings,
   normalizeZoom,
-  ZOOM_STEPS,
+  stepZoomPercent,
+  type ZoomPercent,
   saveSettings,
   type AppSettings,
 } from "./settings/settings";
@@ -163,6 +164,8 @@ function App() {
   const [paneState, setPaneState] = useState<PaneState>(loadPaneState);
   // 이벤트 안에서 바로 이어 쓸 수 있도록 최신 값을 따로 들고 있는다.
   const paneRef = useRef(paneState);
+  // 화면을 나눴을 때 화면마다 따로 쓰는 화면 비율. 비어 있으면 전체 비율(settings.zoom)을 따른다.
+  const [paneZoom, setPaneZoom] = useState<[ZoomPercent | null, ZoomPercent | null]>([null, null]);
   paneRef.current = paneState;
   // 프로젝트 쪽은 "글 편집기 하나"로 알고 있으므로, 지금 포커스가 있는 화면의 편집기로 연결해 준다.
   const textEditorRef = useRef<TextEditorHandle | null>(null);
@@ -246,6 +249,24 @@ function App() {
   const openRevision = focusedRevision;
   const scriptIndex = scriptPane(paneState);
   const scriptVisible = scriptIndex !== null;
+  /** 이 화면의 화면 비율이 먹히는가: 원고와 글 문서만 (통계, 3막 구조, 수정고는 아니다) */
+  const zoomableIn = (index: PaneIndex): boolean => {
+    const shown = shownIn(index);
+    if (shown.kind === "script") return true;
+    if (shown.kind !== "doc") return false;
+    const node = findNode(project.tree, shown.id) as DocNode | null;
+    return !!node && node.type !== "structure";
+  };
+  /** 나눠 놓았으면 화면마다 따로, 아니면 전체 비율 */
+  const zoomOf = (index: PaneIndex): ZoomPercent => (split ? paneZoom[index] ?? settings.zoom : settings.zoom);
+  // 단축키와 메뉴가 항상 지금 상태를 보도록 매번 갱신해 둔다
+  const zoomInfoRef = useRef({ split: false, focus: 0 as PaneIndex, zoomable: [false, false], zoom: [100, 100] as ZoomPercent[] });
+  zoomInfoRef.current = {
+    split,
+    focus: focusedIndex,
+    zoomable: [zoomableIn(0), zoomableIn(1)],
+    zoom: [zoomOf(0), zoomOf(1)],
+  };
   const showStats = paneShowing(paneState, { kind: "stats" }) !== null;
   const structureIndex = (() => {
     for (const i of split ? [0, 1] : [0]) {
@@ -452,11 +473,25 @@ function App() {
     }
   }, []);
 
-  // 화면 비율을 한 단계씩 키우거나 줄인다. (80 → 100 → 120 → 150)
-  const stepZoom = useCallback((direction: 1 | -1) => {
+  // 화면 비율을 한 단계씩 키우거나 줄인다. (70 → 80 → 90 → 100 → 120 → 150 → 200)
+  // 화면을 나눈 상태에서는 index를 준 화면(없으면 선택된 화면)만 바뀌고, 다른 화면은 그대로다.
+  const changeZoom = useCallback((direction: 1 | -1, absolute?: ZoomPercent, index?: PaneIndex) => {
+    const info = zoomInfoRef.current;
+    if (info.split) {
+      const i = index ?? info.focus;
+      if (!info.zoomable[i]) return;
+      const z = absolute ?? stepZoomPercent(info.zoom[i] as ZoomPercent, direction);
+      if (z === info.zoom[i]) return;
+      setPaneZoom((prev) => {
+        const next: [ZoomPercent | null, ZoomPercent | null] = [prev[0], prev[1]];
+        next[i] = z;
+        return next;
+      });
+      setNotice({ text: `화면 ${i + 1} 비율: ${z}%`, key: Date.now() });
+      return;
+    }
     const current = loadSettings().zoom;
-    const at = ZOOM_STEPS.indexOf(current);
-    const z = ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, at + direction))];
+    const z = absolute ?? stepZoomPercent(current, direction);
     if (z === current) return;
     setSettings((prev) => {
       const next = { ...prev, zoom: z };
@@ -465,6 +500,7 @@ function App() {
     });
     setNotice({ text: `화면 비율: ${z}%`, key: Date.now() });
   }, []);
+  const stepZoom = useCallback((direction: 1 | -1) => changeZoom(direction), [changeZoom]);
 
   // ⌘+ / ⌘- 로 화면 비율 조절
   useEffect(() => {
@@ -509,15 +545,7 @@ function App() {
       else if (id === "open_guide") handleOpenGuide();
       else if (id === "zoom:in") stepZoom(1);
       else if (id === "zoom:out") stepZoom(-1);
-      else if (id.startsWith("zoom:")) {
-        const z = normalizeZoom(id.slice("zoom:".length));
-        setSettings((prev) => {
-          const next = { ...prev, zoom: z };
-          saveSettings(next);
-          return next;
-        });
-        setNotice({ text: `화면 비율: ${z}%`, key: Date.now() });
-      }
+      else if (id.startsWith("zoom:")) changeZoom(1, normalizeZoom(id.slice("zoom:".length)));
     }).then((fn) => {
       if (disposed) fn();
       else unlisten = fn;
@@ -526,7 +554,7 @@ function App() {
       disposed = true;
       unlisten?.();
     };
-  }, [toggleSidebar, toggleStats, handleOpenSettings, handleOpenGuide]);
+  }, [toggleSidebar, toggleStats, handleOpenSettings, handleOpenGuide, stepZoom, changeZoom]);
 
   // 메모: 우클릭 메뉴의 '메모'나 밑줄 친 글을 누르면 창을 연다.
   const openNote = useCallback((id: string) => {
@@ -838,13 +866,16 @@ function App() {
     };
   }, []);
 
-  const zoomStyle = settings.zoom !== 100 ? { zoom: settings.zoom / 100 } : undefined;
+  const docZoomStyle = (index: PaneIndex) => {
+    const z = zoomOf(index);
+    return z !== 100 ? { zoom: z / 100 } : undefined;
+  };
   // 화면을 나누면 원고 화면이 좁아지므로, 용지가 잘리지 않게 그 폭에 맞춰 줄여서 보여준다.
   // (줄 바꿈은 용지 기준이라 화면 비율만 바뀌고 페이지 계산은 그대로다)
   const scriptZoom =
     split && scriptPaneWidth > 0
-      ? Math.max(0.4, Math.min(settings.zoom / 100, (scriptPaneWidth - 32) / (PAPER_FIT_WIDTH - 32)))
-      : settings.zoom / 100;
+      ? Math.max(0.4, Math.min(zoomOf(scriptIndex ?? 0) / 100, (scriptPaneWidth - 32) / (PAPER_FIT_WIDTH - 32)))
+      : zoomOf(scriptIndex ?? 0) / 100;
   const scriptZoomStyle = scriptZoom !== 1 ? { zoom: scriptZoom } : undefined;
 
   const paneStyle = (index: PaneIndex): CSSProperties =>
@@ -860,6 +891,8 @@ function App() {
       tree={project.tree}
       mainScriptId={mainScriptId}
       revisions={project.revisions}
+      zoom={zoomableIn(index) ? zoomOf(index) : undefined}
+      onZoom={(direction) => changeZoom(direction, undefined, index)}
       onChange={(target) => {
         if (presetPane === index) setPresetModal(null);
         applyPanes(showInPane(paneRef.current, index, target));
@@ -985,7 +1018,7 @@ function App() {
             )}
           </div>
         )}
-        <article className="text-page" style={zoomStyle}>
+        <article className="text-page" style={docZoomStyle(index)}>
           <TextEditor ref={textRefs[index]} docId={doc.id} text={text} onChange={project.setDocText} />
         </article>
       </main>
@@ -1497,8 +1530,8 @@ function App() {
           format={exportFormat}
           scriptName={scriptName}
           docs={visibleDocs}
-          onExport={(script, docIds) =>
-            project.exportBundle(exportFormat, { script, docIds })
+          onExport={(script, docIds, reveal) =>
+            project.exportBundle(exportFormat, { script, docIds, reveal })
           }
           onClose={() => setExportFormat(null)}
         />

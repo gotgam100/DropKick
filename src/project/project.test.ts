@@ -63,7 +63,7 @@ function memoryFs() {
 const ROOT = "/Users/me/드롭킥.dropkick";
 
 describe("새 프로젝트", () => {
-  it("개요, 메인 스크립트, 인물 설정, 메모, 기타, 구분선, 수정고로 시작하고 첫 줄은 씬헤딩", () => {
+  it("개요, 메인 스크립트, 인물 설정, 메모, 기타로 시작하고 첫 줄은 씬헤딩", () => {
     const { manifest, texts } = createProject("드롭킥");
     expect(manifest.tree.map((n) => [n.type, n.name])).toEqual([
       ["folder", "개요"],
@@ -71,8 +71,6 @@ describe("새 프로젝트", () => {
       ["folder", "인물 설정"],
       ["folder", "메모"],
       ["folder", "기타"],
-      ["divider", "구분선"],
-      ["folder", "수정고"],
     ]);
     const script = fromFountain(texts.get(manifest.mainScript)!);
     expect(script.titlePage).toBe("Title: 드롭킥");
@@ -97,7 +95,7 @@ describe("저장하고 다시 열기", () => {
 
     expect(files.has(joinPath(ROOT, "메인 스크립트.fountain"))).toBe(true);
     expect(files.has(joinPath(ROOT, MANIFEST_FILE))).toBe(true);
-    for (const folder of ["개요", "인물 설정", "메모", "기타", "수정고"]) expect(dirs.has(joinPath(ROOT, folder))).toBe(true);
+    for (const folder of ["개요", "인물 설정", "메모", "기타"]) expect(dirs.has(joinPath(ROOT, folder))).toBe(true);
 
     const loaded = await loadProject(fs, ROOT);
     expect(loaded.recovered).toBe(false);
@@ -130,7 +128,7 @@ describe("저장하고 다시 열기", () => {
     const { fs, files } = memoryFs();
     const project = createProject("드롭킥");
     const saved = await saveProject(fs, ROOT, project.manifest, project.texts);
-    expect(saved.tree.length).toBe(7);
+    expect(saved.tree.length).toBe(5);
     files.delete(joinPath(ROOT, "메인 스크립트.fountain"));
     const loaded = await loadProject(fs, ROOT);
     expect(loaded.missing).toEqual(["메인 스크립트.fountain"]);

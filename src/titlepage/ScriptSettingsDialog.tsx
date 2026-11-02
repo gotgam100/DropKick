@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { loadSettings } from "../settings/settings";
 import { MAX_SCENE_START, sceneStartOf, type ScriptSettings } from "../project/scriptSettings";
+import { SettingsPreview } from "./SettingsPreview";
 import { COVER_FIELDS, readTitlePage, writeTitlePage, type CoverField, type TitlePageFields } from "./titlePage";
 
 type Props = {
@@ -13,9 +14,8 @@ type Props = {
 
 const FIELDS: { key: CoverField; label: string; placeholder: string; multiline?: boolean }[] = [
   { key: "title", label: "제목", placeholder: "드롭킥" },
-  { key: "credit", label: "크레딧", placeholder: "각본" },
+  { key: "source", label: "부제 혹은 원작", placeholder: "부제나 원작이 있으면 적습니다" },
   { key: "author", label: "작가", placeholder: "이름" },
-  { key: "source", label: "원작", placeholder: "원작이 있으면 적습니다" },
   { key: "draftDate", label: "날짜/고", placeholder: "2026-10-25 / 1고" },
   { key: "contact", label: "연락처", placeholder: "전화번호, 이메일 (여러 줄 가능)", multiline: true },
 ];
@@ -93,6 +93,8 @@ export function ScriptSettingsDialog({ scriptName, titlePage, settings, onSave, 
         <h2>스크립트 설정</h2>
         <p className="dialog-hint">"{scriptName}" 스크립트에만 적용됩니다.</p>
 
+        <div className="settings-body">
+          <div className="settings-form">
         <div className="settings-tabs" role="tablist">
           <button type="button" role="tab" aria-selected={tab === "cover"} className={tab === "cover" ? "active" : ""} onClick={() => setTab("cover")}>
             표지
@@ -161,6 +163,9 @@ export function ScriptSettingsDialog({ scriptName, titlePage, settings, onSave, 
             <p className="dialog-hint">PDF의 모든 쪽 위에 이 글이 기울어진 글씨로 흐리게(불투명도 10%) 반복해서 찍힙니다. 비워 두면 찍지 않습니다.</p>
           </>
         )}
+          </div>
+          <SettingsPreview tab={tab} fields={fields} off={off} watermark={watermark} />
+        </div>
 
         <div className="dialog-actions">
           <button type="button" onClick={onClose}>

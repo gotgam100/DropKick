@@ -119,7 +119,7 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
   if (doc.titlePage && doc.titlePage.trim()) {
     const fields = parseTitlePage(doc.titlePage);
     const title = fields.get("title")?.join(" ") || "";
-    const credit = fields.get("credit")?.join(" ") || "written by";
+    const credit = fields.get("credit")?.join(" ") || "";
     const author = fields.get("author")?.join(", ") || fields.get("authors")?.join(", ") || "";
     const source = fields.get("source")?.join(" ") || "";
     const draftDate = fields.get("draft date")?.join(" ") || "";
@@ -135,12 +135,13 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
       paragraphs.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { after: 240, line: LINE_SPACING, lineRule: LineRuleType.EXACT },
+          // 제목은 글자가 커서 줄 높이를 그만큼 늘린다 (17pt × 1.3, 글자 윗부분이 잘리지 않게)
+          spacing: { after: 240, line: Math.round(((FONT_SIZE + 10) / 2) * 1.3 * 20), lineRule: LineRuleType.EXACT },
           children: [
             new TextRun({
               text: toUpperLatin(title),
               bold: true,
-              size: FONT_SIZE + 4,
+              size: FONT_SIZE + 4 + 6,
               font: { name: FONT_PRIMARY, eastAsia: FONT_ASIAN },
             }),
           ],
@@ -165,15 +166,16 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
       );
     }
 
-    // 작가
-    if (author) {
+    // 원작
+    if (source) {
       paragraphs.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { after: 120, line: LINE_SPACING, lineRule: LineRuleType.EXACT },
+          // 작가와의 사이는 한 줄(LINE_SPACING) 더 띄운다
+          spacing: { after: 120 + LINE_SPACING, line: LINE_SPACING, lineRule: LineRuleType.EXACT },
           children: [
             new TextRun({
-              text: author,
+              text: source,
               size: FONT_SIZE,
               font: { name: FONT_PRIMARY, eastAsia: FONT_ASIAN },
             }),
@@ -182,15 +184,15 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
       );
     }
 
-    // 원작
-    if (source) {
+    // 작가
+    if (author) {
       paragraphs.push(
         new Paragraph({
           alignment: AlignmentType.CENTER,
           spacing: { after: 240, line: LINE_SPACING, lineRule: LineRuleType.EXACT },
           children: [
             new TextRun({
-              text: `based on ${source}`,
+              text: author,
               size: FONT_SIZE,
               font: { name: FONT_PRIMARY, eastAsia: FONT_ASIAN },
             }),
@@ -204,10 +206,11 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
       paragraphs.push(new Paragraph({ text: "" }));
     }
 
-    // 작성일 및 연락처 (좌측 정렬)
+    // 작성일 및 연락처 (우측 정렬)
     if (draftDate) {
       paragraphs.push(
         new Paragraph({
+          alignment: AlignmentType.RIGHT,
           spacing: { after: 120, line: LINE_SPACING, lineRule: LineRuleType.EXACT },
           children: [
             new TextRun({
@@ -223,6 +226,7 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
     for (const c of contact) {
       paragraphs.push(
         new Paragraph({
+          alignment: AlignmentType.RIGHT,
           spacing: { after: 60, line: LINE_SPACING, lineRule: LineRuleType.EXACT },
           children: [
             new TextRun({

@@ -5,10 +5,16 @@ import type { LineStyle } from "../editor/styles";
 import { DEFAULT_APP_SHORTCUTS, parseAppShortcuts, type AppShortcuts } from "./appShortcuts";
 
 export type ThemeMode = "system" | "light" | "dark";
-export type ZoomPercent = 80 | 100 | 120 | 150;
+export type ZoomPercent = 70 | 80 | 90 | 100 | 120 | 150 | 200;
 
 /** ⌘+ / ⌘- 로 오가는 화면 비율 단계 */
-export const ZOOM_STEPS: readonly ZoomPercent[] = [80, 100, 120, 150];
+export const ZOOM_STEPS: readonly ZoomPercent[] = [70, 80, 90, 100, 120, 150, 200];
+
+/** 화면 비율을 한 단계 키우거나(1) 줄인 값. 끝에 닿으면 그대로 */
+export function stepZoomPercent(current: ZoomPercent, direction: 1 | -1): ZoomPercent {
+  const at = ZOOM_STEPS.indexOf(current);
+  return ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, at + direction))];
+}
 export type AutosaveInterval = 3000 | 10000 | 30000 | 0;
 
 export type StyleShortcuts = Record<LineStyle, string>;
@@ -44,7 +50,7 @@ export const DEFAULT_NEXT_STYLE_RULES: NextStyleRules = {
 export type AppSettings = {
   /** 화면 테마: 맥 설정 따르기 / 밝은 모드 / 어두운 모드 */
   theme: ThemeMode;
-  /** 원고 화면 비율: 80% / 100%(기본) / 120% / 150% */
+  /** 원고 화면 비율: 70 / 80 / 90 / 100%(기본) / 120 / 150 / 200% */
   zoom: ZoomPercent;
   /** 원고에서 현재 커서가 있는 줄 강조 표시 */
   highlightCurrentLine: boolean;
@@ -93,7 +99,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 export function normalizeZoom(val: unknown): ZoomPercent {
   const n = Number(val);
-  if (n === 80 || n === 100 || n === 120 || n === 150) return n;
+  if ((ZOOM_STEPS as readonly number[]).includes(n)) return n as ZoomPercent;
   return 100;
 }
 

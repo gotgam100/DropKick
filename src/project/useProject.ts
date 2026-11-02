@@ -78,7 +78,7 @@ const SCRIPT_FILTERS = [{ name: "Fountain 시나리오", extensions: ["fountain"
 const LAST_KEY = "dropkick.last";
 
 /** 내보내기 창에서 고른 내용: 원고를 담을지, 뒤에 붙일 다른 문서들 */
-type ExportBundle = { script: boolean; extras: ExtraSection[] };
+type ExportBundle = { script: boolean; extras: ExtraSection[]; /** 내보낸 뒤 Finder에서 그 파일을 보여 준다 */ reveal?: boolean };
 /** 입력을 멈추고 이만큼 지나면 자동 저장 */
 const AUTOSAVE_DELAY = 3000;
 /** 자동 저장 때는 이 간격마다 한 번만 백업을 남긴다 (직접 저장은 매번) */
@@ -1416,6 +1416,7 @@ export function useProject(
       const doc = bundle?.script === false ? null : exportDocument(source ? scriptLinesOf(source.script) : { titlePage: sessionRef.current.titlePage, lines: editor.getLines() });
       const bytes = await buildPdf(doc, await loadFonts(), bundle?.extras, { watermark: settings?.watermark });
       await invoke("write_binary", bytes, { headers: { path: encodeURIComponent(path) } });
+      if (bundle?.reveal) await invoke("reveal_in_finder", { path });
     } catch (error) {
       await showError("PDF를 만들지 못했습니다.", error);
     }
@@ -1436,6 +1437,7 @@ export function useProject(
       const doc = bundle?.script === false ? null : exportDocument(source ? scriptLinesOf(source.script) : { titlePage: sessionRef.current.titlePage, lines: editor.getLines() });
       const bytes = await buildDocx(doc, bundle?.extras);
       await invoke("write_binary", bytes, { headers: { path: encodeURIComponent(path) } });
+      if (bundle?.reveal) await invoke("reveal_in_finder", { path });
     } catch (error) {
       await showError("Word 문서를 만들지 못했습니다.", error);
     }
@@ -1735,7 +1737,7 @@ export function useProject(
     exportRevisionPdf: (name: string, script: string) => runExclusive(() => exportPdf({ name, script })),
     exportRevisionDocx: (name: string, script: string) => runExclusive(() => exportDocx({ name, script })),
     /** 내보내기 창에서 고른 내용으로 PDF나 Word 파일을 만든다. */
-    exportBundle: (format: "pdf" | "docx", selection: { script: boolean; docIds: string[] }) =>
+    exportBundle: (format: "pdf" | "docx", selection: { script: boolean; docIds: string[]; reveal?: boolean }) =>
       runExclusive(() => {
         const session = sessionRef.current;
         const nodes = new Map(walkDocs(session.manifest.tree).map((n) => [n.id, n]));
@@ -1744,7 +1746,7 @@ export function useProject(
           if (!node || node.type === "script") return [];
           return [buildExtraSection(node.type, node.name, session.texts.get(id) ?? "")];
         });
-        const bundle = { script: selection.script, extras };
+        const bundle = { script: selection.script, extras, reveal: selection.reveal };
         return format === "pdf" ? exportPdf(undefined, bundle) : exportDocx(undefined, bundle);
       }),
     createRevision,

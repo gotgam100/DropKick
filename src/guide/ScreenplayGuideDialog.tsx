@@ -362,6 +362,13 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
                 </div>
                 <p className="guide-card-desc">등장인물이 말하는 대사 본문 (중앙 블록 정렬).</p>
               </div>
+              <p className="guide-example-credit">
+                예시 스크립트
+                <br />
+                <span className="guide-example-title">&lt;잃어버린 외장하드를 찾는 이상한 모험&gt;</span>
+                <br />
+                백승화 | 2020 | 10min
+              </p>
             </div>
           </div>
         </div>
