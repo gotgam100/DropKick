@@ -30,7 +30,6 @@ import { clampPosition, type ViewPosition } from "../project/viewPositions";
 export type EditorInfo = {
   lines: number;
   chars: number;
-  charsNoSpace: number;
   characters: number;
   scenes: number;
   page: number;
@@ -124,7 +123,6 @@ function readInfo(state: EditorState, withCounts: EditorInfo | null): EditorInfo
   return {
     lines: state.doc.lines,
     chars: text.replace(/\n/g, "").length,
-    charsNoSpace: text.replace(/\s/g, "").length,
     characters: characterNames(state).length,
     scenes: state.field(sceneNumbersField).size,
     page,

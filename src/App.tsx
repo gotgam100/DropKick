@@ -60,6 +60,7 @@ import {
   type PaneState,
   type PaneTarget,
 } from "./split/paneTargets";
+import { countPlaces } from "./analysis/places";
 import { PaneHeader } from "./split/PaneHeader";
 import { FooterQuote } from "./footer/FooterQuote";
 import { SplitDivider } from "./split/SplitDivider";
@@ -185,7 +186,6 @@ function App() {
   const [info, setInfo] = useState<EditorInfo>({
     lines: 0,
     chars: 0,
-    charsNoSpace: 0,
     characters: 0,
     scenes: 0,
     page: 1,
@@ -269,6 +269,8 @@ function App() {
     zoom: [zoomOf(0), zoomOf(1)],
   };
   const showStats = paneShowing(paneState, { kind: "stats" }) !== null;
+  // 푸터에 보이는 장소 수: "실내. 장소명"까지 같으면 같은 장소
+  const placeCount = useMemo(() => countPlaces(analysis.scenes), [analysis.scenes]);
   // 보기 메뉴의 ✓(사이드바, 통계)를 지금 화면 상태에 맞춘다
   useEffect(() => {
     if (isTauri()) invoke("set_view_menu_checks", { sidebar: showSidebar, stats: showStats }).catch(() => {});
@@ -1334,7 +1336,7 @@ function App() {
             <span>씬 {numberFormat.format(info.scenes)}개</span>
             <span>인물 {numberFormat.format(info.characters)}명</span>
             <span>글자 {numberFormat.format(info.chars)}</span>
-            <span>공백 제외 {numberFormat.format(info.charsNoSpace)}</span>
+            <span>장소 {numberFormat.format(placeCount)}개</span>
           </>
         ) : focusedDocNode ? (
           <>

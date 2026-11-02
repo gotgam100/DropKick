@@ -32,6 +32,41 @@ export function groupScenesByPlace(scenes: readonly SceneSummary[]): PlaceGroup[
   return [...groups.values()].sort((a, b) => b.scenes.length - a.scenes.length);
 }
 
+/** "내부·실내·INT"는 안, "외부·실외·EXT"는 밖. 둘이 섞인 표기(INT/EXT 등)는 따로 센다 */
+function inOutKind(prefix: string): string {
+  const p = prefix.replace(/[.\s]/g, "").toUpperCase();
+  if (/\//.test(p) || p === "IE") return "안팎";
+  if (p === "내부" || p === "실내" || p === "내" || p === "INT") return "안";
+  if (p === "외부" || p === "실외" || p === "외" || p === "EXT") return "밖";
+  return p;
+}
+
+/**
+ * 같은 장소인지 가르는 열쇠: "실내. 장소명. 세부장소 - 시간대"에서 **"실내. 장소명"까지만** 본다.
+ * 세부장소와 시간대는 달라도 같은 장소다. 안과 밖은 다른 장소로 센다.
+ * 장소가 없거나 "(장소 없음)"이면 null.
+ */
+export function placeKeyOf(heading: string): string | null {
+  const clean = heading.replace(NUMBER_PREFIX, "").trim();
+  const inOut = IN_OUT_PREFIX.exec(clean);
+  const rest = clean.slice(inOut ? inOut[0].length : 0);
+  const withoutTime = rest.split(/\s+[-–—](?:\s+|$)/)[0];
+  const place = withoutTime.split(/\.\s+/)[0].replace(/\s+/g, " ").trim().toUpperCase();
+  if (!place || place === "(장소 없음)") return null;
+  return `${inOut ? inOutKind(inOut[0]) : ""}|${place}`;
+}
+
+/** 원고에 나오는 장소의 수 (같은 장소는 한 번만 센다. 씬 번호가 없는 앞부분은 뺀다) */
+export function countPlaces(scenes: readonly { number: number; heading: string }[]): number {
+  const keys = new Set<string>();
+  for (const s of scenes) {
+    if (s.number <= 0) continue;
+    const key = placeKeyOf(s.heading);
+    if (key) keys.add(key);
+  }
+  return keys.size;
+}
+
 export type HeadingParts = {
   /** 장소 앞부분 ("내부. " 같은 것, 띄어쓰기까지). 없으면 빈 글 */
   prefix: string;
