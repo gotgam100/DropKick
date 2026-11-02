@@ -51,6 +51,7 @@ import {
 import type { RevisionMeta } from "./model";
 import { buildExtraSection, type ExtraSection } from "../export/extras";
 import { DEFAULT_CHARACTER_PRESET, formatPresetText, loadPresets, type DocPreset } from "./presets";
+import { samePosition } from "./viewPositions";
 import { loadSettings } from "../settings/settings";
 import { createDefaultStructureBoard, serializeStructureBoard } from "../structure/structureModel";
 import { compactSettings, sceneStartOf, type ScriptSettings } from "./scriptSettings";
@@ -394,11 +395,14 @@ export function useProject(
         const token = editor.captureSaveState();
         const mainId = start.manifest.mainScript;
         const notes = mergeNotes(start.manifest.notes, mainId, editor.getNotes(), mainId);
+        const position = editor.getViewPosition();
         const manifest = {
           ...start.manifest,
           title: projectTitleFromPath(path),
           lastOpened: activeRef.current,
           ...(notes.length > 0 ? { notes } : { notes: undefined }),
+          // 보던 자리(커서와 화면 위치)도 함께 적어 둔다
+          ...(position ? { viewPositions: { ...start.manifest.viewPositions, [mainId]: position } } : {}),
         };
         const texts = new Map(start.texts);
         texts.set(manifest.mainScript, currentScriptText());
@@ -438,7 +442,17 @@ export function useProject(
         sessionRef.current = {
           ...current,
           path,
-          manifest: treeUnchanged ? saved : { ...current.manifest, title: saved.title, tree: applyFiles(current.manifest.tree) },
+          manifest: treeUnchanged
+            ? saved
+            : {
+                ...current.manifest,
+                title: saved.title,
+                tree: applyFiles(current.manifest.tree),
+                // 저장하는 동안 스크립트를 바꾸지 않았다면, 방금 저장한 보던 자리를 기준으로 삼는다
+                ...(current.manifest.mainScript === start.manifest.mainScript && manifest.viewPositions
+                  ? { viewPositions: manifest.viewPositions }
+                  : {}),
+              },
           // 저장한 활성 스크립트의 글을 기준으로 삼는다. (다른 스크립트로 바꾸지 않았을 때)
           texts:
             current.manifest.mainScript === start.manifest.mainScript
@@ -493,9 +507,29 @@ export function useProject(
     return current.path ? writeProjectTo(current.path, false) : saveAs();
   }, [saveAs, writeProjectTo]);
 
+  /**
+   * 글을 고치지 않고 읽기만 했어도 보던 자리를 기억하도록, 자리가 저장된 것과 다르면 그 자리만 조용히 저장한다.
+   * 실패해도 닫기나 업데이트를 막지 않는다.
+   */
+  const savePositionQuietly = useCallback(async () => {
+    const current = sessionRef.current;
+    const editor = editorRef.current;
+    if (!isTauri() || !current.path || !editor) return;
+    const position = editor.getViewPosition();
+    if (!position || samePosition(position, current.manifest.viewPositions?.[current.manifest.mainScript])) return;
+    try {
+      await writeProjectTo(current.path, false, true);
+    } catch {
+      // 자리 저장은 덤이라 실패해도 그냥 넘어간다.
+    }
+  }, [editorRef, writeProjectTo]);
+
   /** 저장하지 않은 내용이 있으면 물어본다. 계속 진행해도 되면 true. */
   const confirmDiscard = useCallback(async (): Promise<boolean> => {
-    if (!dirtyRef.current) return true;
+    if (!dirtyRef.current) {
+      await savePositionQuietly();
+      return true;
+    }
     if (!isTauri()) return window.confirm("저장하지 않은 변경 사항이 사라집니다. 계속할까요?");
     const answer = await message(
       `"${sessionTitle(sessionRef.current)}"의 변경 사항을 저장할까요?\n저장하지 않으면 변경 사항이 사라집니다.`,
@@ -505,7 +539,7 @@ export function useProject(
     const discard = answer === "저장 안 함" || answer === "No";
     if (discard && !sessionRef.current.path) writeRecovery(null);
     return discard;
-  }, [saveCurrent]);
+  }, [saveCurrent, savePositionQuietly]);
 
   // ---------- 열기 ----------
 
@@ -514,7 +548,7 @@ export function useProject(
       const loaded = await loadProject(tauriFs, path);
       const { titlePage, lines } = scriptLinesOf(loaded.texts.get(loaded.manifest.mainScript) ?? "");
       applySceneStart(loaded.manifest);
-      editorRef.current?.load(lines);
+      editorRef.current?.load(lines, loaded.manifest.viewPositions?.[loaded.manifest.mainScript]);
       editorRef.current?.setNotes(notesOfScript(loaded.manifest.notes, loaded.manifest.mainScript, loaded.manifest.mainScript));
       setScriptDirty(false);
       // 마지막으로 연 문서를 다시 연다. (스크립트는 활성 스크립트 하나만 편집기에 열린다)
@@ -732,9 +766,12 @@ export function useProject(
       const texts = new Map(current.texts);
       if (scriptDirtyRef.current || current.titlePage !== current.savedTitlePage) texts.set(main, currentScriptText());
       const notes = mergeNotes(current.manifest.notes, main, editor.getNotes(), main);
+      // 떠나는 스크립트에서 보던 자리를 기억해 두고, 가는 스크립트는 그때 보던 자리로 연다
+      const leaving = editor.getViewPosition();
+      const viewPositions = leaving ? { ...current.manifest.viewPositions, [main]: leaving } : current.manifest.viewPositions;
       const { titlePage, lines } = scriptLinesOf(texts.get(id) ?? "");
       editor.setSceneStart(sceneStartOf(current.manifest.scriptSettings?.[id]));
-      editor.load(lines.length > 0 ? lines : BLANK_SCRIPT_LINES);
+      editor.load(lines.length > 0 ? lines : BLANK_SCRIPT_LINES, viewPositions?.[id]);
       editor.setNotes(notesOfScript(notes, id, id));
       setScriptDirty(false);
       sessionRef.current = {
@@ -742,7 +779,13 @@ export function useProject(
         texts,
         titlePage,
         savedTitlePage: titlePage,
-        manifest: { ...current.manifest, mainScript: id, lastOpened: id, notes: notes.length > 0 ? notes : undefined },
+        manifest: {
+          ...current.manifest,
+          mainScript: id,
+          lastOpened: id,
+          notes: notes.length > 0 ? notes : undefined,
+          ...(viewPositions ? { viewPositions } : {}),
+        },
       };
       setActiveDocId(id);
       refresh();
@@ -1567,9 +1610,17 @@ export function useProject(
 
     win
       .onCloseRequested(async (event) => {
-        if (!dirtyRef.current) return;
         if (busyRef.current) {
-          event.preventDefault();
+          if (dirtyRef.current) event.preventDefault();
+          return;
+        }
+        if (!dirtyRef.current) {
+          busyRef.current = true;
+          try {
+            await savePositionQuietly();
+          } finally {
+            busyRef.current = false;
+          }
           return;
         }
         busyRef.current = true;
@@ -1590,6 +1641,7 @@ export function useProject(
     };
   }, [
     confirmDiscard,
+    savePositionQuietly,
     editorRef,
     exportDocx,
     exportPdf,

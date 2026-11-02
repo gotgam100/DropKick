@@ -25,6 +25,7 @@ import { notesOf, restoreNotes, scriptNotes, setNotesEffect, type ScriptNote } f
 import { currentPage, pageBreaks, paginationField, totalPages } from "./pageBreaks";
 import { analyzeScript, type ScriptAnalysis } from "../analysis/analyze";
 import type { LineStyle } from "./styles";
+import { clampPosition, type ViewPosition } from "../project/viewPositions";
 
 export type EditorInfo = {
   lines: number;
@@ -41,8 +42,10 @@ export type EditorInfo = {
 
 export type EditorHandle = {
   setStyle: (style: LineStyle) => void;
-  /** 새 원고로 바꾼다. 되돌리기 기록도 새로 시작한다. */
-  load: (lines: ScriptLine[]) => void;
+  /** 새 원고로 바꾼다. 되돌리기 기록도 새로 시작한다. position을 주면 그때 보던 자리(커서와 화면 위치)로 돌아간다. */
+  load: (lines: ScriptLine[], position?: ViewPosition | null) => void;
+  /** 지금 보고 있는 자리: 커서 위치와 화면 맨 위에 보이는 줄. 나중에 load로 돌아올 수 있다. */
+  getViewPosition: () => ViewPosition | null;
   getLines: () => ScriptLine[];
   /** 지금 내용을 "저장된 상태"로 표시한다. */
   markSaved: () => void;
@@ -98,6 +101,15 @@ type Props = {
 };
 
 type Snapshot = { doc: Text; styles: readonly LineStyle[] };
+
+/** 가장 가까운, 위아래로 스크롤되는 부모 */
+function scrollParentOf(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const overflow = getComputedStyle(p).overflowY;
+    if (overflow === "auto" || overflow === "scroll") return p;
+  }
+  return null;
+}
 
 /** 저장 시작 시점의 원고 상태 (바깥에서는 내용을 몰라도 된다) */
 export type SaveToken = { readonly snapshot: Snapshot };
@@ -187,7 +199,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
       setStyle(style)(view);
       view.focus();
     },
-    load(lines) {
+    load(lines, position) {
       const view = viewRef.current;
       if (!view || !extensionsRef.current) return;
       const state = createScriptState(lines, extensionsRef.current, sceneStartRef.current);
@@ -197,6 +209,32 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
       publishInfo(state, true);
       publishAnalysis(state);
       view.focus();
+      if (position) {
+        const { caret, top } = clampPosition(position, state.doc.length);
+        view.dispatch({ selection: { anchor: caret } });
+        // 쪽 나눔 계산이 끝나 높이가 자리 잡은 뒤에 화면을 옮긴다
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (viewRef.current !== view) return;
+            view.dispatch({ effects: EditorView.scrollIntoView(top, { y: "start", yMargin: 0 }) });
+          }),
+        );
+      }
+    },
+    getViewPosition() {
+      const view = viewRef.current;
+      if (!view) return null;
+      const caret = view.state.selection.main.head;
+      let top = view.state.doc.lineAt(caret).from;
+      // 원고가 들어 있는 스크롤 영역의 맨 위에 보이는 줄을 찾는다
+      const scroller = scrollParentOf(view.dom);
+      if (scroller) {
+        const area = scroller.getBoundingClientRect();
+        const content = view.contentDOM.getBoundingClientRect();
+        const pos = view.posAtCoords({ x: content.left + 8, y: Math.max(area.top, content.top) + 4 }, false);
+        top = view.state.doc.lineAt(pos).from;
+      }
+      return { caret, top };
     },
     getLines() {
       const view = viewRef.current;

@@ -15,6 +15,7 @@ import { toFountain } from "../fountain/fountain";
 import type { ScriptLine } from "../editor/lineStyles";
 import { parseNotes, type ScriptNote } from "../editor/notes";
 import { parseScriptSettings, type ScriptSettings } from "./scriptSettings";
+import { parseViewPositions, type ViewPosition } from "./viewPositions";
 import { createDefaultStructureBoard, serializeStructureBoard } from "../structure/structureModel";
 
 export const PROJECT_EXTENSION = ".dropkick";
@@ -66,6 +67,8 @@ export type ProjectManifest = {
   notes?: ScriptNote[];
   /** 스크립트마다 따로 가지는 설정 (표지 항목 켜고 끄기, 씬 번호 시작, 워터마크). 키는 스크립트 id */
   scriptSettings?: Record<string, ScriptSettings>;
+  /** 스크립트마다 마지막으로 보던 자리(커서와 화면 맨 위). 키는 스크립트 id */
+  viewPositions?: Record<string, ViewPosition>;
 };
 
 export const DOC_TYPE_LABELS: Record<DocType, string> = {
@@ -222,6 +225,7 @@ export function parseManifest(text: string): ProjectManifest {
   }));
 
   const scriptSettings = parseScriptSettings(data.scriptSettings, scriptIds);
+  const viewPositions = parseViewPositions(data.viewPositions, scriptIds);
 
   return {
     format: MANIFEST_FORMAT,
@@ -233,6 +237,7 @@ export function parseManifest(text: string): ProjectManifest {
     ...(revisions && revisions.length > 0 ? { revisions } : {}),
     ...(notes.length > 0 ? { notes } : {}),
     ...(Object.keys(scriptSettings).length > 0 ? { scriptSettings } : {}),
+    ...(Object.keys(viewPositions).length > 0 ? { viewPositions } : {}),
   };
 }
 
