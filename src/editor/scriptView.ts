@@ -26,7 +26,7 @@ import {
 } from "./lineStyles";
 import { headingProblem, knownPlaces, knownTimes, parseHeading } from "../analysis/places";
 import { DEFAULT_STYLE, LINE_STYLES, isOutlineStyle, styleLabel, type DocStyle, type OutlineStyle } from "./styles";
-import { ELEMENTS, OUTLINE_WIDTH } from "../layout/paginate";
+import { CHAR_WRAP_STYLES, ELEMENTS, OUTLINE_WIDTH } from "../layout/paginate";
 import { textColumns } from "../layout/metrics";
 import { fountainAffixes } from "../fountain/fountain";
 import { actionIndent, alignOf, applyFormat, hasInline, inlineMarks, supportsInline, type Align, type FormatKind } from "../layout/inline";
@@ -138,6 +138,8 @@ class SceneNumberWidget extends WidgetType {
 const styleDecorations = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
+    /** 마지막으로 그릴 때 한글 조합 중이었는지 (조합이 끝나면 지금 어절을 다시 묶는다) */
+    composing = false;
 
     constructor(view: EditorView) {
       this.decorations = this.build(view);
@@ -146,6 +148,7 @@ const styleDecorations = ViewPlugin.fromClass(
     update(update: ViewUpdate) {
       if (
         update.docChanged ||
+        update.view.composing !== this.composing ||
         update.viewportChanged ||
         update.selectionSet ||
         update.focusChanged ||
@@ -163,7 +166,10 @@ const styleDecorations = ViewPlugin.fromClass(
       const scenes = state.field(sceneNumbersField);
       const fountain = state.field(fountainModeField);
       const marker = fountain ? fountainMarkerMark : markerMark;
-      const currentLine = state.doc.lineAt(state.selection.main.head).number;
+      const head = state.selection.main.head;
+      const currentLine = state.doc.lineAt(head).number;
+      const composing = view.composing;
+      this.composing = composing;
       const ranges: Range<Decoration>[] = [];
       let lastLine = 0;
       // 처음 그릴 때처럼 보이는 범위가 아직 없으면 문서 전체를 본다. (빈 원고에도 첫 줄 장식이 붙도록)
@@ -186,14 +192,20 @@ const styleDecorations = ViewPlugin.fromClass(
                   : CONTINUOUS_STYLES.has(style) && styles[above] === style;
             const current = line.number === currentLine && view.hasFocus;
             ranges.push(lineDecoration(style, continued, current).range(line.from));
-            if (state.doc.length === 0) ranges.push(emptyDocLine.range(line.from));
+            // 빈 원고 안내 글은 보통 줄에서만. 막·시퀀스·요약 줄이 된 빈 원고에는 띄우지 않는다.
+            if (state.doc.length === 0 && !isOutlineStyle(style)) ranges.push(emptyDocLine.range(line.from));
 
             const width = isOutlineStyle(style) ? OUTLINE_WIDTH : ELEMENTS[style].width;
-            // 씬 요약은 글자 단위로 줄을 바꾸므로 어절을 묶지 않는다 (metrics.ts wrapChars)
-            if (style !== "synopsis") for (const match of line.text.matchAll(WORD)) {
+            // 액션·대사·씬 요약은 글자 단위로 줄을 바꾸므로 어절을 묶지 않는다 (paginate.ts wrapFor, metrics.ts wrapChars)
+            if (!CHAR_WRAP_STYLES.has(style)) for (const match of line.text.matchAll(WORD)) {
+              const from = line.from + (match.index ?? 0);
+              const to = from + match[0].length;
+              // 한글을 조합하는 중에는 지금 쓰는 어절(커서가 닿은 어절)을 묶지 않는다: 맥 웹뷰는 한글을 이어 칠 때
+              // 새 글을 이 묶음 안에 계속 넣어서, 줄 전체가 한 덩어리가 되어 줄이 안 바뀌고 페이지가 가로로 늘어났다.
+              // (조합 중일 때만이다. 늘 풀면 커서·드래그를 옮길 때마다 줄바꿈이 바뀐다)
+              if (composing && line.number === currentLine && head >= from && head <= to) continue;
               if (match[0].length > 1 && textColumns(match[0]) <= width) {
-                const from = line.from + (match.index ?? 0);
-                ranges.push(noWrapMark.range(from, from + match[0].length));
+                ranges.push(noWrapMark.range(from, to));
               }
             }
 
@@ -259,7 +271,17 @@ const styleDecorations = ViewPlugin.fromClass(
       return Decoration.set(ranges, true);
     }
   },
-  { decorations: (plugin) => plugin.decorations },
+  {
+    decorations: (plugin) => plugin.decorations,
+    // 조합이 끝나면 지금 어절을 다시 묶도록 한 번 다시 그린다 (글이 그대로면 갱신이 안 올 수 있어서)
+    eventHandlers: {
+      compositionend(_e, view) {
+        setTimeout(() => {
+          if (!view.composing) view.dispatch({});
+        }, 0);
+      },
+    },
+  },
 );
 
 /** 아무것도 안 쓴 막·장·요약 줄인가 */

@@ -441,7 +441,9 @@ body {
   color: var(--muted);
 }
 
-/* 씬 요약은 어절을 지키지 않고 줄 끝까지 채운 뒤 글자 단위로 줄을 바꾼다 (metrics.ts wrapChars) */
+/* 액션·대사·씬 요약은 어절을 지키지 않고 줄 끝까지 채운 뒤 글자 단위로 줄을 바꾼다 (paginate.ts CHAR_WRAP_STYLES, metrics.ts wrapChars) */
+.paper .cm-line.sl-action,
+.paper .cm-line.sl-dialogue,
 .paper .cm-line.sl-synopsis {
   word-break: break-all;
   line-break: anywhere;

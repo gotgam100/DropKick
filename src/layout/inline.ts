@@ -143,7 +143,7 @@ export function hasInline(text: string): boolean {
 
 /**
  * 줄바꿈된 줄(rows)마다 꾸밈별로 나눈 글 조각을 돌려준다.
- * rows는 wrapText(plainText(raw), …)의 결과여야 한다. (기호를 뺀 보이는 글을 줄바꿈한 것. 줄 사이에서 버려진 공백만 건너뛰며 맞춰 본다)
+ * rows는 wrapText 또는 wrapChars(plainText(raw), …)의 결과여야 한다. (기호를 뺀 보이는 글을 줄바꿈한 것. 줄 사이에서 버려진 공백만 건너뛰며 맞춰 본다)
  */
 export function rowSpans(raw: string, rows: readonly string[], align: Align | boolean = "left"): Span[][] {
   const clean = raw.replace(/\t/g, "    ");

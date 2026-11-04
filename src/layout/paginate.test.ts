@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ScriptLine } from "../editor/lineStyles";
 import { textColumns, wrapChars, wrapText } from "./metrics";
-import { PAGE, outlineGap, outlineRows, paginate } from "./paginate";
+import { PAGE, outlineGap, outlineRows, paginate, wrapFor } from "./paginate";
 
 describe("글자 폭", () => {
   it("영문 1칸, 한글 11pt ÷ 7.2pt ≈ 1.53칸", () => {
@@ -329,5 +329,23 @@ describe("씬 요약은 글자 단위로 줄을 바꾼다", () => {
     const text = `${word("가", 20)} ${word("나", 45)} ${word("다", 45)}`;
     expect(outlineRows(text, "act")).toBe(3);
     expect(outlineRows(text, "synopsis")).toBe(2);
+  });
+});
+
+describe("액션도 글자 단위로 줄 끝까지 채운다", () => {
+  it("액션·대사·씬 요약은 글자 단위, 인물·괄호지문 등은 어절 단위", () => {
+    expect(wrapFor("action")).toBe(wrapChars);
+    expect(wrapFor("synopsis")).toBe(wrapChars);
+    expect(wrapFor("dialogue")).toBe(wrapChars);
+    for (const s of ["character", "parenthetical", "scene", "transition", "subheader"] as const) expect(wrapFor(s)).toBe(wrapText);
+  });
+
+  it("긴 액션 문단은 쪽 계산에서도 줄 끝까지 채운 줄 수가 된다", () => {
+    const W = textColumns("가");
+    const word = (ch: string, cols: number) => ch.repeat(Math.floor(cols / W));
+    const text = `${word("가", 20)} ${word("나", 45)} ${word("다", 45)}`;
+    const { pages } = paginate([{ style: "action", text }]);
+    const rows = pages[0].lines.filter((l) => l.style === "action");
+    expect(rows.length).toBe(2);
   });
 });

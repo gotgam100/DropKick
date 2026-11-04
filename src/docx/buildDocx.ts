@@ -344,6 +344,8 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
       case "synopsis": {
         paragraphs.push(
           new Paragraph({
+            // 글자 단위로 줄 끝까지 채운다 (<w:wordWrap w:val="0"/>: 어절 안에서도 줄을 바꿈). 화면·PDF와 같은 방식
+            wordWrap: true,
             spacing: { before: isContinuedAction ? 0 : 240, after: 0, line: LINE_SPACING, lineRule: LineRuleType.EXACT },
             children: [
               new TextRun({
@@ -366,6 +368,8 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
           new Paragraph({
             ...(align === "center" ? { alignment: AlignmentType.CENTER } : align === "right" ? { alignment: AlignmentType.RIGHT } : {}),
             ...(indentCols > 0 ? { indent: { left: convertInchesToTwip(indentCols * 0.1) } } : {}),
+            // 액션은 글자 단위로 줄 끝까지 채운다 (화면·PDF와 같은 방식)
+            wordWrap: true,
             spacing: {
               before: isContinuedAction ? 0 : 240,
               after: 0,
@@ -412,6 +416,8 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
       case "dialogue": {
         paragraphs.push(
           new Paragraph({
+            // 대사도 글자 단위로 줄 끝까지 채운다 (화면·PDF와 같은 방식)
+            wordWrap: true,
             indent: {
               left: convertInchesToTwip(1.0),
               right: convertInchesToTwip(1.5),

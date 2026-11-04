@@ -168,6 +168,18 @@ type Block = {
   name?: string;
 };
 
+/** 글자 단위로 줄 끝까지 채워 줄을 바꾸는 요소 (좌우가 거의 나란히 맞는다) */
+export const CHAR_WRAP_STYLES: ReadonlySet<DocStyle> = new Set<DocStyle>(["action", "dialogue", "synopsis"]);
+
+/**
+ * 줄 요소별 줄바꿈 방식. 액션·대사·씬 요약은 어절을 지키지 않고 글자 단위로 줄 끝까지 채운다.
+ * 나머지(인물·괄호지문·씬헤딩 등)는 어절 단위. 화면 CSS(App.css의 sl-action·sl-dialogue·sl-synopsis)와 같아야 한다.
+ * (맥 웹뷰는 낱자·조합 중인 글자 사이에서 어절 안이어도 줄을 바꿔서, 긴 줄은 글자 단위가 화면과 확실히 같다)
+ */
+export function wrapFor(style: DocStyle): (text: string, width: number) => string[] {
+  return CHAR_WRAP_STYLES.has(style) ? wrapChars : wrapText;
+}
+
 function elementRows(style: LineStyle | OutlineStyle, text: string, source: number): Row[] {
   const spec = ELEMENTS[style];
   let shown = spec.upper ? toUpperLatin(text) : text;
@@ -177,13 +189,13 @@ function elementRows(style: LineStyle | OutlineStyle, text: string, source: numb
   // 글자 꾸밈과 정렬은 기호를 뺀 보이는 글로 줄바꿈한다. (화면도 기호를 숨기니 줄바꿈이 같다)
   if (supportsInline(style) && hasInline(shown)) {
     const align = style === "action" ? alignOf(shown) : "left";
-    const rows = wrapText(plainText(shown.replace(/\t/g, "    "), align), spec.width - indent);
+    const rows = wrapFor(style)(plainText(shown.replace(/\t/g, "    "), align), spec.width - indent);
     const spans = rowSpans(shown, rows, align);
     return rows.map((t, i) => ({ text: t, style, source, spans: spans[i], align, ...(indent ? { indent } : {}) }));
   }
   // 꾸밈을 쓰지 않는 줄에 남은 꾸밈 기호(*, _)는 보이지 않게 뺀다.
   if (!supportsInline(style)) shown = stripMarks(shown);
-  const rows = (style === "synopsis" ? wrapChars : wrapText)(shown, spec.width - indent);
+  const rows = wrapFor(style)(shown, spec.width - indent);
   return rows.map((t) => ({ text: t, style, source, ...(indent ? { indent } : {}) }));
 }
 

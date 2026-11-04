@@ -282,6 +282,8 @@ export function computePasteEffects(
   selFrom: number,
   selTo: number,
   payload: ScriptClipboardPayload,
+  /** 붙여넣는 줄 바로 위 줄의 요소, 붙여넣는 첫 줄의 지금 요소 (씬 요약이 씬헤딩 아래에만 들어가게 쓴다) */
+  context: { above?: DocStyle; target?: DocStyle } = {},
 ): StateEffect<unknown>[] {
   const targetLine = doc.lineAt(selFrom);
   const isLineEmpty = targetLine.text.trim() === "";
@@ -293,20 +295,29 @@ export function computePasteEffects(
 
   const styleCount = payload.styles.length;
   let curPos = selFrom;
+  // 바로 위 줄의 요소. 씬 요약은 씬헤딩이나 다른 씬 요약 바로 아래에서만 요약으로 남고, 아니면 액션이 된다.
+  let above: DocStyle | undefined = context.above;
+  const fit = (style: DocStyle): DocStyle =>
+    style === "synopsis" && above !== "scene" && above !== "synopsis" ? "action" : style;
 
   for (let i = 0; i < newLines.length; i++) {
     const lineStartPos = curPos;
 
     if (i < styleCount) {
-      const style = payload.styles[i];
       if (i === 0) {
         // 첫 번째 줄: 줄의 시작점이거나, 줄이 비어있거나, 줄 전체를 덮어쓰거나, 전체 줄 복사본일 때 스타일 적용
         if (isAtLineStart || isLineEmpty || isWholeLineSelected || payload.isFullLine) {
+          const style = fit(payload.styles[i]);
           effects.push(setLineStyleEffect.of({ pos: lineStartPos, style }));
+          above = style;
+        } else {
+          above = context.target;
         }
       } else {
         // 두 번째 줄부터는 새로 생성된 줄이므로 항상 원래 복사된 스타일 적용
+        const style = fit(payload.styles[i]);
         effects.push(setLineStyleEffect.of({ pos: lineStartPos, style }));
+        above = style;
       }
     } else if (i === styleCount && newLines[i] === "") {
       // 텍스트 끝에 \n이 있어서 빈 줄이 추가된 경우 (예: "민재\n")
@@ -330,7 +341,12 @@ export function createPasteTransaction(
   selFrom = state.selection.main.from,
   selTo = state.selection.main.to,
 ) {
-  const effects = computePasteEffects(state.doc, selFrom, selTo, payload);
+  const styles = state.field(lineStylesField, false);
+  const lineNo = state.doc.lineAt(selFrom).number;
+  const effects = computePasteEffects(state.doc, selFrom, selTo, payload, {
+    above: styles?.[lineNo - 2],
+    target: styles?.[lineNo - 1],
+  });
   return state.update({
     changes: { from: selFrom, to: selTo, insert: payload.text },
     effects,

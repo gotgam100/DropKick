@@ -288,4 +288,31 @@ describe("스크립트 복사 및 붙여넣기 스타일 유지 (clipboard)", ()
     expect(isFountainText(plain)).toBe(false);
     expect(parseFountainClipboard(plain)).toBeNull();
   });
+
+  it("씬 요약은 씬헤딩(또는 요약) 바로 아래에만 붙고, 다른 곳에 붙이면 액션이 된다", () => {
+    const lines: ScriptLine[] = [
+      { style: "scene", text: "실내. 카페 - 낮" },
+      { style: "action", text: "민재가 들어온다." },
+      { style: "action", text: "" },
+    ];
+    const payload = { version: 1 as const, text: "요약 하나\n요약 둘", styles: ["synopsis", "synopsis"] as ScriptLine["style"][], isFullLine: true };
+
+    // 액션 아래 빈 줄에 붙이면 둘 다 액션
+    let state = createScriptState(lines);
+    const empty = state.doc.line(3);
+    state = createPasteTransaction(state, payload, empty.from, empty.to).state;
+    expect(state.field(lineStylesField).slice(2, 4)).toEqual(["action", "action"]);
+
+    // 씬헤딩 바로 아래 줄을 통째로 바꾸면 요약으로 남는다
+    state = createScriptState(lines);
+    const second = state.doc.line(2);
+    state = createPasteTransaction(state, payload, second.from, second.to).state;
+    expect(state.field(lineStylesField).slice(0, 3)).toEqual(["scene", "synopsis", "synopsis"]);
+
+    // 씬헤딩과 요약을 함께 붙이면 그대로
+    state = createScriptState(lines);
+    const both = { version: 1 as const, text: "실내. 집 - 밤\n요약", styles: ["scene", "synopsis"] as ScriptLine["style"][], isFullLine: true };
+    state = createPasteTransaction(state, both, empty.from, empty.to).state;
+    expect(state.field(lineStylesField).slice(2, 4)).toEqual(["scene", "synopsis"]);
+  });
 });
