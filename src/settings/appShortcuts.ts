@@ -93,7 +93,7 @@ export function checkAppShortcut(
 ): string | null {
   const c = normalizeCombo(combo);
   if (RESERVED.has(c)) return "다른 기능이 이미 쓰는 단축키예요.";
-  if (styleKeys.some((k) => c === `Cmd+${k.toUpperCase()}`)) return "문서 스타일 단축키와 겹쳐요.";
+  if (styleKeys.some((k) => c === `Cmd+${k.toUpperCase()}`)) return "문서 요소 단축키와 겹쳐요.";
   for (const other of APP_SHORTCUT_IDS) {
     if (other !== id && normalizeCombo(shortcuts[other]) === c) return `'${APP_SHORTCUT_LABELS[other]}'에서 쓰고 있어요.`;
   }

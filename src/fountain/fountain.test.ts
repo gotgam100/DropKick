@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fromFountain, toFountain, type ScriptDocument } from "./fountain";
+import { fromFountain, scriptLinesOf, toFountain, type ScriptDocument } from "./fountain";
 import { readFileSync } from "node:fs";
+import type { ScriptLine } from "../editor/lineStyles";
 
 const doc: ScriptDocument = {
   titlePage: "Title: 드롭킥\nAuthor: baekmac",
@@ -154,5 +155,102 @@ describe("Fountain 열기", () => {
 
   it("빈 파일은 빈 액션 한 줄", () => {
     expect(fromFountain("").lines).toEqual([{ style: "action", text: "" }]);
+  });
+});
+
+describe("막·장·씬 요약", () => {
+  const doc = (lines: ScriptLine[]) => ({ titlePage: null, lines });
+
+  it("저장: # 막, ## 장, = 요약으로 쓴다", () => {
+    const text = toFountain(
+      doc([
+        { style: "act", text: "1막: 코끼리 우리" },
+        { style: "chapter", text: "시퀀스 A" },
+        { style: "scene", text: "내부. 우리 - 낮" },
+        { style: "synopsis", text: "코끼리가 첫 등장한다." },
+        { style: "synopsis", text: "조련사가 놀란다." },
+        { style: "action", text: "문이 열린다." },
+      ]),
+    );
+    expect(text).toContain("# 1막: 코끼리 우리\n");
+    expect(text).toContain("## 시퀀스 A\n");
+    expect(text).toContain("= 코끼리가 첫 등장한다.\n= 조련사가 놀란다.\n");
+  });
+
+  it("저장하고 다시 읽어도 같다 (빈 막·장·요약도)", () => {
+    const lines: ScriptLine[] = [
+      { style: "act", text: "1막" },
+      { style: "chapter", text: "" },
+      { style: "scene", text: "내부. 우리 - 낮" },
+      { style: "synopsis", text: "첫 요약" },
+      { style: "synopsis", text: "" },
+      { style: "action", text: "문이 열린다." },
+      { style: "act", text: "" },
+      { style: "scene", text: "외부. 거리 - 밤" },
+      { style: "action", text: "비가 온다." },
+    ];
+    expect(fromFountain(toFountain(doc(lines))).lines).toEqual(lines);
+  });
+
+  it("읽기: ###부터와 #3.처럼 붙여 쓴 것은 일반 글(액션)로 둔다", () => {
+    const { lines } = fromFountain("### 세 번째\n\n#3. 코끼리 우리\n\n#해시태그\n");
+    expect(lines.every((l) => l.style === "action")).toBe(true);
+    expect(lines.map((l) => l.text)).toEqual(expect.arrayContaining(["### 세 번째", "#3. 코끼리 우리", "#해시태그"]));
+  });
+
+  it("읽기: 씬헤딩이나 요약 바로 뒤의 = 줄만 요약이고, 그 밖은 일반 글로 둔다", () => {
+    const { lines } = fromFountain(".내부. 방 - 낮\n\n= 요약\n= 이어서\n\n그냥 지문\n\n= 지문 뒤의 등호 줄\n");
+    expect(lines.map((l) => l.style)).toEqual(["scene", "synopsis", "synopsis", "action", "action"]);
+    expect(lines[4].text).toBe("= 지문 뒤의 등호 줄");
+  });
+
+  it("프로젝트를 다시 열 때(scriptLinesOf) 막·장·요약 줄이 빠지지 않는다", () => {
+    const lines: ScriptLine[] = [
+      { style: "act", text: "1막" },
+      { style: "chapter", text: "시퀀스 A" },
+      { style: "scene", text: "내부. 거실 - 밤" },
+      { style: "synopsis", text: "민재가 돌아온다." },
+      { style: "action", text: "문이 열린다." },
+    ];
+    expect(scriptLinesOf(toFountain(doc(lines))).lines).toEqual(lines);
+  });
+
+  it("읽기: === (쪽 나눔 표시)는 요약이 아니다", () => {
+    const { lines } = fromFountain(".내부. 방 - 낮\n\n===\n");
+    expect(lines.find((l) => l.text === "===")?.style).toBe("action");
+  });
+});
+
+describe("가운데 정렬·글자 꾸밈", () => {
+  it(">끝<은 액션 줄로 읽고 기호를 남기며, 저장할 때도 ! 없이 그대로 쓴다", () => {
+    const doc = fromFountain("그냥 글\n\n>끝<\n\n**굵게** *기울임* _밑줄_\n");
+    expect(doc.lines.map((l) => l.text)).toContain(">끝<");
+    expect(doc.lines.some((l) => l.text === "**굵게** *기울임* _밑줄_")).toBe(true);
+    const out = toFountain({ titlePage: null, lines: [{ style: "action", text: ">끝<" }] });
+    expect(out).toBe(">끝<\n");
+  });
+});
+
+describe("오른쪽 정렬", () => {
+  it(">끝(오른쪽 정렬)은 ! 를 붙여 저장하고 다시 읽어도 같은 액션이다", () => {
+    const doc: ScriptDocument = { titlePage: null, lines: [{ style: "action", text: ">끝" }] };
+    const out = toFountain(doc);
+    expect(out).toBe("!>끝\n");
+    expect(fromFountain(out).lines).toEqual([{ style: "action", text: ">끝" }]);
+  });
+});
+
+describe("들여 쓴 액션", () => {
+  it("! 뒤에 들여쓰기를 그대로 저장하고, 다시 읽어도 같다", () => {
+    const doc: ScriptDocument = {
+      titlePage: null,
+      lines: [
+        { style: "action", text: "쪽지에 적혀 있다." },
+        { style: "action", text: "    Scott --" },
+      ],
+    };
+    const text = toFountain(doc);
+    expect(text).toContain("!    Scott --");
+    expect(fromFountain(text).lines[1].text).toBe("    Scott --");
   });
 });

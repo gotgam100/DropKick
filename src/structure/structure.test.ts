@@ -26,6 +26,7 @@ function mockScene(
     page,
     characters: [],
     speeches: 0,
+    synopsis: [],
     text,
   };
 }

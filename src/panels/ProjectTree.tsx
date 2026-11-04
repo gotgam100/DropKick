@@ -4,7 +4,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { formatEighths, type SceneSummary } from "../analysis/analyze";
+import { formatEighths, type SceneSummary, type SectionSummary } from "../analysis/analyze";
 import type { ProjectNode, RevisionMeta } from "../project/model";
 import { canScope, hiddenIdsFor, scriptDocs, visibleTreeFor } from "../project/scripts";
 import { isDefaultPreset, type DocPreset } from "../project/presets";
@@ -23,6 +23,8 @@ type Props = {
   /** 문서 id → 본문 (본문 찾기용) */
   docTexts: Map<string, string>;
   scenes: SceneSummary[];
+  /** 막·장 (원고 순서대로) */
+  sections?: SectionSummary[];
   currentSceneLine: number | null;
   filter: string;
   onFilterChange: (value: string) => void;
@@ -33,6 +35,8 @@ type Props = {
   onOpenNote?: (id: string) => void;
   /** 씬을 끌어 다른 씬 앞(null이면 맨 끝)으로 옮겼을 때 */
   onMoveScene?: (fromLine: number, beforeLine: number | null) => void;
+  /** 원고에 씬 요약을 만든다 (씬 우클릭 "+ 요약"). line번 씬헤딩 아래에 들어간다. */
+  onAddSynopsis?: (line: number) => void;
   onAdd: (kind: NewKind, parentId: string | null) => string | null;
   presets?: DocPreset[];
   onAddPreset?: (preset: DocPreset, parentId: string | null) => string | null;
@@ -53,6 +57,9 @@ type Props = {
   onOpenRevision: (id: string) => void;
   onNewRevision: () => void;
 };
+
+/** 막·장 단계마다 들여쓰는 폭. 요약은 단계와 상관없이 같은 자리에서 시작해 가로폭이 줄지 않는다. */
+const OUTLINE_INDENT = 10;
 
 // ---------- 아이콘 ----------
 
@@ -94,12 +101,14 @@ export function ProjectTree(props: Props) {
     dirtyDocIds,
     docTexts,
     scenes,
+    sections = [],
     currentSceneLine,
     filter,
     onFilterChange,
     onOpenDoc,
     onSelectScene,
     onMoveScene,
+    onAddSynopsis,
     notes = [],
     onOpenNote,
     onAdd,
@@ -154,6 +163,16 @@ export function ProjectTree(props: Props) {
   } | null>(null);
   const scenePressRef = useRef<{ line: number; name: string; x: number; y: number } | null>(null);
   const suppressClickRef = useRef(false);
+  // 접어 둔 막·장·씬 요약 (막·장은 이름과 몇 번째인지로, 씬은 씬 번호로 구분한다)
+  const [folded, setFolded] = useState<Set<string>>(new Set());
+  const toggleFold = (key: string) =>
+    setFolded((set) => {
+      const next = new Set(set);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  // 씬을 오른쪽 클릭한 메뉴: 원고에 씬 요약을 만든다
+  const [outlineMenu, setOutlineMenu] = useState<{ x: number; y: number; line: number } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
@@ -218,6 +237,17 @@ export function ProjectTree(props: Props) {
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>(".tree-scene[aria-current='true']")?.scrollIntoView({ block: "nearest" });
   }, [currentSceneLine]);
+
+  useEffect(() => {
+    if (!outlineMenu) return;
+    const close = () => setOutlineMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [outlineMenu]);
 
   // 메뉴 바깥을 누르면 닫는다.
   useEffect(() => {
@@ -442,13 +472,79 @@ export function ProjectTree(props: Props) {
       <span className="tree-name">{node.name}</span>
     );
 
-  const renderScenes = (depth: number) =>
-    shown.scenes.length === 0 ? (
-      <div className="tree-empty" style={{ paddingLeft: 12 + depth * 14 }}>
-        {query ? "찾는 씬이 없습니다" : "씬헤딩(⌘1)을 쓰면 씬이 나타납니다"}
-      </div>
-    ) : (
-      shown.scenes.map((scene) => (
+  /** 사이드바의 씬 목록: 막 ▾ 장 ▾ 씬 ▾ 요약. 막·장·요약은 접었다 펼 수 있다. (찾는 중에는 씬만) */
+  const renderScenes = (depth: number) => {
+    const outline = query === "";
+    if (shown.scenes.length === 0 && (!outline || sections.length === 0)) {
+      return (
+        <div className="tree-empty" style={{ paddingLeft: 12 + depth * 14 }}>
+          {query ? "찾는 씬이 없습니다" : "씬헤딩(⌘1)을 쓰면 씬이 나타납니다"}
+        </div>
+      );
+    }
+
+    type Entry = { line: number; section?: SectionSummary; scene?: SceneSummary };
+    const entries: Entry[] = [
+      ...(outline ? sections.map((section): Entry => ({ line: section.line, section })) : []),
+      ...shown.scenes.map((scene): Entry => ({ line: scene.line, scene })),
+    ].sort((a, b) => a.line - b.line);
+
+    const rows: ReactNode[] = [];
+    const seen = new Map<string, number>();
+    let act: string | null = null;
+    let chapter: string | null = null;
+    const hiddenBy = (...keys: (string | null)[]) => keys.some((k) => k !== null && folded.has(k));
+
+    for (const entry of entries) {
+      if (entry.section) {
+        const sec = entry.section;
+        const nth = (seen.get(`${sec.kind}|${sec.title}`) ?? 0) + 1;
+        seen.set(`${sec.kind}|${sec.title}`, nth);
+        const key = `${sec.kind}|${sec.title}|${nth}`;
+        if (sec.kind === "act") {
+          act = key;
+          chapter = null;
+        } else {
+          chapter = key;
+          if (hiddenBy(act)) continue;
+        }
+        const level = sec.kind === "act" ? 0 : act ? 1 : 0;
+        const closed = folded.has(key);
+        rows.push(
+          <button
+            key={`sec-${sec.line}`}
+            type="button"
+            className={`tree-row tree-section tree-section-${sec.kind}`}
+            style={{ paddingLeft: 4 + depth * 14 + level * OUTLINE_INDENT }}
+            aria-expanded={!closed}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onSelectScene(sec.line)}
+            title={`${sec.kind === "act" ? "막" : "시퀀스"}: ${sec.title || "이름 없음"}`}
+          >
+            <span
+              className="tree-toggle"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFold(key);
+              }}
+            >
+              <Chevron open={!closed} />
+            </span>
+            <span className="tree-section-tag">{sec.kind === "act" ? "막" : "시퀀스"}</span>
+            <span className={sec.title ? "tree-name" : "tree-name tree-name-empty"}>{sec.title || "이름 없음"}</span>
+          </button>,
+        );
+        continue;
+      }
+
+      const scene = entry.scene!;
+      if (outline && hiddenBy(act, chapter)) continue;
+      const level = outline ? (act ? 1 : 0) + (chapter ? 1 : 0) : 0;
+      const indent = 12 + depth * 14 + level * OUTLINE_INDENT;
+      const sceneKey = `scene|${scene.number}`;
+      const hasSynopsis = outline && scene.synopsis.length > 0;
+      const synopsisOpen = hasSynopsis && !folded.has(sceneKey);
+      rows.push(
         <button
           key={scene.line}
           type="button"
@@ -456,7 +552,7 @@ export function ProjectTree(props: Props) {
           className={`tree-row tree-scene${sceneDrag?.line === scene.line ? " dragging" : ""}${
             sceneDrag?.over === scene.line && sceneDrag.position ? ` drop-${sceneDrag.position}` : ""
           }`}
-          style={{ paddingLeft: 12 + depth * 14 }}
+          style={{ paddingLeft: indent }}
           aria-current={activeDocId === mainScriptId && scene.line === currentSceneLine}
           onMouseDown={(e) => e.preventDefault()}
           onPointerDown={(e) => {
@@ -468,17 +564,51 @@ export function ProjectTree(props: Props) {
             if (suppressClickRef.current) return;
             onSelectScene(scene.line);
           }}
-          title={`${scene.heading}\n${scene.page}페이지 · 길이 ${formatEighths(scene.eighths)}${scene.characters.length ? ` · ${scene.characters.join(", ")}` : ""}`}
+          onContextMenu={(e) => {
+            if (!outline || !onAddSynopsis) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setOutlineMenu({ x: e.clientX, y: e.clientY, line: scene.line });
+          }}
+          title={`${scene.number}. ${scene.heading.replace(/^(?:S#|#)\s*\d+\.?\s*/i, "")}\n길이 ${formatEighths(scene.eighths)}${scene.characters.length ? ` · ${scene.characters.join(", ")}` : ""}`}
         >
-          <span className="scene-number">#{scene.number}.</span>
+          {outline && (
+            <span
+              className="tree-twisty"
+              title={hasSynopsis ? (synopsisOpen ? "요약 접기" : "요약 펼치기") : undefined}
+              onPointerDown={(e) => hasSynopsis && e.stopPropagation()}
+              onClick={(e) => {
+                if (!hasSynopsis) return;
+                e.stopPropagation();
+                toggleFold(sceneKey);
+              }}
+            >
+              {hasSynopsis && <Chevron open={synopsisOpen} />}
+            </span>
+          )}
+          <span className="scene-number">{scene.number}.</span>
           <span className="tree-name">{scene.heading.replace(/^(?:S#|#)\s*\d+\.?\s*/i, "")}</span>
-          <span className="tree-meta">{scene.page}p</span>
-        </button>
-      )).flatMap((button, i) => {
-        const snip = shown.sceneSnippets.get(shown.scenes[i].line);
-        return snip ? [button, <SnippetLine key={`snip-${shown.scenes[i].line}`} snippet={snip} indent={12 + depth * 14 + 4} />] : [button];
-      })
-    );
+        </button>,
+      );
+      if (synopsisOpen) {
+        rows.push(
+          <div
+            key={`syn-${scene.line}`}
+            className="tree-synopsis"
+            style={{ marginLeft: 12 + depth * 14 + 16 }}
+            onClick={() => onSelectScene(scene.line)}
+          >
+            {scene.synopsis.map((text, i) => (
+              <p key={i}>{text || " "}</p>
+            ))}
+          </div>,
+        );
+      }
+      const snip = shown.sceneSnippets.get(scene.line);
+      if (snip) rows.push(<SnippetLine key={`snip-${scene.line}`} snippet={snip} indent={indent + 4} />);
+    }
+    return rows;
+  };
 
   const renderNodes = (nodes: ProjectNode[], depth: number): ReactNode =>
     nodes.map((node) => {
@@ -680,8 +810,8 @@ export function ProjectTree(props: Props) {
               <button
                 type="button"
                 className="tree-plus"
-                title="지금 원고를 새 고로 보관"
-                aria-label="새 고로 보관"
+                title="지금 원고를 수정고로 보관"
+                aria-label="지금 원고를 수정고로 보관"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -753,6 +883,30 @@ export function ProjectTree(props: Props) {
           </div>
         )}
       </div>
+
+      {outlineMenu &&
+        onAddSynopsis &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="tree-menu"
+            role="menu"
+            style={{ left: outlineMenu.x, top: outlineMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onAddSynopsis(outlineMenu.line);
+                setOutlineMenu(null);
+              }}
+            >
+              + 요약
+            </button>
+          </div>,
+          document.body,
+        )}
 
       {menu &&
         (typeof document !== "undefined"

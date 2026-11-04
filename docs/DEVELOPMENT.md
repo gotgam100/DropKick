@@ -43,3 +43,5 @@ npm run tauri build
 ## 기여하기
 
 버그 제보와 제안은 [GitHub Issues](https://github.com/gotgam100/DropKick/issues)나 [구글 폼](https://forms.gle/wvM2BMZYv3guuYWx7)으로 남겨 주세요. 코드를 고쳐 보내 주실 때는 `npm test`와 `npx tsc --noEmit`이 모두 통과하는지 확인해 주세요.
+
+개발용 앱에서는 ⌘R로 화면을 새로고침할 수 있다(`src/main.tsx`, 배포 앱에는 없다).

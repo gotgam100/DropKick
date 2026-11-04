@@ -4,7 +4,7 @@
  * 2차 단계 AI 분석도 이 결과를 바탕으로 한다.
  */
 import type { ScriptLine } from "../editor/lineStyles";
-import { characterName } from "../editor/styles";
+import { characterName, isOutlineStyle } from "../editor/styles";
 import { toUpperLatin } from "../layout/metrics";
 import { STANDARD_LINES_PER_PAGE, paginate, type Pagination } from "../layout/paginate";
 import { numberScenes, sceneHeadingText } from "../layout/sceneNumbers";
@@ -21,8 +21,18 @@ export type SceneSummary = {
   /** 등장 인물 (대사 순서대로) */
   characters: string[];
   speeches: number;
-  /** 씬 안의 글 전체 (찾기용, 씬헤딩 다음 줄부터 다음 씬헤딩 전까지) */
+  /** 씬 요약 (씬헤딩 바로 아래 이어진 `=` 줄들의 글) */
+  synopsis: string[];
+  /** 씬 안의 글 전체 (찾기용, 씬헤딩 다음 줄부터 다음 씬헤딩 전까지. 막·장 줄은 뺀다) */
   text: string;
+};
+
+/** 사이드바 목차에 쓰는 막(#)·장(##) */
+export type SectionSummary = {
+  kind: "act" | "chapter";
+  /** 원고 줄 번호 (1부터) */
+  line: number;
+  title: string;
 };
 
 export type CharacterSummary = {
@@ -40,6 +50,8 @@ export type CharacterSummary = {
 export type ScriptAnalysis = {
   pages: number;
   scenes: SceneSummary[];
+  /** 막·장 (원고 순서대로) */
+  sections: SectionSummary[];
   characters: CharacterSummary[];
   /** 할리우드 표준 형식(1페이지 ≈ 1분)으로 계산한 예상 러닝타임 (분) */
   runtimeMinutes: number;
@@ -93,8 +105,14 @@ export function analyzeScript(
 
   const scenes: SceneSummary[] = sceneLines.map((line, i) => {
     const nextLine = i + 1 < sceneLines.length ? sceneLines[i + 1] : lines.length + 1;
-    const text = lines
-      .slice(line, nextLine - 1)
+    const body = lines.slice(line, nextLine - 1);
+    const synopsis: string[] = [];
+    for (const l of body) {
+      if (l.style !== "synopsis") break;
+      synopsis.push(l.text);
+    }
+    const text = body
+      .filter((l) => l.style !== "act" && l.style !== "chapter")
       .map((l) => l.text)
       .join("\n");
     const start = absoluteRow(line);
@@ -108,6 +126,7 @@ export function analyzeScript(
       eighths: Math.max(1, Math.ceil((rows / linesPerPage) * 8)),
       characters: [],
       speeches: 0,
+      synopsis,
       text,
     };
   });
@@ -120,6 +139,7 @@ export function analyzeScript(
 
   lines.forEach((line, i) => {
     const n = i + 1;
+    if (isOutlineStyle(line.style)) return;
     if (line.style === "scene") {
       sceneIndex = sceneLines.indexOf(n);
       speaker = null;
@@ -174,9 +194,15 @@ export function analyzeScript(
     Math.round(standard.pages.length - 1 + standard.lastPageRows / STANDARD_LINES_PER_PAGE),
   );
 
+  const sections: SectionSummary[] = [];
+  lines.forEach((l, i) => {
+    if (l.style === "act" || l.style === "chapter") sections.push({ kind: l.style, line: i + 1, title: l.text.trim() });
+  });
+
   return {
     pages: pages.length,
     scenes,
+    sections,
     characters: characterList,
     runtimeMinutes,
     dialogueChars,

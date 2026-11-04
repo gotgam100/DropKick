@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ScriptLine } from "../editor/lineStyles";
 import { textColumns, wrapText } from "./metrics";
-import { PAGE, paginate } from "./paginate";
+import { PAGE, outlineGap, paginate } from "./paginate";
 
 describe("글자 폭", () => {
   it("영문 1칸, 한글 11pt ÷ 7.2pt ≈ 1.53칸", () => {
@@ -159,5 +159,148 @@ describe("페이지 나누기", () => {
 
   it("줄 간격 1.3배: 한 페이지 41줄", () => {
     expect(N).toBe(41);
+  });
+});
+
+describe("막·장·요약 줄 (인쇄되지 않는 줄)", () => {
+  const scene = (text: string): ScriptLine => ({ style: "scene", text });
+  const act = (text: string): ScriptLine => ({ style: "act", text });
+  const chapter = (text: string): ScriptLine => ({ style: "chapter", text });
+  const synopsis = (text: string): ScriptLine => ({ style: "synopsis", text });
+
+  const base = [scene("내부. 사무실 - 낮"), action("민재가 들어온다."), scene("외부. 거리 - 밤"), action("비가 온다.")];
+  const withOutline = [
+    act("1막"),
+    chapter("시퀀스 A"),
+    scene("내부. 사무실 - 낮"),
+    synopsis("민재가 처음 등장한다."),
+    action("민재가 들어온다."),
+    scene("외부. 거리 - 밤"),
+    synopsis("비 오는 밤의 거리."),
+    synopsis("두 번째 줄 요약."),
+    action("비가 온다."),
+  ];
+
+  const printed = (lines: ScriptLine[]) =>
+    paginate(lines).pages.map((p) => p.lines.map((l) => `${l.row}:${l.style}:${l.text}`));
+
+  it("있어도 인쇄되는 줄의 페이지·줄 위치는 그대로다", () => {
+    expect(printed(withOutline)).toEqual(printed(base));
+  });
+
+  it("긴 원고에 끼워도 페이지 수와 쪽 나눔이 같다", () => {
+    const body = repeat(40, (i) => [scene(`내부. 방${i} - 낮`), action("가나다 ".repeat(30).trim()), action("라마바")]);
+    const mixed = body.flatMap((l, i) => (l.style === "scene" && i % 3 === 0 ? [act(`막 ${i}`), l, synopsis("요약 한 줄")] : [l]));
+    const a = paginate(body);
+    const b = paginate(mixed);
+    expect(b.pages.length).toBe(a.pages.length);
+    expect(b.pages.map((p) => p.lines.map((l) => l.text))).toEqual(a.pages.map((p) => p.lines.map((l) => l.text)));
+  });
+
+  it("막·장·요약 줄은 앞뒤 인쇄되는 줄 사이에 빈 줄을 더하지 않는다", () => {
+    const { pages } = paginate([scene("내부. 방 - 낮"), synopsis("요약"), action("지문")]);
+    // 씬헤딩 0줄, (요약은 계산 밖), 액션은 앞 빈 줄 1 + 1줄 = 2줄째
+    expect(pages[0].lines.map((l) => l.row)).toEqual([0, 2]);
+  });
+
+  it("화면에서 막·장·요약 줄 위에는 한 줄씩 띄운다 (첫 줄과 이어지는 요약은 제외, 막 바로 아래의 장은 반 줄)", () => {
+    const lines: ScriptLine[] = [act("1막"), chapter("장"), scene("내부. 방 - 낮"), synopsis("a"), synopsis("b"), action("본문")];
+    expect([0, 1, 3, 4].map((i) => outlineGap(lines, i))).toEqual([0, 0.5, 1, 0]);
+    // 막(첫 줄, 1줄) + 장(막 바로 아래라 반 줄 + 글 1줄) + 요약 a(위 1줄 + 글 1줄) + 요약 b(1줄)
+    // + 씬헤딩 위 빈 줄 1줄(앞에 막·장이 있어서 화면은 빈 줄을 남긴다)
+    expect(paginate(lines).lastPageOutlineRows).toBe(1 + 1.5 + 2 + 1 + 1);
+  });
+
+  it("원고 줄 번호(source)는 막·장·요약 줄을 센 번호 그대로다", () => {
+    const { pages } = paginate(withOutline);
+    expect(pages[0].lines.map((l) => l.source)).toEqual([3, 5, 6, 9]);
+  });
+
+  it("막·장·요약 줄이 속한 페이지는 다음에 인쇄되는 줄의 페이지다 (끝이면 마지막 페이지)", () => {
+    const { pageOfLine } = paginate(withOutline);
+    expect(pageOfLine).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1]);
+    const long = [
+      ...repeat(60, () => [action("한 줄")]),
+      act("2막"),
+      scene("내부. 방 - 낮"),
+      synopsis("요약"),
+    ];
+    const r = paginate(long);
+    const lastPage = r.pages.length;
+    expect(lastPage).toBeGreaterThan(1);
+    expect(r.pageOfLine[60]).toBe(lastPage);
+    expect(r.pageOfLine[r.pageOfLine.length - 1]).toBe(lastPage);
+  });
+
+  it("쪽이 바뀌는 곳 바로 앞의 막·장 줄은 새 쪽에 속하고, 새 쪽 첫 줄은 맨 위 줄이다", () => {
+    const lines: ScriptLine[] = [...repeat(41, () => [action("한 줄")]), act("2막"), chapter("장"), scene("내부. 방 - 낮"), action("본문")];
+    const r = paginate(lines);
+    const brk = r.breaks[0];
+    expect(brk.beforeLine).toBe(42); // 막 줄부터 새 쪽
+    expect(brk.topLine).toBe(44); // 씬헤딩이 새 쪽 첫 인쇄 줄
+    expect(r.pageTopLines[0]).toBe(1);
+    // 바로 앞에 막·장 줄이 있어서 화면은 이 줄 위 빈 줄을 그대로 둔다 (맨 위 줄 표시를 하지 않는다)
+    expect(r.pageTopLines).not.toContain(44);
+  });
+
+  it("화면에서 차지하는 줄 수는 페이지마다 센다 (긴 요약은 줄바꿈된 줄 수만큼)", () => {
+    const longSynopsis = "가".repeat(60); // 60칸 폭에 한글 60자는 두 줄 이상
+    const r = paginate([scene("내부. 방 - 낮"), synopsis(longSynopsis), action("본문")]);
+    // 글 줄 수 + 위에 띄운 빈 줄 1줄
+    expect(r.lastPageOutlineRows).toBe(wrapText(longSynopsis, 60).length + 1);
+    expect(r.lastPageOutlineRows).toBeGreaterThan(2);
+  });
+});
+
+describe("막·장·요약을 인쇄하기로 했을 때 (PDF·Word 내보내기 설정)", () => {
+  const lines: ScriptLine[] = [
+    { style: "act", text: "1막" },
+    { style: "chapter", text: "시퀀스 A" },
+    { style: "scene", text: "내부. 방 - 낮" },
+    { style: "synopsis", text: "민재가 등장한다." },
+    { style: "action", text: "문이 열린다." },
+  ];
+  const rows = (p?: { sections?: boolean; synopsis?: boolean }) =>
+    paginate(lines, 41, 1, p).pages[0].lines.map((l) => `${l.row}:${l.style}:${l.text}`);
+
+  it("안 켜면 화면과 같다 (막·장·요약은 없다)", () => {
+    expect(rows()).toEqual(["0:scene:내부. 방 - 낮", "2:action:문이 열린다."]);
+  });
+
+  it("막·장만 켜면 제목이 굵은 글씨로 들어가고 요약은 없다", () => {
+    const got = paginate(lines, 41, 1, { sections: true }).pages[0].lines;
+    expect(got.map((l) => l.style)).toEqual(["act", "chapter", "scene", "action"]);
+    expect(got.filter((l) => l.style === "act" || l.style === "chapter").every((l) => l.bold)).toBe(true);
+  });
+
+  it("요약만 켜면 씬헤딩 아래에 요약이 들어간다", () => {
+    expect(rows({ synopsis: true })).toEqual([
+      "0:scene:내부. 방 - 낮",
+      "2:synopsis:민재가 등장한다.",
+      "4:action:문이 열린다.",
+    ]);
+  });
+
+  it("둘 다 켜면 모두 들어가고, 이어진 요약 줄은 붙는다", () => {
+    const more: ScriptLine[] = [...lines.slice(0, 4), { style: "synopsis", text: "둘째 줄" }, lines[4]];
+    const got = paginate(more, 41, 1, { sections: true, synopsis: true }).pages[0].lines;
+    const synopsis = got.filter((l) => l.style === "synopsis");
+    expect(synopsis.map((l) => l.row)).toEqual([synopsis[0].row, synopsis[0].row + 1]);
+    expect(got[0].style).toBe("act");
+  });
+
+  it("막 제목이 페이지 맨 아래에 혼자 남지 않고 다음 씬헤딩과 같은 쪽에 있다", () => {
+    // 39줄로 채운 뒤 막 제목: 제목만 들어가고 씬헤딩은 넘치는 자리
+    const doc: ScriptLine[] = [
+      ...Array.from({ length: 39 }, () => ({ style: "action" as const, text: "한 줄" })),
+      { style: "act", text: "2막" },
+      { style: "scene", text: "내부. 방 - 낮" },
+      { style: "action", text: "본문" },
+    ];
+    const pages = paginate(doc, 41, 1, { sections: true }).pages;
+    const pageOf = (style: string) => pages.find((p) => p.lines.some((l) => l.style === style))!.number;
+    expect(pages.length).toBe(2);
+    expect(pageOf("act")).toBe(pageOf("scene"));
+    expect(pageOf("act")).toBe(2);
   });
 });

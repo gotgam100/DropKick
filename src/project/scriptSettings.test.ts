@@ -29,4 +29,14 @@ describe("스크립트 설정", () => {
     expect(parsed).toEqual({ s1: { coverOff: ["author"], sceneStart: 7, watermark: "초안" } });
     expect(parseScriptSettings(null, new Set())).toEqual({});
   });
+
+  it("막·장·요약 인쇄 설정: 켠 것만 저장하고, 파일에서 읽을 때 true만 믿는다", () => {
+    expect(compactSettings({ printSections: false, printSynopsis: false })).toBeUndefined();
+    expect(compactSettings({ printSynopsis: true })).toEqual({ printSynopsis: true });
+    const parsed = parseScriptSettings(
+      { s1: { printSections: true, printSynopsis: "예" }, s2: { printSections: 1 } },
+      new Set(["s1", "s2"]),
+    );
+    expect(parsed).toEqual({ s1: { printSections: true } });
+  });
 });

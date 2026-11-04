@@ -4,7 +4,7 @@
  */
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import type { ScriptLine } from "../editor/lineStyles";
-import { STYLE_LABELS } from "../editor/styles";
+import { styleLabel } from "../editor/styles";
 import { ScriptPreview } from "../editor/ScriptPreview";
 import { fromFountain } from "../fountain/fountain";
 import { isLineStyle } from "../editor/styles";
@@ -45,7 +45,7 @@ function DiffLines({ ops, context = 1 }: { ops: LineOp[]; context?: number }) {
     rows.push(
       <div key={i} className={`diff-line diff-${op.kind}`}>
         <span className="diff-mark">{op.kind === "add" ? "+" : op.kind === "del" ? "−" : ""}</span>
-        <span className="diff-style">{STYLE_LABELS[op.line.style]}</span>
+        <span className="diff-style">{styleLabel(op.line.style)}</span>
         <span className="diff-text">{op.line.text || " "}</span>
       </div>,
     );
@@ -142,7 +142,7 @@ function Comparison({
     h.replace(/^\s*(?:S\s*#|#)\s*\d+[A-Z]?\.?\s*/i, "").trim() || "(첫 씬 앞)";
   const sceneTitle = (s: (typeof barScenes)[number]) => {
     const k = barKind(s);
-    const num = s.number > 0 ? `#${s.number}. · ` : "";
+    const num = s.number > 0 ? `${s.number}. · ` : "";
     const delNote =
       s.deletedScenes.length > 0
         ? ` (앞에서 지운 씬 ${s.deletedScenes.map((d) => `옛 #${d.number}.`).join(", ")})`

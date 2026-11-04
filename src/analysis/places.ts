@@ -113,3 +113,16 @@ export function knownTimes(headings: readonly string[], place: string): string[]
   const first = byCount(here);
   return [...first, ...byCount(all).filter((t) => !first.includes(t))];
 }
+
+/**
+ * 씬헤딩이 "실내. 장소명. (세부장소) - 시간대" 모양에서 벗어났을 때 알려 줄 말. 괜찮으면 null.
+ * 강제하지 않고 화면에 물결 밑줄과 안내로만 보여 준다. (빈 씬헤딩은 쓰는 중이므로 알리지 않는다)
+ */
+export function headingProblem(text: string): string | null {
+  if (text.replace(NUMBER_PREFIX, "").trim() === "") return null;
+  const parts = parseHeading(text);
+  if (!parts.prefix) return "실내/실외 표시가 없어요. 예: 실내. 장소명 - 시간대";
+  if (parts.place.trim() === "") return "장소가 없어요. 예: 실내. 장소명 - 시간대";
+  if (parts.time === null || parts.time.trim() === "") return "시간대가 없어요. 예: 실내. 장소명 - 낮";
+  return null;
+}

@@ -26,6 +26,35 @@ describe("PDF 내보내기", () => {
     if (out) writeFileSync(`${out}/short-5p.pdf`, bytes);
   });
 
+  it("막·장·씬 요약 줄은 PDF에 들어가지 않아 페이지 수가 그대로다", async () => {
+    const doc = fromFountain(readFileSync(new URL("samples/short-5p.fountain", root), "utf8"));
+    const withOutline = {
+      ...doc,
+      lines: doc.lines.flatMap((l) =>
+        l.style === "scene"
+          ? [{ style: "act" as const, text: "막 이름 ".repeat(30) }, l, { style: "synopsis" as const, text: "요약 ".repeat(50) }]
+          : [l],
+      ),
+    };
+    const a = await PDFDocument.load(await buildPdf(doc, fonts));
+    const b = await PDFDocument.load(await buildPdf(withOutline, fonts));
+    expect(b.getPageCount()).toBe(a.getPageCount());
+  });
+
+  it("막·장·요약을 넣기로 하면 PDF에 들어가서 줄이 늘어난다", async () => {
+    const doc = fromFountain(readFileSync(new URL("samples/short-5p.fountain", root), "utf8"));
+    const lines = doc.lines.flatMap((l) =>
+      l.style === "scene"
+        ? [{ style: "act" as const, text: "막 이름" }, l, { style: "synopsis" as const, text: "요약 ".repeat(200) }]
+        : [l],
+    );
+    const without = paginate(lines).pages.length;
+    const withPrint = paginate(lines, undefined, 1, { sections: true, synopsis: true }).pages.length;
+    expect(withPrint).toBeGreaterThan(without);
+    const pdf = await PDFDocument.load(await buildPdf({ ...doc, lines, printOutline: { sections: true, synopsis: true } }, fonts));
+    expect(pdf.getPageCount()).toBe(1 + withPrint);
+  });
+
   it("장편 원고 100페이지도 만들고, 글꼴은 쓴 글자만 담아 크기가 작다", async () => {
     const doc = fromFountain(readFileSync(new URL("samples/long-100p.fountain", root), "utf8"));
     const bytes = await buildPdf(doc, fonts);
@@ -85,5 +114,18 @@ describe("PDF 내보내기", () => {
     const bytes = await buildPdf(doc, fonts, [], { watermark: "   " });
     const pdf = await PDFDocument.load(bytes);
     for (let i = 0; i < pdf.getPageCount(); i++) expect(hasTenPercent(pdf, i)).toBe(false);
+  });
+
+  it("글자 꾸밈과 가운데 정렬이 있어도 쪽 수가 화면 계산과 같다", async () => {
+    const doc = {
+      titlePage: null,
+      lines: [
+        { style: "scene" as const, text: "내부. 방 - 낮" },
+        { style: "action" as const, text: "**굵게** *기울임* _밑줄_ 일반 글자가 이어진다. ".repeat(6) },
+        { style: "action" as const, text: ">끝<" },
+      ],
+    };
+    const pdf = await PDFDocument.load(await buildPdf(doc, fonts));
+    expect(pdf.getPageCount()).toBe(paginate(doc.lines).pages.length);
   });
 });

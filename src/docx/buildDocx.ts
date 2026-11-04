@@ -25,6 +25,26 @@ import type { ExtraBlock, ExtraSection } from "../export/extras";
 import type { ScriptDocument } from "../fountain/fountain";
 import { numberScenes, sceneHeadingText } from "../layout/sceneNumbers";
 import { toUpperLatin } from "../layout/metrics";
+import { isPrinted, previousPrinted } from "../layout/paginate";
+import { actionIndent, alignOf, hasInline, leadingIndent, plainText, rowSpans, stripMarks, supportsInline, type Align } from "../layout/inline";
+
+/** 글자 꾸밈(굵게·기울임·밑줄) 기호를 빼고 꾸밈을 입힌 TextRun 목록. 꾸밈이 없으면 한 덩어리 */
+function styledRuns(text: string, align: Align = "left"): TextRun[] {
+  const font = { name: FONT_PRIMARY, eastAsia: FONT_ASIAN };
+  if (!hasInline(text)) return [new TextRun({ text, size: FONT_SIZE, font })];
+  const spans = rowSpans(text, [plainText(text.replace(/\t/g, "    "), align).trimEnd()], align)[0];
+  return spans.map(
+    (sp) =>
+      new TextRun({
+        text: sp.text,
+        size: FONT_SIZE,
+        font,
+        ...(sp.bold ? { bold: true } : {}),
+        ...(sp.italic ? { italics: true } : {}),
+        ...(sp.underline ? { underline: {} } : {}),
+      }),
+  );
+}
 
 const FONT_PRIMARY = "Courier Prime";
 const FONT_ASIAN = "NanumGothicCoding";
@@ -139,7 +159,7 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
           spacing: { after: 240, line: Math.round(((FONT_SIZE + 10) / 2) * 1.3 * 20), lineRule: LineRuleType.EXACT },
           children: [
             new TextRun({
-              text: toUpperLatin(title),
+              text: toUpperLatin(stripMarks(title)),
               bold: true,
               size: FONT_SIZE + 4 + 6,
               font: { name: FONT_PRIMARY, eastAsia: FONT_ASIAN },
@@ -257,9 +277,12 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
 
   for (let i = 0; i < doc.lines.length; i++) {
     const line = doc.lines[i];
-    const text = line.text;
-    const prevLine = doc.lines[i - 1];
-    const isContinuedAction = line.style === "action" && prevLine?.style === "action";
+    // 막·장·씬 요약은 설정에서 넣기로 했을 때만 인쇄한다. 앞 줄을 볼 때도 인쇄되지 않는 줄은 건너뛴다.
+    if (!isPrinted(line.style, doc.printOutline)) continue;
+    // 꾸밈을 쓰지 않는 줄에 남은 꾸밈 기호(*, _)는 뺀다.
+    const text = supportsInline(line.style) ? line.text : stripMarks(line.text);
+    const prevLine = previousPrinted(doc.lines, i, doc.printOutline);
+    const isContinuedAction = (line.style === "action" || line.style === "synopsis") && prevLine?.style === line.style;
 
     // 스타일별 설정
     switch (line.style) {
@@ -299,22 +322,57 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
         break;
       }
 
-      case "action": {
+      case "act":
+      case "chapter": {
         paragraphs.push(
           new Paragraph({
+            spacing: { before: line.style === "act" ? 480 : 240, after: 0, line: LINE_SPACING, lineRule: LineRuleType.EXACT },
+            keepNext: true,
+            children: [
+              new TextRun({
+                text,
+                bold: true,
+                size: FONT_SIZE,
+                font: { name: FONT_PRIMARY, eastAsia: FONT_ASIAN },
+              }),
+            ],
+          }),
+        );
+        break;
+      }
+
+      case "synopsis": {
+        paragraphs.push(
+          new Paragraph({
+            spacing: { before: isContinuedAction ? 0 : 240, after: 0, line: LINE_SPACING, lineRule: LineRuleType.EXACT },
+            children: [
+              new TextRun({
+                text,
+                color: "666666",
+                size: FONT_SIZE,
+                font: { name: FONT_PRIMARY, eastAsia: FONT_ASIAN },
+              }),
+            ],
+          }),
+        );
+        break;
+      }
+
+      case "action": {
+        const align = alignOf(text);
+        const indentCols = actionIndent(text);
+        const body = indentCols > 0 ? leadingIndent(text).rest : text;
+        paragraphs.push(
+          new Paragraph({
+            ...(align === "center" ? { alignment: AlignmentType.CENTER } : align === "right" ? { alignment: AlignmentType.RIGHT } : {}),
+            ...(indentCols > 0 ? { indent: { left: convertInchesToTwip(indentCols * 0.1) } } : {}),
             spacing: {
               before: isContinuedAction ? 0 : 240,
               after: 0,
               line: LINE_SPACING,
               lineRule: LineRuleType.EXACT,
             },
-            children: [
-              new TextRun({
-                text: text,
-                size: FONT_SIZE,
-                font: { name: FONT_PRIMARY, eastAsia: FONT_ASIAN },
-              }),
-            ],
+            children: styledRuns(body, align),
           }),
         );
         break;
@@ -345,13 +403,7 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
               right: convertInchesToTwip(2.0),
             },
             spacing: { before: 0, after: 0, line: LINE_SPACING, lineRule: LineRuleType.EXACT },
-            children: [
-              new TextRun({
-                text: text.startsWith("(") ? text : `(${text})`,
-                size: FONT_SIZE,
-                font: { name: FONT_PRIMARY, eastAsia: FONT_ASIAN },
-              }),
-            ],
+            children: styledRuns(text.startsWith("(") ? text : `(${text})`),
           }),
         );
         break;
@@ -365,13 +417,7 @@ export async function buildDocx(docOrNull: ScriptDocument | null, extras: ExtraS
               right: convertInchesToTwip(1.5),
             },
             spacing: { before: 0, after: 0, line: LINE_SPACING, lineRule: LineRuleType.EXACT },
-            children: [
-              new TextRun({
-                text: text,
-                size: FONT_SIZE,
-                font: { name: FONT_PRIMARY, eastAsia: FONT_ASIAN },
-              }),
-            ],
+            children: styledRuns(text),
           }),
         );
         break;

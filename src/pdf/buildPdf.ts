@@ -12,6 +12,7 @@ import { KOREAN_SCALE, splitRuns, textColumns } from "../layout/metrics";
 import { PAGE, paginate } from "../layout/paginate";
 import { COVER_TITLE_SCALE, WATERMARK } from "../project/scriptSettings";
 
+import { stripMarks, type Span } from "../layout/inline";
 import type { ExtraSection } from "../export/extras";
 import { drawExtras } from "./extrasPdf";
 import type { FontFiles } from "./fonts";
@@ -31,7 +32,7 @@ const BASELINE = (LINE - SIZE) / 2 + 9.5;
 type Fonts = { regular: [PDFFont, PDFFont]; bold: [PDFFont, PDFFont] };
 
 /** 한 줄을 글꼴별 묶음으로 나눠, 칸 위치에 맞춰 찍는다. */
-function drawLine(page: PDFPage, fonts: Fonts, text: string, column: number, row: number, bold: boolean, scale = 1) {
+function drawLine(page: PDFPage, fonts: Fonts, text: string, column: number, row: number, bold: boolean, scale = 1, gray = false) {
   const [courier, korean] = bold ? fonts.bold : fonts.regular;
   const y = HEIGHT - PAGE.topMarginIn * PT - row * LINE - BASELINE;
   for (const run of splitRuns(text)) {
@@ -41,7 +42,38 @@ function drawLine(page: PDFPage, fonts: Fonts, text: string, column: number, row
       y,
       size: (run.courier ? SIZE : SIZE * KOREAN_SCALE) * scale,
       font: run.courier ? courier : korean,
+      ...(gray ? { color: rgb(0.4, 0.4, 0.4) } : {}),
     });
+  }
+}
+
+/** 글자 꾸밈(굵게·기울임·밑줄)이 있는 줄. 조각마다 이어서 찍는다. 기울임은 글자를 비스듬히 눕혀서 표현한다. */
+function drawSpans(page: PDFPage, fonts: Fonts, spans: readonly Span[], column: number, row: number, gray = false) {
+  const y = HEIGHT - PAGE.topMarginIn * PT - row * LINE - BASELINE;
+  let col = column;
+  for (const span of spans) {
+    const [courier, korean] = span.bold ? fonts.bold : fonts.regular;
+    for (const run of splitRuns(span.text)) {
+      if (run.text.trim() === "") continue;
+      page.drawText(run.text, {
+        x: LEFT + (col + run.column) * COLUMN,
+        y,
+        size: run.courier ? SIZE : SIZE * KOREAN_SCALE,
+        font: run.courier ? courier : korean,
+        ...(span.italic ? { xSkew: degrees(12) } : {}),
+        ...(gray ? { color: rgb(0.4, 0.4, 0.4) } : {}),
+      });
+    }
+    const width = textColumns(span.text) * COLUMN;
+    if (span.underline && span.text.trim() !== "") {
+      page.drawLine({
+        start: { x: LEFT + col * COLUMN, y: y - 1.8 },
+        end: { x: LEFT + col * COLUMN + width, y: y - 1.8 },
+        thickness: 0.6,
+        ...(gray ? { color: rgb(0.4, 0.4, 0.4) } : {}),
+      });
+    }
+    col += textColumns(span.text);
   }
 }
 
@@ -69,7 +101,7 @@ function drawTitlePage(pdf: PDFDocument, fonts: Fonts, titlePage: string) {
     drawLine(page, fonts, text, centerColumn - (textColumns(text) * scale) / 2, row, bold, scale);
 
   let row = Math.round(PAGE.linesPerPage / 3);
-  for (const line of fields.get("title") ?? []) centered(line.replace(/[*_]/g, ""), row++, true, COVER_TITLE_SCALE);
+  for (const line of fields.get("title") ?? []) centered(stripMarks(line), row++, true, COVER_TITLE_SCALE);
   row += 1; // 제목 아래는 한 줄만 띄운다
   for (const key of ["credit", "source", "author", "authors"]) {
     for (const line of fields.get(key) ?? []) centered(line, row++);
@@ -133,13 +165,13 @@ export async function buildPdf(
   const fonts: Fonts = { regular: [courier, korean], bold: [courierBold, koreanBold] };
 
   const title = doc?.titlePage ? parseTitlePage(doc.titlePage).get("title")?.join(" ") : undefined;
-  if (title) pdf.setTitle(title.replace(/[*_]/g, ""));
+  if (title) pdf.setTitle(stripMarks(title));
   pdf.setCreator("DropKick");
   pdf.setProducer("DropKick (pdf-lib)");
 
   if (doc?.titlePage && doc.titlePage.trim()) drawTitlePage(pdf, fonts, doc.titlePage);
 
-  const { pages } = paginate(doc?.lines ?? [], PAGE.linesPerPage, doc?.sceneStart ?? 1);
+  const { pages } = paginate(doc?.lines ?? [], PAGE.linesPerPage, doc?.sceneStart ?? 1, doc?.printOutline);
   const totalPages = pages.length;
   for (const p of doc ? pages : []) {
     const page = pdf.addPage([WIDTH, HEIGHT]);
@@ -151,7 +183,8 @@ export async function buildPdf(
     page.drawText(label, { x, y, size: SIZE, font: courier });
 
     for (const line of p.lines) {
-      drawLine(page, fonts, line.text, line.column, line.row, line.bold);
+      if (line.spans) drawSpans(page, fonts, line.spans.map((sp) => (line.bold ? { ...sp, bold: true } : sp)), line.column, line.row, line.style === "synopsis");
+      else drawLine(page, fonts, line.text, line.column, line.row, line.bold, 1, line.style === "synopsis");
       if (line.style === "scene" && line.sceneNumber != null) {
         const numStr = String(line.sceneNumber);
         // 씬 번호(할리우드 촬영고 표준): 본문에 가깝게 배치 (화면과 1:1)

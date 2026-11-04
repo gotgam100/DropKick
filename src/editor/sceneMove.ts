@@ -18,8 +18,15 @@ export function sceneStarts(lines: readonly ScriptLine[]): number[] {
   return starts;
 }
 
+/** 씬이 끝나는 곳: 다음 씬헤딩이나 막·장 줄 앞. (막·장 줄은 씬을 옮겨도 제자리에 남는다) */
+function blockEndOf(lines: readonly ScriptLine[], headingLine: number): number {
+  let end = headingLine;
+  while (end < lines.length && !["scene", "act", "chapter"].includes(lines[end].style)) end++;
+  return end;
+}
+
 /**
- * 씬 하나(씬헤딩부터 다음 씬헤딩 앞까지)를 다른 씬 앞으로 옮긴다.
+ * 씬 하나(씬헤딩부터 다음 씬헤딩이나 막·장 줄 앞까지, 씬 요약 포함)를 다른 씬 앞으로 옮긴다.
  * @param fromLine 옮길 씬의 씬헤딩 줄 번호
  * @param beforeLine 이 씬헤딩 앞에 놓는다. null이면 맨 끝
  * 옮겨도 달라지는 게 없거나 씬이 아니면 null.
@@ -30,7 +37,7 @@ export function moveScene(lines: readonly ScriptLine[], fromLine: number, before
   if (at < 0) return null;
   if (beforeLine !== null && !starts.includes(beforeLine)) return null;
 
-  const blockEnd = (at + 1 < starts.length ? starts[at + 1] : lines.length + 1) - 1;
+  const blockEnd = blockEndOf(lines, fromLine);
   const dest = beforeLine ?? lines.length + 1;
   // 자기 자리나 바로 다음 자리로는 옮길 게 없다.
   if (dest === fromLine || dest === blockEnd + 1) return null;

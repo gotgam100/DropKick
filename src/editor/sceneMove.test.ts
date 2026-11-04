@@ -93,3 +93,38 @@ describe("편집기 상태에서 씬 옮기기", () => {
     expect(scriptLines(back)).toEqual(lines);
   });
 });
+
+describe("씬 옮기기: 씬 요약과 막·장", () => {
+  const outlined: ScriptLine[] = [
+    L("act", "1막"), // 1
+    L("scene", "A"), // 2
+    L("synopsis", "a 요약"), // 3
+    L("action", "a1"), // 4
+    L("chapter", "장"), // 5
+    L("scene", "B"), // 6
+    L("synopsis", "b 요약"), // 7
+    L("action", "b1"), // 8
+    L("act", "2막"), // 9
+    L("scene", "C"), // 10
+    L("action", "c1"), // 11
+  ];
+  const run = (move: NonNullable<ReturnType<typeof moveScene>>) => [
+    ...outlined.slice(0, move.from - 1),
+    ...move.lines,
+    ...outlined.slice(move.to),
+  ];
+
+  it("씬 요약은 씬과 함께 옮겨진다", () => {
+    const move = moveScene(outlined, 6, 2)!; // B를 A 앞으로
+    expect(texts(run(move))).toBe("1막,B,b 요약,b1,A,a 요약,a1,장,2막,C,c1");
+  });
+
+  it("막·장 줄은 씬에 딸려 가지 않고 제자리에 남는다", () => {
+    const move = moveScene(outlined, 2, 10)!; // A를 C 앞(2막 아래)으로
+    expect(texts(run(move))).toBe("1막,장,B,b 요약,b1,2막,A,a 요약,a1,C,c1");
+  });
+
+  it("막·장 줄 바로 앞 씬을 막·장 줄 건너 씬 앞으로 옮기는 것도 옮김으로 친다", () => {
+    expect(moveScene(outlined, 6, 10)).not.toBeNull();
+  });
+});

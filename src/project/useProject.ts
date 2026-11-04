@@ -19,7 +19,7 @@ import type { TextEditorHandle } from "../editor/TextEditor";
 import type { ScriptLine } from "../editor/lineStyles";
 import type { ScriptNote } from "../editor/notes";
 import { isLineStyle } from "../editor/styles";
-import { fromFountain, toFountain } from "../fountain/fountain";
+import { scriptLinesOf, toFountain } from "../fountain/fountain";
 import type { ImportResult } from "../importer/ImportResultDialog";
 import type { Answers, Question } from "../importer/types";
 import { FONT_PATHS, type FontFiles } from "../pdf/fonts";
@@ -269,21 +269,56 @@ async function readRecovery(): Promise<Recovery | null> {
   }
 }
 
-function scriptLinesOf(text: string) {
-  const doc = fromFountain(text);
-  return { titlePage: doc.titlePage, lines: doc.lines.filter((l) => isLineStyle(l.style)) };
+/**
+ * 새 프로젝트 폴더 위치를 고른다.
+ * 같은 이름이 이미 있으면 어떻게 할지 묻는다: 덮어쓰기(기존 것은 휴지통으로) / 둘 다 보존(이름 뒤에 숫자) / 취소.
+ * 덮어쓰기는 기존 프로젝트를 바로 버리지 않고 옆에 숨긴 이름으로 비켜 둔다(`aside`).
+ * 새로 저장이 끝난 뒤에야 휴지통으로 보내고, 저장이 실패하면 원래 자리로 되돌린다. (finishOverwrite)
+ */
+/** 덮어쓰기 마무리: 새 저장이 됐으면 비켜 둔 기존 프로젝트를 휴지통으로, 안 됐으면 원래 자리로 되돌린다. */
+async function finishOverwrite(path: string, aside: string, saved: boolean) {
+  try {
+    if (saved) {
+      await tauriFs.trash(aside);
+      return;
+    }
+    // 저장하다 만 새 폴더가 있으면 휴지통으로 보내고 기존 프로젝트를 되돌린다.
+    if ((await tauriFs.kind(path)) !== "none") await tauriFs.trash(path);
+    await tauriFs.rename(aside, path);
+  } catch (e) {
+    await notify(`기존 프로젝트를 정리하지 못했습니다.\n${aside}\n${String(e)}`, "warning");
+  }
 }
 
-/** 새 프로젝트 폴더 위치를 고른다. 이미 있는 폴더/파일은 덮어쓰지 않는다. */
-async function chooseNewProjectPath(name: string): Promise<string | null> {
+async function chooseNewProjectPath(name: string, currentPath: string | null): Promise<{ path: string; aside?: string } | null> {
   const chosen = await save({ title: "프로젝트 저장", defaultPath: `${name}${PROJECT_EXTENSION}` });
   if (!chosen) return null;
   const path = chosen.endsWith(PROJECT_EXTENSION) ? chosen : `${chosen}${PROJECT_EXTENSION}`;
-  if ((await tauriFs.kind(path)) !== "none") {
-    await notify(`"${path.split("/").pop()}"이(가) 이미 있습니다.\n덮어쓰지 않도록 다른 이름을 골라 주세요.`, "warning");
+  if ((await tauriFs.kind(path)) === "none") return { path };
+
+  const fileName = path.split("/").pop() ?? path;
+  if (path === currentPath) {
+    await notify(`"${fileName}"은(는) 지금 열어 둔 프로젝트입니다.\n다른 이름을 골라 주세요.`, "warning");
     return null;
   }
-  return path;
+  const answer = await message(
+    `같은 이름의 프로젝트가 이미 있습니다.\n"${fileName}"\n\n· 덮어쓰기: 기존 프로젝트를 지우고(휴지통으로 옮깁니다) 이 이름으로 저장합니다.\n· 둘 다 보존: 이름 뒤에 숫자를 붙여 따로 저장합니다.`,
+    { title: "DropKick", kind: "warning", buttons: { yes: "덮어쓰기", no: "둘 다 보존", cancel: "취소" } },
+  );
+  if (answer === "덮어쓰기" || answer === "Yes") {
+    const dir = path.slice(0, path.length - fileName.length);
+    const aside = `${dir}.${fileName}.덮어쓰기-${Date.now()}`;
+    await tauriFs.rename(path, aside);
+    return { path, aside };
+  }
+  if (answer === "둘 다 보존" || answer === "No") {
+    const base = path.slice(0, -PROJECT_EXTENSION.length);
+    for (let n = 2; n < 1000; n++) {
+      const candidate = `${base} ${n}${PROJECT_EXTENSION}`;
+      if ((await tauriFs.kind(candidate)) === "none") return { path: candidate };
+    }
+  }
+  return null;
 }
 
 function newSession(path: string | null, manifest: ProjectManifest, texts: Map<string, string>, titlePage: string | null, saved: boolean): Session {
@@ -498,8 +533,11 @@ export function useProject(
   /** 다른 이름으로 저장 = 새 폴더에 모든 문서를 저장 */
   const saveAs = useCallback(async (): Promise<boolean> => {
     const current = sessionRef.current;
-    const path = await chooseNewProjectPath(current.path ? `${sessionTitle(current)} 사본` : sessionTitle(current));
-    return path ? writeProjectTo(path, true) : false;
+    const target = await chooseNewProjectPath(current.path ? `${sessionTitle(current)} 사본` : sessionTitle(current), current.path);
+    if (!target) return false;
+    const saved = await writeProjectTo(target.path, true);
+    if (target.aside) await finishOverwrite(target.path, target.aside, saved);
+    return saved;
   }, [writeProjectTo]);
 
   const saveCurrent = useCallback(async (): Promise<boolean> => {
@@ -1424,13 +1462,14 @@ export function useProject(
 
   // ---------- PDF & Word ----------
 
-  /** 내보낼 원고: 스크립트 설정을 반영한다. (표지에서 끈 항목은 빼고, 첫 씬 번호를 쓴다) */
+  /** 내보낼 원고: 스크립트 설정을 반영한다. (표지에서 끈 항목은 빼고, 첫 씬 번호를 쓰고, 막·장·요약을 넣을지 정한다) */
   const exportDocument = (doc: { titlePage: string | null; lines: ScriptLine[] }) => {
     const settings = settingsOf(sessionRef.current.manifest);
     return {
       titlePage: applyCoverToggles(doc.titlePage, settings?.coverOff),
       lines: doc.lines,
       sceneStart: sceneStartOf(settings),
+      printOutline: { sections: settings?.printSections === true, synopsis: settings?.printSynopsis === true },
     };
   };
 
@@ -1526,6 +1565,10 @@ export function useProject(
         });
       }
       if (id === "recent_clear") return writeRecents([]);
+      if (id === "style:next") {
+        if (isScript) editorRef.current?.nextStyle();
+        return;
+      }
       if (id.startsWith("style:")) {
         const style = id.slice("style:".length);
         if (isScript && isLineStyle(style)) editorRef.current?.setStyle(style);

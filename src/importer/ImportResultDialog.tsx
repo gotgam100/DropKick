@@ -17,12 +17,12 @@ const GROUPS: { kind: ReviewKind; title: string; hint: string }[] = [
   {
     kind: "no-character",
     title: "인물 이름을 찾지 못했습니다",
-    hint: "대사가 액션으로 들어갔을 수 있습니다. 인물 이름과 대사 줄의 스타일을 확인해 주세요.",
+    hint: "대사가 액션으로 들어갔을 수 있습니다. 인물 이름과 대사 줄의 요소을 확인해 주세요.",
   },
   {
     kind: "orphan-dialogue",
     title: "대사 자리에 있지만 인물 이름이 없는 글",
-    hint: "액션으로 넣었습니다. 대사라면 앞에 인물 이름을 적고 줄 스타일을 바꿔 주세요.",
+    hint: "액션으로 넣었습니다. 대사라면 앞에 인물 이름을 적고 줄 요소을 바꿔 주세요.",
   },
   {
     kind: "missing-text",
@@ -37,7 +37,7 @@ const GROUPS: { kind: ReviewKind; title: string; hint: string }[] = [
   {
     kind: "lonely-name",
     title: "인물 이름처럼 보이지만 대사가 이어지지 않는 줄",
-    hint: "액션으로 넣었습니다. 인물 이름이 맞다면 인물 스타일로 바꿔 주세요.",
+    hint: "액션으로 넣었습니다. 인물 이름이 맞다면 인물 요소로 바꿔 주세요.",
   },
 ];
 
@@ -128,7 +128,7 @@ export function ImportResultDialog({ result, onClose }: { result: ImportResult; 
         <section className="import-section import-guide">
           <h3>안내</h3>
           <ul>
-            <li>글자의 위치와 모양으로 줄 스타일을 짐작한 결과라, 문서에 따라 틀릴 수 있습니다.</li>
+            <li>글자의 위치와 모양으로 줄 요소을 짐작한 결과라, 문서에 따라 틀릴 수 있습니다.</li>
             <li>왼쪽 씬 목록과 오른쪽 통계(인물별 대사량)를 보며 한 번 훑어봐 주세요.</li>
             <li>원래 파일은 그대로이고, 저장하면 새 프로젝트로 만들어집니다.</li>
           </ul>

@@ -23,35 +23,6 @@ export const NEW_DOC_NAMES: Record<DocType, string> = {
   structure: "3막 구조 양식",
 };
 
-/** 인물 설정 양식 */
-export const CHARACTER_TEMPLATE = (name: string) => `# ${name}
-
-## 기본 정보
-- 나이:
-- 성별:
-- 직업:
-- 외모:
-
-## 성격
-- 성격:
-- 말투:
-- 습관·버릇:
-
-## 이야기 속 역할
-- 원하는 것 (목표):
-- 필요한 것 (결핍):
-- 두려워하는 것:
-- 비밀:
-
-## 관계
-- 
-
-## 변화 (아크)
-- 처음:
-- 끝:
-
-## 메모
-`;
 
 export function findNode(tree: ProjectNode[], id: string): ProjectNode | null {
   for (const node of tree) {

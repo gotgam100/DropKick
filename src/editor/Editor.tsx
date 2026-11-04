@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import type { EditorState, Extension, Text } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorSelection, type EditorState, type Extension, type Text } from "@codemirror/state";
+import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, redo, undo } from "@codemirror/commands";
 import { openSearchPanel, searchKeymap } from "@codemirror/search";
 import { koreanSearchPhrases } from "./searchPhrases";
@@ -10,21 +10,25 @@ import {
   characterNames,
   createScriptState,
   currentStyle,
+  styleAtLine,
   lineStylesField,
   sceneNumbersField,
   sceneStartField,
   setSceneStartEffect,
+  setLineStyleEffect,
   scriptLines,
   renameCharacter,
   setStyle,
+  cycleLineStyle,
   type ScriptLine,
 } from "./lineStyles";
 import { sceneMoveSpec } from "./sceneMove";
-import { scriptEditing } from "./scriptView";
+import { keepOrphans, mergeOrphans, orphanChains, orphanInfo, previousScene, replaceLinesSpec } from "./synopsis";
+import { scriptEditing, setFountainModeEffect } from "./scriptView";
 import { notesOf, restoreNotes, scriptNotes, setNotesEffect, type ScriptNote } from "./notes";
 import { currentPage, pageBreaks, paginationField, totalPages } from "./pageBreaks";
 import { analyzeScript, type ScriptAnalysis } from "../analysis/analyze";
-import type { LineStyle } from "./styles";
+import type { DocStyle, LineStyle, OutlineStyle } from "./styles";
 import { clampPosition, type ViewPosition } from "../project/viewPositions";
 
 export type EditorInfo = {
@@ -36,11 +40,20 @@ export type EditorInfo = {
   pages: number;
   /** 커서가 있는 줄 번호 */
   line: number;
-  style: LineStyle;
+  style: DocStyle;
 };
 
 export type EditorHandle = {
   setStyle: (style: LineStyle) => void;
+  /** 지금 줄을 다음 스타일로 (스타일 메뉴의 "다음 스타일") */
+  nextStyle: () => void;
+  /**
+   * 사이드바에서 막·장·씬 요약을 만든다. 막·장은 line번 줄 앞(null이면 맨 끝)에 빈 줄로 넣고,
+   * 요약은 line번 씬헤딩 아래(이미 있는 요약 뒤)에 넣는다. 새 줄로 커서를 옮긴다.
+   */
+  insertOutline: (kind: OutlineStyle, line: number | null) => void;
+  /** 주인 없는 요약 처리: 앞 씬 요약으로 합치기 / 일반 글로 남기기 / 방금 한 것 되돌리기 */
+  resolveOrphans: (mode: "merge" | "keep" | "undo") => void;
   /** 새 원고로 바꾼다. 되돌리기 기록도 새로 시작한다. position을 주면 그때 보던 자리(커서와 화면 위치)로 돌아간다. */
   load: (lines: ScriptLine[], position?: ViewPosition | null) => void;
   /** 지금 보고 있는 자리: 커서 위치와 화면 맨 위에 보이는 줄. 나중에 load로 돌아올 수 있다. */
@@ -55,6 +68,8 @@ export type EditorHandle = {
   undo: () => void;
   redo: () => void;
   find: () => void;
+  /** Fountain 보기를 켜고 끈다. 원고는 그대로 두고 줄마다 Fountain 기호를 겹쳐 보여 준다. */
+  setFountainMode: (on: boolean) => void;
   focus: () => void;
   /** 그 줄로 커서를 옮기고 화면 위쪽에 보이게 한다. */
   goToLine: (line: number) => void;
@@ -97,9 +112,11 @@ type Props = {
   onNotesChange: (notes: ScriptNote[]) => void;
   /** 메모가 붙은 글을 눌렀을 때 */
   onNoteOpen: (id: string) => void;
+  /** 씬헤딩이 사라져 어느 씬에도 속하지 않게 된 요약이 생겼을 때 (합칠지 묻는다) */
+  onOrphanSynopsis: (info: { texts: string[]; target: string }) => void;
 };
 
-type Snapshot = { doc: Text; styles: readonly LineStyle[] };
+type Snapshot = { doc: Text; styles: readonly DocStyle[] };
 
 /** 가장 가까운, 위아래로 스크롤되는 부모 */
 function scrollParentOf(el: HTMLElement): HTMLElement | null {
@@ -146,7 +163,7 @@ function sameAs(state: EditorState, saved: Snapshot): boolean {
 }
 
 export const Editor = forwardRef<EditorHandle, Props>(function Editor(
-  { initialLines, onInfo, onDirtyChange, onAnalysis, onNotesChange, onNoteOpen },
+  { initialLines, onInfo, onDirtyChange, onAnalysis, onNotesChange, onNoteOpen, onOrphanSynopsis },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -166,6 +183,10 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
   const onNoteOpenRef = useRef(onNoteOpen);
   onNotesRef.current = onNotesChange;
   onNoteOpenRef.current = onNoteOpen;
+  const onOrphanRef = useRef(onOrphanSynopsis);
+  onOrphanRef.current = onOrphanSynopsis;
+  /** 합칠지 묻는 창이 떠 있는 동안에는 다시 묻지 않는다 */
+  const orphanAskingRef = useRef(false);
 
   function dispatchNotes(notes: ScriptNote[]) {
     const view = viewRef.current;
@@ -190,6 +211,44 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
     onInfoRef.current(lastInfoRef.current);
   }
 
+  function resolveOrphans(mode: "merge" | "keep" | "undo") {
+    const view = viewRef.current;
+    orphanAskingRef.current = false;
+    if (!view) return;
+    if (mode === "undo") {
+      undo(view);
+      view.focus();
+      return;
+    }
+    const lines = scriptLines(view.state);
+    const spec = replaceLinesSpec(view.state, mode === "merge" ? mergeOrphans(lines) : keepOrphans(lines));
+    if (spec) view.dispatch(spec);
+    view.focus();
+  }
+
+  /**
+   * 씬헤딩이 지워져 주인 없는 요약이 생겼는지 본다. (되돌리기·다시 실행으로 생긴 것은 묻지 않는다)
+   * 합칠 앞 씬이 없으면 묻지 않고 일반 글(액션)로 남기고, 있으면 합칠지 묻는다.
+   */
+  function checkOrphans(update: ViewUpdate) {
+    if (orphanAskingRef.current) return;
+    if (update.transactions.some((tr) => tr.isUserEvent("undo") || tr.isUserEvent("redo"))) return;
+    const info = orphanInfo(update.state);
+    if (!info) return;
+    if (info.target === null) {
+      const styles = update.state.field(lineStylesField).map((style) => ({ style }));
+      const anyTarget = orphanChains(styles).some((c) => previousScene(styles, c.from) !== null);
+      if (!anyTarget) {
+        // 갱신 중에는 다시 고칠 수 없어서 한 박자 뒤에 처리한다.
+        orphanAskingRef.current = true;
+        setTimeout(() => resolveOrphans("keep"), 0);
+        return;
+      }
+    }
+    orphanAskingRef.current = true;
+    onOrphanRef.current({ texts: info.texts, target: info.target ?? "" });
+  }
+
   useImperativeHandle(ref, () => ({
     setStyle(style) {
       const view = viewRef.current;
@@ -197,6 +256,44 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
       setStyle(style)(view);
       view.focus();
     },
+    setFountainMode(on) {
+      viewRef.current?.dispatch({ effects: setFountainModeEffect.of(on) });
+    },
+    nextStyle() {
+      const view = viewRef.current;
+      if (!view) return;
+      cycleLineStyle(1, true)(view);
+      view.focus();
+    },
+    insertOutline(kind, line) {
+      const view = viewRef.current;
+      if (!view) return;
+      const { state } = view;
+      let at: number;
+      if (kind === "synopsis") {
+        // 씬헤딩 아래, 이미 있는 요약 줄들 뒤
+        let last = line ?? state.doc.lines;
+        while (last < state.doc.lines && styleAtLine(state, last + 1) === "synopsis") last++;
+        at = state.doc.line(last).to;
+      } else {
+        at = line === null ? state.doc.length : state.doc.line(line).from;
+      }
+      // 새 줄을 끼워 넣는 것이라, 밀려난 원래 줄의 스타일은 그대로 되돌려 놓는다.
+      const insertBefore = kind !== "synopsis" && line !== null;
+      const newStart = insertBefore ? at : at + 1;
+      const effects = [setLineStyleEffect.of({ pos: newStart, style: kind })];
+      if (insertBefore) {
+        effects.push(setLineStyleEffect.of({ pos: newStart + 1, style: styleAtLine(state, line) }));
+      }
+      view.dispatch({
+        changes: { from: at, insert: "\n" },
+        selection: EditorSelection.cursor(newStart),
+        effects: [...effects, EditorView.scrollIntoView(newStart, { y: "center" })],
+        userEvent: "input.style",
+      });
+      view.focus();
+    },
+    resolveOrphans,
     load(lines, position) {
       const view = viewRef.current;
       if (!view || !extensionsRef.current) return;
@@ -379,6 +476,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(
         const repaginated =
           update.startState.field(paginationField) !== update.state.field(paginationField);
         if (changed && savedRef.current) setDirty(!sameAs(update.state, savedRef.current));
+        if (changed) checkOrphans(update);
         if (repaginated) publishAnalysis(update.state);
         if (!changed && !update.selectionSet && !repaginated) return;
         // 글이나 스타일이 바뀌었을 때만 전체 개수를 다시 센다.

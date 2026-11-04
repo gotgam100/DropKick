@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createProject, parseManifest, serializeManifest, walkDocs, type ProjectNode } from "./model";
 import {
+  DEFAULT_CHARACTER_BODY,
   DEFAULT_CHARACTER_PRESET,
   createCustomPreset,
   formatPresetText,
   loadPresets,
 } from "./presets";
 import {
-  CHARACTER_TEMPLATE,
   findNode,
   folderNamed,
   insertNode,
@@ -143,7 +143,7 @@ describe("저장할 파일 경로", () => {
 
   it("기본 양식으로 인물 양식이 들어 있고 사용자 양식을 만들 수 있다", () => {
     expect(loadPresets()[0]?.name).toBe("인물 양식");
-    expect(formatPresetText(DEFAULT_CHARACTER_PRESET, "민재")).toBe(CHARACTER_TEMPLATE("민재"));
+    expect(formatPresetText(DEFAULT_CHARACTER_PRESET, "민재")).toBe(`# 민재\n\n${DEFAULT_CHARACTER_BODY}`);
     const custom = createCustomPreset({
       name: "장소 설정",
       body: "# 기존 제목\n\n## 분위기\n- 조명:\n",

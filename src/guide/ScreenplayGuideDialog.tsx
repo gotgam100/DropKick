@@ -5,10 +5,12 @@ import {
 } from "./sampleScript";
 import {
   STYLE_LABELS,
+  isOutlineStyle,
   shortcutFor,
   type LineStyle,
 } from "../editor/styles";
 import { fromFountain } from "../fountain/fountain";
+import { GuideSymbolsPage } from "./GuideSymbolsPage";
 import {
   copyScriptPayloadToClipboard,
   type ScriptClipboardPayload,
@@ -46,6 +48,7 @@ function firstSceneLines(): InfographicLine[] {
   const out: InfographicLine[] = [];
   let scenes = 0;
   for (const [i, line] of lines.entries()) {
+    if (isOutlineStyle(line.style)) continue;
     if (line.style === "scene") {
       scenes += 1;
       if (scenes > 1) break;
@@ -67,6 +70,8 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
     return localStorage.getItem(GUIDE_SEEN_KEY) === "true";
   });
   const [copied, setCopied] = useState(false);
+  // 가이드는 두 쪽: 1쪽 스타일 7가지, 2쪽 Fountain 변형 양식(기호로 쓰는 것들)
+  const [page, setPage] = useState<0 | 1>(0);
   const [position, setPosition] = useState({ x: 0, y: 0 });
 
   const dragRef = useRef<{
@@ -85,6 +90,8 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") handleClose();
+      if (e.key === "ArrowLeft") setPage(0);
+      if (e.key === "ArrowRight") setPage(1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -185,7 +192,7 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
                 type="button"
                 className="style-button"
                 onClick={handleCopyScript}
-                title="예시 스크립트 복사 (붙여넣기 시 7가지 스타일 유지)"
+                title="예시 스크립트 복사 (붙여넣기 시 7가지 요소 유지)"
               >
                 {copied ? "✓ 복사 완료!" : "📋 예시 스크립트 복사"}
               </button>
@@ -203,7 +210,18 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
           </div>
         </header>
 
+        <nav className="guide-pager" aria-label="가이드 쪽">
+          <button type="button" className={page === 0 ? "active" : ""} aria-current={page === 0} onClick={() => setPage(0)}>
+            1. 요소
+          </button>
+          <button type="button" className={page === 1 ? "active" : ""} aria-current={page === 1} onClick={() => setPage(1)}>
+            2. Fountain 규칙
+          </button>
+        </nav>
+
         <div className="guide-body">
+          {page === 1 && <GuideSymbolsPage />}
+          {page === 0 && (
           <div className="guide-infographic-board">
             {/* 좌측 설명 카드 열 */}
             <div className="guide-callouts-col guide-col-left">
@@ -338,19 +356,6 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
               </div>
 
               <div
-                className={`guide-callout-card ${hoveredStyle === "parenthetical" ? "active" : ""}`}
-                onMouseEnter={() => setHoveredStyle("parenthetical")}
-                onMouseLeave={() => setHoveredStyle(null)}
-              >
-                <div className="guide-card-head">
-                  <span className="guide-ko-title">{STYLE_LABELS.parenthetical}</span>
-                  <span className="guide-en-sub">{STYLE_EN_NAMES.parenthetical}</span>
-                  <kbd className="guide-kbd">{shortcutFor("parenthetical")}</kbd>
-                </div>
-                <p className="guide-card-desc">배우의 어조, 감정 상태, 소소한 행동 지시.</p>
-              </div>
-
-              <div
                 className={`guide-callout-card ${hoveredStyle === "dialogue" ? "active" : ""}`}
                 onMouseEnter={() => setHoveredStyle("dialogue")}
                 onMouseLeave={() => setHoveredStyle(null)}
@@ -362,6 +367,19 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
                 </div>
                 <p className="guide-card-desc">등장인물이 말하는 대사 본문 (중앙 블록 정렬).</p>
               </div>
+
+              <div
+                className={`guide-callout-card ${hoveredStyle === "parenthetical" ? "active" : ""}`}
+                onMouseEnter={() => setHoveredStyle("parenthetical")}
+                onMouseLeave={() => setHoveredStyle(null)}
+              >
+                <div className="guide-card-head">
+                  <span className="guide-ko-title">{STYLE_LABELS.parenthetical}</span>
+                  <span className="guide-en-sub">{STYLE_EN_NAMES.parenthetical}</span>
+                  <kbd className="guide-kbd">{shortcutFor("parenthetical")}</kbd>
+                </div>
+                <p className="guide-card-desc">배우의 어조, 감정 상태, 소소한 행동 지시.</p>
+              </div>
               <p className="guide-example-credit">
                 예시 스크립트
                 <br />
@@ -371,6 +389,14 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
               </p>
             </div>
           </div>
+          )}
+          {page === 0 && (
+            <div className="guide-tab-callout">
+              <kbd className="guide-kbd">Tab</kbd> 다음 요소
+              <span aria-hidden="true">·</span>
+              <kbd className="guide-kbd">Shift</kbd>+<kbd className="guide-kbd">Tab</kbd> 이전 요소
+            </div>
+          )}
         </div>
 
         <footer className="guide-footer">

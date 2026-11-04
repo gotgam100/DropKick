@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatEighths, type ScriptAnalysis, type SceneSummary } from "../analysis/analyze";
-import { groupScenesByPlace } from "../analysis/places";
+import { countPlaces, groupScenesByPlace } from "../analysis/places";
 
 type Props = {
   analysis: ScriptAnalysis;
@@ -12,6 +12,8 @@ type Props = {
   /** 인물 설정 열기 (없으면 만든다) */
   onOpenProfile: (name: string) => void;
   onRenameCharacter: (name: string) => void;
+  /** 원고 글자 수 (공백 포함, 줄바꿈 제외) */
+  chars: number;
 };
 
 const fmt = new Intl.NumberFormat("ko-KR");
@@ -29,6 +31,7 @@ export function StatsPanel({
   hasProfile,
   onOpenProfile,
   onRenameCharacter,
+  chars,
 }: Props) {
   const { scenes, characters } = analysis;
   // 인물 · 장소를 눌러 펼친 씬 목록
@@ -65,7 +68,7 @@ export function StatsPanel({
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => onSelectScene(sc.line)}
         >
-          #{sc.number}
+          {sc.number}
         </button>
       ))}
     </div>
@@ -102,6 +105,14 @@ export function StatsPanel({
           <div className="stat-tile">
             <span className="stat-label">인물</span>
             <span className="stat-value">{fmt.format(characters.length)}</span>
+          </div>
+          <div className="stat-tile" title="실내·실외와 장소 이름까지 같으면 같은 장소로 셉니다.">
+            <span className="stat-label">장소</span>
+            <span className="stat-value">{fmt.format(countPlaces(scenes))}</span>
+          </div>
+          <div className="stat-tile" title="띄어쓰기를 포함한 글자 수입니다.">
+            <span className="stat-label">글자</span>
+            <span className="stat-value">{fmt.format(chars)}</span>
           </div>
         </section>
 
@@ -146,7 +157,7 @@ export function StatsPanel({
         <section className="stat-section">
           <h3>인물별 대사량</h3>
           {characters.length === 0 ? (
-            <p className="panel-empty">인물(⌘3)과 대사(⌘5)를 쓰면 나타납니다.</p>
+            <p className="panel-empty">인물(⌘3)과 대사(⌘4)를 쓰면 나타납니다.</p>
           ) : (
             <ul className="bar-list">
               {characters.map((c) => (
@@ -267,7 +278,7 @@ export function StatsPanel({
                     className={s.line === currentSceneLine ? "scene-column current" : "scene-column"}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => onSelectScene(s.line)}
-                    title={`#${s.number}. · ${formatEighths(s.eighths)}페이지 · ${s.heading.replace(/^(?:S#|#)\s*\d+\.?\s*/i, "")}`}
+                    title={`${s.number}. · ${formatEighths(s.eighths)}페이지 · ${s.heading.replace(/^(?:S#|#)\s*\d+\.?\s*/i, "")}`}
                   >
                     <span style={{ height: `${Math.max(4, (s.eighths / maxEighths) * 100)}%` }} />
                   </button>
@@ -285,7 +296,7 @@ export function StatsPanel({
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => onSelectScene(s.line)}
                     >
-                      <span className="scene-number">#{s.number}.</span>
+                      <span className="scene-number">{s.number}.</span>
                       <span className="scene-heading">{s.heading.replace(/^(?:S#|#)\s*\d+\.?\s*/i, "")}</span>
                       <span className="bar-value">{formatEighths(s.eighths)}p</span>
                     </button>

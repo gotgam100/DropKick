@@ -24,13 +24,19 @@ type PageInfo = {
   total: number;
   breaks: PageBreak[];
   lastPageRows: number;
+  lastPageOutlineRows: number;
+  /** 페이지마다 처음 인쇄되는 줄 (앞 빈 줄 없음) */
+  pageTopLines: number[];
 };
 
 const setPagination = StateEffect.define<PageInfo>();
 
-/** 앞 페이지에 쓰인 줄 수만큼 빼고 남은 높이 (본문 나머지 + 아래 여백 1인치) */
-function remainingHeight(usedRows: number) {
-  return `calc(10in - var(--line) * ${usedRows})`;
+/**
+ * 앞 페이지에 쓰인 줄 수만큼 빼고 남은 높이 (본문 나머지 + 아래 여백 1인치).
+ * 화면에만 있는 막·장·요약 줄이 차지한 줄 수(outline)도 빼서, 종이 한 장 높이는 그대로 둔다.
+ */
+function remainingHeight(usedRows: number, outline: number) {
+  return `max(0px, calc(10in - var(--line) * ${usedRows + outline}))`;
 }
 
 /** 화면에서 한 줄의 높이 (App.css의 --line과 같은 값) */
@@ -42,8 +48,8 @@ const INCH_PX = 96;
  * 아직 화면에 그려 본 적 없는 위젯은 CodeMirror가 높이를 "한 줄쯤"으로 짐작하는데,
  * 페이지 경계 하나는 한 장(약 1000px)이라 짐작이 크게 틀려, 글이 길어질수록 위치 계산이 어긋나기 때문이다.
  */
-function remainingPx(usedRows: number) {
-  return 10 * INCH_PX - LINE_PX * usedRows;
+function remainingPx(usedRows: number, outline: number) {
+  return Math.max(0, 10 * INCH_PX - LINE_PX * (usedRows + outline));
 }
 
 function row(className: string, text: string) {
@@ -66,6 +72,7 @@ class PageBreakWidget extends WidgetType {
     return (
       a.page === b.page &&
       a.usedRows === b.usedRows &&
+      a.outlineRows === b.outlineRows &&
       a.more === b.more &&
       a.contd === b.contd &&
       this.total === other.total
@@ -74,7 +81,7 @@ class PageBreakWidget extends WidgetType {
   get estimatedHeight() {
     // 앞 페이지 남은 공간 + 종이 사이 틈(32px) + 새 페이지 위 여백(1in) + (MORE)·(CONT'D) 줄
     const rows = (this.info.more ? 1 : 0) + (this.info.contd ? 1 : 0);
-    return remainingPx(this.info.usedRows) + 32 + INCH_PX + rows * LINE_PX;
+    return remainingPx(this.info.usedRows, this.info.outlineRows) + 32 + INCH_PX + rows * LINE_PX;
   }
   toDOM() {
     const el = document.createElement("div");
@@ -84,7 +91,7 @@ class PageBreakWidget extends WidgetType {
 
     const bottom = document.createElement("div");
     bottom.className = "pb-bottom";
-    bottom.style.height = remainingHeight(this.info.usedRows);
+    bottom.style.height = remainingHeight(this.info.usedRows, this.info.outlineRows);
     const number = document.createElement("span");
     number.className = "pb-number-bottom";
     number.textContent = `${this.info.page - 1}/${this.total}`;
@@ -111,20 +118,21 @@ class PageBreakWidget extends WidgetType {
 class PageEndWidget extends WidgetType {
   constructor(
     readonly usedRows: number,
+    readonly outlineRows: number,
     readonly total: number,
   ) {
     super();
   }
   eq(other: PageEndWidget) {
-    return other.usedRows === this.usedRows && other.total === this.total;
+    return other.usedRows === this.usedRows && other.outlineRows === this.outlineRows && other.total === this.total;
   }
   get estimatedHeight() {
-    return remainingPx(this.usedRows);
+    return remainingPx(this.usedRows, this.outlineRows);
   }
   toDOM() {
     const el = document.createElement("div");
     el.className = "cm-page-end";
-    el.style.height = remainingHeight(this.usedRows);
+    el.style.height = remainingHeight(this.usedRows, this.outlineRows);
     const number = document.createElement("span");
     number.className = "pb-number-bottom";
     number.textContent = `${this.total}/${this.total}`;
@@ -141,24 +149,27 @@ const pageTopLine = Decoration.line({ class: "sl-page-top" });
 
 function compute(state: EditorState): PageInfo {
   const pagination = paginate(scriptLines(state));
-  const { pages, pageOfLine, breaks, lastPageRows } = pagination;
-  return { pagination, pageOfLine, total: pages.length, breaks, lastPageRows };
+  const { pages, pageOfLine, breaks, lastPageRows, lastPageOutlineRows, pageTopLines } = pagination;
+  return { pagination, pageOfLine, total: pages.length, breaks, lastPageRows, lastPageOutlineRows, pageTopLines };
 }
 
 function buildDecorations(state: EditorState, info: PageInfo): DecorationSet {
   const ranges: Range<Decoration>[] = [];
+  const top = new Set<number>();
   for (const brk of info.breaks) {
     if (brk.beforeLine < 1 || brk.beforeLine > state.doc.lines) continue;
     const from = state.doc.line(brk.beforeLine).from;
-    ranges.push(
-      Decoration.widget({ widget: new PageBreakWidget(brk, info.total), block: true, side: -1 }).range(from),
-      pageTopLine.range(from),
-    );
+    ranges.push(Decoration.widget({ widget: new PageBreakWidget(brk, info.total), block: true, side: -1 }).range(from));
   }
+  // 페이지 맨 위에서 처음 인쇄되는 줄(앞에 막·장·요약 줄이 있어도)은 앞 빈 줄을 없앤다.
+  for (const n of info.pageTopLines) if (n >= 1 && n <= state.doc.lines) top.add(n);
+  for (const n of top) ranges.push(pageTopLine.range(state.doc.line(n).from));
   ranges.push(
-    Decoration.widget({ widget: new PageEndWidget(info.lastPageRows, info.total), block: true, side: 1 }).range(
-      state.doc.length,
-    ),
+    Decoration.widget({
+      widget: new PageEndWidget(info.lastPageRows, info.lastPageOutlineRows, info.total),
+      block: true,
+      side: 1,
+    }).range(state.doc.length),
   );
   return Decoration.set(ranges, true);
 }

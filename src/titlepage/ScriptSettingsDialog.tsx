@@ -41,6 +41,8 @@ export function ScriptSettingsDialog({ scriptName, titlePage, settings, onSave, 
   const [off, setOff] = useState<Set<CoverField>>(() => new Set(settings?.coverOff ?? []));
   const [sceneStart, setSceneStart] = useState(String(sceneStartOf(settings)));
   const [watermark, setWatermark] = useState(settings?.watermark ?? "");
+  const [printSections, setPrintSections] = useState(settings?.printSections === true);
+  const [printSynopsis, setPrintSynopsis] = useState(settings?.printSynopsis === true);
   const firstRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -74,6 +76,8 @@ export function ScriptSettingsDialog({ scriptName, titlePage, settings, onSave, 
       coverOff: COVER_FIELDS.filter((key) => off.has(key)),
       sceneStart: startNumber,
       watermark,
+      printSections,
+      printSynopsis,
     });
     onClose();
   };
@@ -100,7 +104,7 @@ export function ScriptSettingsDialog({ scriptName, titlePage, settings, onSave, 
             표지
           </button>
           <button type="button" role="tab" aria-selected={tab === "script"} className={tab === "script" ? "active" : ""} onClick={() => setTab("script")}>
-            씬 번호 · 워터마크
+            씬 번호 · 내보내기
           </button>
         </div>
 
@@ -137,7 +141,7 @@ export function ScriptSettingsDialog({ scriptName, titlePage, settings, onSave, 
         ) : (
           <>
             <label className="dialog-field">
-              <span>씬 번호 시작</span>
+              <span className="field-title">씬 번호 시작</span>
               <input
                 type="number"
                 min={1}
@@ -153,7 +157,7 @@ export function ScriptSettingsDialog({ scriptName, titlePage, settings, onSave, 
               {!startValid && <strong className="cover-none"> 1 이상의 정수를 넣어 주세요.</strong>}
             </p>
             <label className="dialog-field">
-              <span>워터마크</span>
+              <span className="field-title">워터마크</span>
               <input
                 value={watermark}
                 placeholder="예: 홍길동 전용 · 외부 유출 금지"
@@ -161,10 +165,24 @@ export function ScriptSettingsDialog({ scriptName, titlePage, settings, onSave, 
               />
             </label>
             <p className="dialog-hint">PDF의 모든 쪽 위에 이 글이 기울어진 글씨로 흐리게(불투명도 10%) 반복해서 찍힙니다. 비워 두면 찍지 않습니다.</p>
+            <div className="dialog-field script-print-field">
+              <span className="field-title">내보낼 때</span>
+              <div className="script-print-checks">
+                <label className="dialog-check">
+                  <input type="checkbox" checked={printSections} onChange={(e) => setPrintSections(e.target.checked)} />
+                  막·시퀀스 제목 넣기
+                </label>
+                <label className="dialog-check">
+                  <input type="checkbox" checked={printSynopsis} onChange={(e) => setPrintSynopsis(e.target.checked)} />
+                  씬 요약 넣기
+                </label>
+              </div>
+            </div>
+            <p className="dialog-hint">끄면(기본) 막·시퀀스·씬 요약은 내보낸 파일에 나오지 않습니다.</p>
           </>
         )}
           </div>
-          <SettingsPreview tab={tab} fields={fields} off={off} watermark={watermark} />
+          <SettingsPreview tab={tab} fields={fields} off={off} watermark={watermark} print={{ sections: printSections, synopsis: printSynopsis }} />
         </div>
 
         <div className="dialog-actions">

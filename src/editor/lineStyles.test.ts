@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EditorSelection, EditorState, type StateCommand } from "@codemirror/state";
 import { history, redo, undo } from "@codemirror/commands";
+import { outlineMarkerAt, outlineStyleFor } from "./scriptView";
 import {
   characterNames,
   createScriptState,
@@ -8,10 +9,12 @@ import {
   insertScriptNewline,
   renameCharacter,
   sceneNumbersField,
+  sceneBackspaceToAction,
   scriptLines,
   setStyle,
   type ScriptLine,
 } from "./lineStyles";
+import type { LineStyle } from "./styles";
 
 const sample: ScriptLine[] = [
   { style: "scene", text: "S#1. 내부. 체육관 - 밤" },
@@ -230,6 +233,42 @@ describe("스타일 지정", () => {
     expect(styles(s)[3]).toBe("subheader");
   });
 
+  it("Tab: 아무것도 안 쓴 괄호지문 ()는 커서가 괄호 안에 있어도 다음 스타일로 넘어가고 괄호는 지운다", () => {
+    let s = createScriptState([...sample, { style: "parenthetical", text: "()" }]);
+    s = run(at(s, s.doc.length - 1), cycleLineStyle(1));
+    expect(styles(s).slice(-1)[0]).toBe("subheader");
+    expect(scriptLines(s).slice(-1)[0].text).toBe("");
+  });
+
+  it("Tab: 괄호 안에 글을 쓰고 닫는 괄호 바로 앞에서 누르면 다음 스타일로 넘어간다", () => {
+    let s = createScriptState([...sample, { style: "parenthetical", text: "(작게)" }]);
+    s = run(at(s, s.doc.length - 1), cycleLineStyle(1));
+    expect(styles(s).slice(-1)[0]).toBe("subheader");
+    // 괄호지문을 벗어나면 바깥 괄호는 지운다
+    expect(scriptLines(s).slice(-1)[0].text).toBe("작게");
+    // 이어서 Tab을 계속 누를 수 있다
+    s = run(s, cycleLineStyle(1));
+    expect(styles(s).slice(-1)[0]).toBe("transition");
+  });
+
+  it("괄호지문에서 다른 요소로 바꾸면(단축키 포함) 괄호를 지운다", () => {
+    let s = createScriptState([{ style: "parenthetical", text: "(숨을 고르며)" }]);
+    s = run(at(s, 0), setStyle("dialogue"));
+    expect(scriptLines(s)).toEqual([{ style: "dialogue", text: "숨을 고르며" }]);
+  });
+
+  it("Tab: 괄호 안 글자 중간에서는 그대로 둔다", () => {
+    let s = createScriptState([...sample, { style: "parenthetical", text: "(작게)" }]);
+    s = run(at(s, s.doc.length - 2), cycleLineStyle(1));
+    expect(styles(s).slice(-1)[0]).toBe("parenthetical");
+  });
+
+  it("다음 스타일(메뉴): 커서가 글자 중간에 있어도 넘어간다", () => {
+    let s = createScriptState(sample);
+    s = run(at(s, s.doc.line(2).from + 2), cycleLineStyle(1, true));
+    expect(styles(s)[1]).toBe("character");
+  });
+
   it("Tab: 글자 중간에서는 스타일을 바꾸지 않는다", () => {
     let s = createScriptState(sample);
     s = run(at(s, s.doc.line(2).from + 2), cycleLineStyle(1));
@@ -388,5 +427,144 @@ describe("인물 이름 일괄 바꾸기", () => {
     ]);
     const result = renameCharacter(s, "WILL", "Edward", true);
     expect([result.characterLines, result.textHits]).toEqual([1, 1]);
+  });
+});
+
+describe("막·장·요약 줄", () => {
+  const styles = (s: EditorState) => scriptLines(s).map((l) => l.style);
+  const withOutline: ScriptLine[] = [
+    { style: "act", text: "1막" },
+    { style: "scene", text: "내부. 사무실 - 낮" },
+    { style: "synopsis", text: "민재가 등장한다." },
+    { style: "action", text: "문이 열린다." },
+  ];
+
+  it("# 는 막, ## 는 장, 씬헤딩이나 요약 바로 아래의 = 는 요약이 된다", () => {
+    const s = createScriptState(withOutline);
+    expect(outlineStyleFor(s, 4, "#")).toBe("act");
+    expect(outlineStyleFor(s, 4, "##")).toBe("chapter");
+    expect(outlineStyleFor(s, 3, "=")).toBe("synopsis"); // 씬헤딩 아래
+    expect(outlineStyleFor(s, 4, "=")).toBe("synopsis"); // 요약 아래
+  });
+
+  it("그 밖의 자리·기호는 바뀌지 않는다", () => {
+    const s = createScriptState(withOutline);
+    expect(outlineStyleFor(s, 1, "=")).toBeNull(); // 첫 줄
+    expect(outlineStyleFor(s, 2, "=")).toBeNull(); // 막 아래
+    expect(outlineStyleFor(s, 5, "=")).toBeNull(); // 액션 아래
+    expect(outlineStyleFor(s, 4, "###")).toBeNull();
+    expect(outlineStyleFor(s, 4, "#a")).toBeNull();
+    expect(outlineStyleFor(s, 4, "")).toBeNull();
+  });
+
+  it("Enter: 막·장·요약 줄 끝에서 새 줄은 액션", () => {
+    let s = createScriptState([{ style: "act", text: "1막" }]);
+    s = run(at(s, s.doc.length), insertScriptNewline);
+    expect(styles(s)).toEqual(["act", "action"]);
+    s = createScriptState([{ style: "chapter", text: "시퀀스 A" }]);
+    s = run(at(s, s.doc.length), insertScriptNewline);
+    expect(styles(s)).toEqual(["chapter", "action"]);
+
+    s = createScriptState([{ style: "scene", text: "내부. 방" }, { style: "synopsis", text: "요약" }]);
+    s = run(at(s, s.doc.length), insertScriptNewline);
+    expect(styles(s)).toEqual(["scene", "synopsis", "action"]);
+  });
+
+  it("Enter: 요약 줄 중간에서는 같은 요약 줄로 나뉜다", () => {
+    let s = createScriptState([{ style: "scene", text: "내부. 방" }, { style: "synopsis", text: "앞뒤" }]);
+    s = run(at(s, s.doc.line(2).from + 1), insertScriptNewline);
+    expect(styles(s)).toEqual(["scene", "synopsis", "synopsis"]);
+    expect(scriptLines(s).map((l) => l.text)).toEqual(["내부. 방", "앞", "뒤"]);
+  });
+
+  it("Tab: 막·장·요약 줄에서는 액션에서 시작한 것처럼 다음 스타일(인물)로 넘어간다", () => {
+    let s = createScriptState([{ style: "scene", text: "내부. 방" }, { style: "synopsis", text: "" }]);
+    s = run(at(s, s.doc.length), cycleLineStyle(1));
+    expect(styles(s)).toEqual(["scene", "character"]);
+  });
+
+  it("씬 번호는 막·장·요약 줄을 건너뛰고 씬헤딩만 센다", () => {
+    const s = createScriptState(withOutline);
+    expect([...s.field(sceneNumbersField).values()].map((n) => `${n.line}:${n.number}`)).toEqual(["2:1"]);
+  });
+
+  it("커서 줄이 정확히 `## `이면 입력기와 상관없이 장으로 알아본다", () => {
+    const at3 = (text: string, lines: ScriptLine[] = [{ style: "action", text }]) => {
+      const st = createScriptState(lines);
+      return st.update({ selection: EditorSelection.cursor(st.doc.line(st.doc.lines).to) }).state;
+    };
+    expect(outlineMarkerAt(at3("# "))).toMatchObject({ style: "act" });
+    expect(outlineMarkerAt(at3("## "))).toMatchObject({ style: "chapter", from: 0, to: 3 });
+    expect(outlineMarkerAt(at3("### "))).toBeNull();
+    expect(outlineMarkerAt(at3("## 글"))).toBeNull();
+    expect(outlineMarkerAt(at3("##"))).toBeNull();
+    // 요약은 씬헤딩 아래에서만
+    expect(outlineMarkerAt(at3("", [{ style: "scene", text: "A" }, { style: "action", text: "= " }]))).toMatchObject({ style: "synopsis" });
+    expect(outlineMarkerAt(at3("= "))).toBeNull();
+  });
+
+  it("띄어쓰기 키를 막 눌렀을 때는 `##`만 있어도 장으로 알아본다 (입력기가 띄어쓰기를 글자로 안 넣는 경우)", () => {
+    const state = (text: string) => {
+      const st = createScriptState([{ style: "action", text }]);
+      return st.update({ selection: EditorSelection.cursor(st.doc.length) }).state;
+    };
+    expect(outlineMarkerAt(state("##"), true)).toMatchObject({ style: "chapter", from: 0, to: 2 });
+    expect(outlineMarkerAt(state("#"), true)).toMatchObject({ style: "act" });
+    expect(outlineMarkerAt(state("##"))).toBeNull(); // 띄어쓰기를 안 눌렀으면 그대로
+    expect(outlineMarkerAt(state("### "), true)).toBeNull();
+    expect(outlineMarkerAt(state("#a"), true)).toBeNull();
+  });
+});
+
+describe("씬헤딩 맨 앞에서 Backspace", () => {
+  it("앞 줄과 합치지 않고 액션으로 바꾼다", () => {
+    let s = createScriptState([
+      { style: "action", text: "앞 줄" },
+      { style: "scene", text: "내부. 거실 - 낮" },
+    ]);
+    s = run(at(s, s.doc.line(2).from), sceneBackspaceToAction);
+    expect(scriptLines(s)).toEqual([
+      { style: "action", text: "앞 줄" },
+      { style: "action", text: "내부. 거실 - 낮" },
+    ]);
+  });
+
+  it("줄 중간이거나 씬헤딩이 아니면 손대지 않는다", () => {
+    let s = createScriptState([{ style: "scene", text: "내부. 거실 - 낮" }]);
+    expect(sceneBackspaceToAction({ state: at(s, 3), dispatch: () => {} })).toBe(false);
+    s = createScriptState([{ style: "action", text: "글" }]);
+    expect(sceneBackspaceToAction({ state: at(s, 0), dispatch: () => {} })).toBe(false);
+  });
+});
+
+describe("줄 맨 앞에서 Enter", () => {
+  const cases: [LineStyle | "act" | "chapter", string][] = [
+    ["scene", "내부. 거실 - 낮"],
+    ["action", "글"],
+    ["character", "민재"],
+    ["parenthetical", "(웃으며)"],
+    ["dialogue", "글"],
+    ["subheader", "플래시백"],
+    ["transition", "CUT TO:"],
+    ["act", "1막"],
+    ["chapter", "시퀀스 A"],
+  ];
+  it.each(cases)("%s: 글이 아래로 밀려도 원래 요소를 지킨다", (style, text) => {
+    let s = createScriptState([{ style: style as ScriptLine["style"], text }]);
+    s = run(at(s, 0), insertScriptNewline);
+    // 씬헤딩만 위 빈 줄이 액션이 된다.
+    expect(scriptLines(s)).toEqual([
+      { style: style === "scene" ? "action" : style, text: "" },
+      { style, text },
+    ]);
+  });
+
+  it("글 끝이나 빈 줄에서는 이전처럼 다음 요소로 넘어간다", () => {
+    let s = createScriptState([{ style: "scene", text: "내부. 거실 - 낮" }]);
+    s = run(at(s, s.doc.length), insertScriptNewline);
+    expect(scriptLines(s)[1].style).toBe("action");
+    s = createScriptState([{ style: "character", text: "민재" }]);
+    s = run(at(s, s.doc.length), insertScriptNewline);
+    expect(scriptLines(s)[1].style).toBe("dialogue");
   });
 });

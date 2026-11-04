@@ -13,19 +13,19 @@ import { toUpperLatin } from "../layout/metrics";
 import { numberScenes, type SceneNumber } from "../layout/sceneNumbers";
 import {
   DEFAULT_STYLE,
-  NEXT_STYLE_ON_ENTER,
-  getNextStyleRules,
   characterName,
   cycleStyle,
+  nextStyleOnEnter,
+  type DocStyle,
   type LineStyle,
 } from "./styles";
 
-export type ScriptLine = { style: LineStyle; text: string };
+export type ScriptLine = { style: DocStyle; text: string };
 
 // 줄 하나의 스타일을 바꾸는 효과. pos는 바뀐 뒤 문서 기준 위치(그 줄 안 아무 곳).
 export const setLineStyleEffect = StateEffect.define<{
   pos: number;
-  style: LineStyle;
+  style: DocStyle;
 }>({
   map: (value, mapping) => ({ pos: mapping.mapPos(value.pos), style: value.style }),
 });
@@ -69,7 +69,7 @@ const styleHistory = invertedEffects.of((tr) => {
  * - 바뀐 구간의 마지막 줄은 원래 마지막 줄의 스타일을 유지한다. (줄 나누기)
  * - 붙여넣기로 새로 생긴 가운데 줄들은 기본 스타일(액션)이 된다.
  */
-export const lineStylesField = StateField.define<readonly LineStyle[]>({
+export const lineStylesField = StateField.define<readonly DocStyle[]>({
   create(state) {
     return Array.from({ length: state.doc.lines }, () => DEFAULT_STYLE);
   },
@@ -82,16 +82,16 @@ export const lineStylesField = StateField.define<readonly LineStyle[]>({
       const index = tr.state.doc.lineAt(pos).number - 1;
       if (next[index] === style) continue;
       if (next === styles) next = styles.slice();
-      (next as LineStyle[])[index] = style;
+      (next as DocStyle[])[index] = style;
     }
     return next;
   },
 });
 
-function mapStyles(old: readonly LineStyle[], tr: Transaction): LineStyle[] {
+function mapStyles(old: readonly DocStyle[], tr: Transaction): DocStyle[] {
   const oldDoc = tr.startState.doc;
   const newDoc = tr.state.doc;
-  const out: LineStyle[] = [];
+  const out: DocStyle[] = [];
   let consumed = 0; // 이미 처리한 옛 문서의 마지막 줄 번호
 
   tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
@@ -112,7 +112,7 @@ function mapStyles(old: readonly LineStyle[], tr: Transaction): LineStyle[] {
       // 줄바꿈(Enter)할 때는 다음 줄 스타일이 항상 규칙(씬헤딩/서브헤더/전환/대사 → 액션, 인물/괄호 → 대사 등)을 따르도록 보장한다.
       const prev = old[a2.number - 1];
       const isSingleNewline = b2 === b1 + 1;
-      const nextStyle = isSingleNewline ? NEXT_STYLE_ON_ENTER[prev] : prev;
+      const nextStyle = isSingleNewline ? nextStyleOnEnter(prev) : prev;
       out[n - 1] = n === b2 ? nextStyle : DEFAULT_STYLE;
     }
     out.length = b2;
@@ -141,7 +141,7 @@ export const sceneStartField = StateField.define<number>({
 
 export function computeSceneNumbers(
   state: EditorState,
-  styles: readonly LineStyle[],
+  styles: readonly DocStyle[],
 ): Map<number, SceneNumber> {
   return numberScenes(styles, (n) => state.doc.line(n).text, state.field(sceneStartField, false) ?? 1);
 }
@@ -160,11 +160,11 @@ export const sceneNumbersField = StateField.define<Map<number, SceneNumber>>({
 
 // ---------- 읽기 ----------
 
-export function styleAtLine(state: EditorState, lineNumber: number): LineStyle {
+export function styleAtLine(state: EditorState, lineNumber: number): DocStyle {
   return state.field(lineStylesField)[lineNumber - 1] ?? DEFAULT_STYLE;
 }
 
-export function currentStyle(state: EditorState): LineStyle {
+export function currentStyle(state: EditorState): DocStyle {
   const line = state.doc.lineAt(state.selection.main.head);
   return styleAtLine(state, line.number);
 }
@@ -277,12 +277,34 @@ function parentheticalWrap(
 }
 
 /** 스타일을 바꾸는 효과와, 괄호지문이면 괄호로 감싸는 글 고침을 함께 만든다. */
-function styleTransaction(state: EditorState, lineNumbers: number[], style: LineStyle) {
-  const effects: StateEffect<{ pos: number; style: LineStyle }>[] = [];
+function styleTransaction(state: EditorState, lineNumbers: number[], style: LineStyle, forcedCursor?: number) {
+  const effects: StateEffect<{ pos: number; style: DocStyle }>[] = [];
   const changes: ChangeSpec[] = [];
-  let selection: EditorSelection | undefined;
+  let selection: EditorSelection | undefined =
+    forcedCursor === undefined ? undefined : EditorSelection.single(forcedCursor);
   for (const n of lineNumbers) {
     effects.push(setLineStyleEffect.of({ pos: state.doc.line(n).from, style }));
+    // 괄호지문을 벗어나면 바깥 괄호는 지운다. (다음 요소에 괄호가 남지 않게)
+    if (style !== "parenthetical" && styleAtLine(state, n) === "parenthetical") {
+      const line = state.doc.line(n);
+      const open = /^\s*[(（]/.exec(line.text);
+      const close = /[)）]\s*$/.exec(line.text);
+      let removed = 0;
+      if (open) {
+        const at = line.from + open[0].length - 1;
+        changes.push({ from: at, to: at + 1 });
+        removed++;
+      }
+      if (close && (!open || line.text.trim().length > 1)) {
+        const at = line.from + close.index;
+        changes.push({ from: at, to: at + 1 });
+        removed++;
+      }
+      if (forcedCursor !== undefined && state.doc.lineAt(forcedCursor).number === n) {
+        selection = EditorSelection.single(Math.max(line.from, forcedCursor - removed));
+      }
+      continue;
+    }
     if (style !== "parenthetical" || styleAtLine(state, n) === "parenthetical") continue;
     const wrap = parentheticalWrap(state, n);
     changes.push(...wrap.changes);
@@ -318,6 +340,19 @@ export function setStyle(style: LineStyle): StateCommand {
 }
 
 /**
+ * Backspace: 씬헤딩 줄 맨 앞에서는 앞 줄과 합치지 않고, 기본 요소인 액션으로 바꾼다.
+ * (글은 그대로 두고 요소만 바뀐다. ⌘Z로 돌아간다)
+ */
+export const sceneBackspaceToAction: StateCommand = (target) => {
+  const { state } = target;
+  const range = state.selection.main;
+  if (!range.empty) return false;
+  const line = state.doc.lineAt(range.head);
+  if (range.head !== line.from || styleAtLine(state, line.number) !== "scene") return false;
+  return setStyle("action")(target);
+};
+
+/**
  * Enter: 줄을 나누고 새 줄의 스타일을 정한다.
  * - 줄 끝에서 누르면 규칙에 따라 다음 스타일 (인물 → 대사 등)
  * - 줄 중간에서 누르면 같은 스타일로 나뉜다.
@@ -334,9 +369,12 @@ export const insertScriptNewline: StateCommand = ({ state, dispatch }) => {
     style === "scene" ||
     style === "subheader" ||
     style === "transition" ||
-    style === "character";
-  const enterRules = getNextStyleRules();
-  const newStyle = isHeaderOrSingle || atLineEnd ? (enterRules[style] ?? "action") : style;
+    style === "character" ||
+    style === "act" ||
+    style === "chapter";
+  // 줄 맨 앞에서 누르면 글이 아래로 밀릴 뿐이니, 밀린 글은 원래 요소를 그대로 지킨다. (위에는 같은 요소의 빈 줄이 생긴다. 씬헤딩만 위 빈 줄이 액션이다)
+  const atLineStart = range.from === line.from && !atLineEnd;
+  const newStyle = !atLineStart && (isHeaderOrSingle || atLineEnd) ? nextStyleOnEnter(style) : style;
   const newLineStart = range.from + 1;
   // 새 줄이 괄호지문이면 "()"를 미리 넣고 커서를 괄호 안에 둔다.
   const wrapped = newStyle === "parenthetical" && atLineEnd;
@@ -346,7 +384,11 @@ export const insertScriptNewline: StateCommand = ({ state, dispatch }) => {
     state.update({
       changes: { from: range.from, to: range.to, insert },
       selection: EditorSelection.cursor(wrapped ? newLineStart + 1 : newLineStart),
-      effects: setLineStyleEffect.of({ pos: newLineStart, style: newStyle }),
+      effects: [
+        setLineStyleEffect.of({ pos: newLineStart, style: newStyle }),
+        // 씬헤딩 맨 앞에서 누르면 위에 생기는 빈 줄은 씬이 아니라 액션이다. (밀려 내려간 씬헤딩이 그대로 씬을 이끈다)
+        ...(atLineStart && style === "scene" ? [setLineStyleEffect.of({ pos: line.from, style: "action" as const })] : []),
+      ],
       scrollIntoView: true,
       userEvent: "input",
     }),
@@ -357,15 +399,33 @@ export const insertScriptNewline: StateCommand = ({ state, dispatch }) => {
 /**
  * Tab / Shift+Tab: 빈 줄이거나 커서가 줄 맨 앞·맨 끝일 때 스타일을 순환한다.
  * 그 밖의 경우에도 Tab이 다른 곳으로 포커스를 옮기지 않도록 막는다.
+ * anywhere가 true이면(스타일 메뉴의 "다음 스타일") 커서가 줄 어디에 있어도 순환한다.
  */
-export function cycleLineStyle(direction: 1 | -1): StateCommand {
+export function cycleLineStyle(direction: 1 | -1, anywhere = false): StateCommand {
   return ({ state, dispatch }) => {
     const range = state.selection.main;
     if (!range.empty) return true;
     const line = state.doc.lineAt(range.head);
-    if (line.length > 0 && range.head !== line.from && range.head !== line.to) return true;
-    const style = cycleStyle(styleAtLine(state, line.number), direction);
-    dispatch(styleTransaction(state, [line.number], style));
+    // 아무것도 안 쓴 괄호지문 "()"는 빈 줄처럼 본다. 다음 스타일로 넘어갈 때 괄호는 지운다.
+    const emptyParens = /^[(（]\s*[)）]$/.test(line.text.trim());
+    const current = styleAtLine(state, line.number);
+    // 괄호지문에서는 닫는 괄호 바로 앞(글을 다 쓴 자리)도 줄 끝으로 본다.
+    const beforeClose = current === "parenthetical" && /[)）]$/.test(line.text) && range.head === line.to - 1;
+    if (!anywhere && !emptyParens && !beforeClose && line.length > 0 && range.head !== line.from && range.head !== line.to) return true;
+    const style = cycleStyle(current, direction);
+    if (emptyParens && current === "parenthetical") {
+      dispatch(
+        state.update({
+          changes: { from: line.from, to: line.to },
+          selection: EditorSelection.cursor(line.from),
+          effects: setLineStyleEffect.of({ pos: line.from, style }),
+          userEvent: "input.style",
+        }),
+      );
+    } else {
+      // 닫는 괄호 앞에서 넘어갔다면 커서를 줄 끝으로 옮겨, 이어서 Tab을 계속 누를 수 있게 한다.
+      dispatch(styleTransaction(state, [line.number], style, beforeClose ? line.to : undefined));
+    }
     return true;
   };
 }

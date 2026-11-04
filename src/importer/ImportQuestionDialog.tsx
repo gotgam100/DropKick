@@ -88,8 +88,8 @@ export function ImportQuestionDialog({ questions, onAnswer }: Props) {
 
         {subheader && (
           <section className="import-section">
-            <h3>이 줄들은 어떤 스타일인가요?</h3>
-            <p className="import-group-hint">본문과 글씨체가 달라서 자동으로 정하기 어려웠던 줄입니다. 줄마다 스타일을 골라 주세요.</p>
+            <h3>이 줄들은 어떤 요소인가요?</h3>
+            <p className="import-group-hint">본문과 글씨체가 달라서 자동으로 정하기 어려웠던 줄입니다. 줄마다 요소을 골라 주세요.</p>
             {subheader.samples.map((text) => (
               <label className="import-choice import-line" key={text}>
                 <span className="import-line-text">{text}</span>

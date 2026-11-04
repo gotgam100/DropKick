@@ -3,6 +3,7 @@
  *  - coverOff: 표지에서 끈 항목 (내용은 그대로 두고 내보낼 때만 뺀다. 모두 끄면 표지가 없다)
  *  - sceneStart: 첫 씬의 번호 (기본 1)
  *  - watermark: PDF 모든 쪽에 흐리게 반복해서 찍을 글
+ *  - printSections / printSynopsis: PDF·Word로 내보낼 때 막·장 제목, 씬 요약을 원고에 넣을지 (기본은 뺀다)
  */
 import { COVER_FIELDS, type CoverField } from "../titlepage/titlePage";
 
@@ -10,6 +11,8 @@ export type ScriptSettings = {
   coverOff?: CoverField[];
   sceneStart?: number;
   watermark?: string;
+  printSections?: boolean;
+  printSynopsis?: boolean;
 };
 
 /** 씬 번호로 쓸 수 있는 가장 큰 수 */
@@ -30,6 +33,8 @@ export function compactSettings(settings: ScriptSettings): ScriptSettings | unde
   if (start !== 1) out.sceneStart = start;
   const watermark = (settings.watermark ?? "").trim();
   if (watermark) out.watermark = watermark;
+  if (settings.printSections === true) out.printSections = true;
+  if (settings.printSynopsis === true) out.printSynopsis = true;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -46,6 +51,8 @@ export function parseScriptSettings(value: unknown, validIds: ReadonlySet<string
         : undefined,
       sceneStart: typeof r.sceneStart === "number" ? r.sceneStart : undefined,
       watermark: typeof r.watermark === "string" ? r.watermark : undefined,
+      printSections: r.printSections === true ? true : undefined,
+      printSynopsis: r.printSynopsis === true ? true : undefined,
     });
     if (settings) result[id] = settings;
   }

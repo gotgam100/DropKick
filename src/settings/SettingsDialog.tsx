@@ -219,7 +219,7 @@ export function SettingsDialog({
               <label className="settings-toggle-row">
                 <div className="settings-item-label">
                   <strong>현재 줄 강조 표시</strong>
-                  <span>원고에서 지금 커서가 놓인 줄 배경과 왼쪽 스타일 이름표를 표시합니다.</span>
+                  <span>원고에서 지금 커서가 놓인 줄 배경과 왼쪽 요소 이름표를 표시합니다.</span>
                 </div>
                 <input
                   type="checkbox"
@@ -333,8 +333,8 @@ export function SettingsDialog({
             <div className="settings-section">
               <div className="settings-item">
                 <div className="settings-item-label">
-                  <strong>문장 스타일 단축키 (⌘ + 키)</strong>
-                  <span>원고에서 각 문장 스타일로 변경하는 단축키를 설정합니다.</span>
+                  <strong>문장 요소 단축키 (⌘ + 키)</strong>
+                  <span>원고에서 각 문장 요소로 변경하는 단축키를 설정합니다.</span>
                 </div>
                 <div className="settings-shortcuts-list">
                   {LINE_STYLES.map((style) => (
@@ -425,8 +425,8 @@ export function SettingsDialog({
 
               <div className="settings-item">
                 <div className="settings-item-label">
-                  <strong>줄바꿈(Enter) 자동 스타일 전환 규칙</strong>
-                  <span>줄 끝에서 Enter를 쳤을 때 다음 줄에 자동으로 이어질 스타일을 지정합니다.</span>
+                  <strong>줄바꿈(Enter) 자동 요소 전환 규칙</strong>
+                  <span>줄 끝에서 Enter를 쳤을 때 다음 줄에 자동으로 이어질 요소을 지정합니다.</span>
                 </div>
                 <div className="settings-rules-list">
                   {LINE_STYLES.map((style) => (

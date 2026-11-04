@@ -630,10 +630,10 @@ export function StructureBoardView({
                 data-chip-beat-id={state.id}
                 className={`beat-scene-chip${dropClass}${isDraggingSelf ? " chip-dragging" : ""}`}
                 onPointerDown={(e) => onChipPointerDown(e, scene, state.id, ref.key)}
-                title={`#${scene.number}. ${cleanSceneHeading(scene.heading)} (${scene.page}p)\n• 클릭: 원고의 이 씬으로 이동\n• 드래그: 순서 변경 또는 다른 카드로 이동\n• ⌘(커맨드) + 드래그: 다른 카드에 복제`}
+                title={`${scene.number}. ${cleanSceneHeading(scene.heading)} (${scene.page}p)\n• 클릭: 원고의 이 씬으로 이동\n• 드래그: 순서 변경 또는 다른 카드로 이동\n• ⌘(커맨드) + 드래그: 다른 카드에 복제`}
               >
                 <span className="beat-scene-chip-jump">
-                  <span className="scene-number">#{scene.number}.</span>
+                  <span className="scene-number">{scene.number}.</span>
                   <span className="beat-scene-chip-name">
                     {cleanSceneHeading(scene.heading) || "장소 미정"}
                   </span>
@@ -661,7 +661,7 @@ export function StructureBoardView({
                 title="원고에서 지워졌거나 찾을 수 없는 씬입니다"
               >
                 <span className="beat-scene-chip-name">
-                  (#{ref.sceneNumber}. {ref.heading || "삭제된 씬"})
+                  ({ref.sceneNumber}. {ref.heading || "삭제된 씬"})
                 </span>
                 <button
                   type="button"
@@ -693,7 +693,7 @@ export function StructureBoardView({
               <option value="">+ 씬 등록…</option>
               {availableToAdd.map((s) => (
                 <option key={s.number} value={s.number}>
-                  #{s.number}. {cleanSceneHeading(s.heading) || "장소 미정"} ({s.page}p)
+                  {s.number}. {cleanSceneHeading(s.heading) || "장소 미정"} ({s.page}p)
                 </option>
               ))}
             </select>
@@ -870,7 +870,7 @@ export function StructureBoardView({
                         >
                           {isSelected ? "✓" : ""}
                         </span>
-                        <span className="scene-number">#{scene.number}.</span>
+                        <span className="scene-number">{scene.number}.</span>
                         <span className="drawer-scene-name">
                           {cleanSceneHeading(scene.heading) || "장소 미정"}
                         </span>
@@ -902,12 +902,12 @@ export function StructureBoardView({
           )}
           {drag.scenes.length === 1 ? (
             <>
-              <strong>#{drag.scenes[0].number}.</strong>{" "}
+              <strong>{drag.scenes[0].number}.</strong>{" "}
               {cleanSceneHeading(drag.scenes[0].heading)}
             </>
           ) : (
             <>
-              <strong>#{drag.scenes[0].number}.</strong> 외 {drag.scenes.length - 1}개 씬 (
+              <strong>{drag.scenes[0].number}.</strong> 외 {drag.scenes.length - 1}개 씬 (
               {drag.scenes.length}개 한꺼번에 이동)
             </>
           )}

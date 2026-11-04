@@ -1,5 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
-import { Menu, type MenuItemOptions, type PredefinedMenuItemOptions } from "@tauri-apps/api/menu";
+import { EditorView } from "@codemirror/view";
+import { formatAvailability } from "./editor/scriptView";
+import { Menu, type MenuItemOptions, type PredefinedMenuItemOptions, type SubmenuOptions } from "@tauri-apps/api/menu";
 
 /**
  * 우클릭 메뉴를 앱에 필요한 것만 남긴다.
@@ -19,7 +21,7 @@ export function installContextMenu(): void {
     // 원고에서 글을 골랐으면 '메모' 항목을 맨 위에 더한다.
     const canNote = Boolean(editable?.closest("[data-script-editor]")) && hasSelection;
     void (async () => {
-      const items: Array<MenuItemOptions | PredefinedMenuItemOptions> = editable
+      const items: Array<MenuItemOptions | PredefinedMenuItemOptions | SubmenuOptions> = editable
         ? [
             { item: "Cut" as const, text: "잘라내기" },
             { item: "Copy" as const, text: "복사" },
@@ -37,6 +39,37 @@ export function installContextMenu(): void {
           },
           { item: "Separator" },
         );
+      }
+      // 원고에서는 "글자 모양" 하위 메뉴를 더한다. (단축키와 같은 일을 한다)
+      if (editable?.closest("[data-script-editor]")) {
+        const send = (kind: string) => () => window.dispatchEvent(new CustomEvent("dropkick:text-format", { detail: kind }));
+        // 이 줄의 요소에서 쓸 수 없는 항목은 흐리게 보인다.
+        const cm = editable.closest(".cm-editor") as HTMLElement | null;
+        const view = cm ? EditorView.findFromDOM(cm) : null;
+        const can = view ? formatAvailability(view) : { inline: true, block: true };
+        items.unshift(
+          {
+            text: "글자 모양",
+            items: [
+              { id: "fmt-bold", text: "굵게", accelerator: "CmdOrCtrl+B", enabled: can.inline, action: send("bold") },
+              { id: "fmt-italic", text: "기울임", accelerator: "CmdOrCtrl+I", enabled: can.inline, action: send("italic") },
+              { id: "fmt-underline", text: "밑줄", accelerator: "CmdOrCtrl+U", enabled: can.inline, action: send("underline") },
+              { item: "Separator" },
+              { id: "fmt-left", text: "좌측 정렬", enabled: can.block, action: send("left") },
+              { id: "fmt-center", text: "가운데 정렬", accelerator: "CmdOrCtrl+E", enabled: can.block, action: send("center") },
+              { id: "fmt-right", text: "우측 정렬", enabled: can.block, action: send("right") },
+              { item: "Separator" },
+              { id: "fmt-indent", text: "들여쓰기", accelerator: "CmdOrCtrl+]", enabled: can.block, action: send("indent") },
+              { id: "fmt-outdent", text: "내어쓰기", accelerator: "CmdOrCtrl+[", enabled: can.block, action: send("outdent") },
+            ],
+          },
+          { item: "Separator" },
+        );
+        // 메모가 있으면 맨 위로 (메모 → 글자 모양 → 편집)
+        if (canNote) {
+          const [fmt, sep] = items.splice(0, 2);
+          items.splice(2, 0, fmt, sep);
+        }
       }
       const menu = await Menu.new({ items });
       await menu.popup();

@@ -5,16 +5,21 @@
  * 표시 기호를 붙인다. (앱 화면에는 보이지 않는다)
  *
  *   씬헤딩    .내부. 체육관 - 밤 #3#
- *   액션      그대로 (헷갈릴 만한 줄만 앞에 !)
+ *   액션      그대로 (헷갈릴 만한 줄만 앞에 !). >가운데<, **굵게**, *기울임*, _밑줄_ 도 그대로
  *   인물      @민재
  *   괄호지문  (숨을 고르며)
  *   대사      그대로
  *   전환      > CUT TO:
+ *   막        # 1막
+ *   장        ## 시퀀스 A
+ *   씬 요약   = 코끼리가 첫 등장하는 장면
  *
  * 문단 사이는 빈 줄로 나눈다. 인물-괄호지문-대사, 이어지는 액션 줄은 붙여 쓴다.
  */
 import type { ScriptLine } from "../editor/lineStyles";
-import type { LineStyle } from "../editor/styles";
+import type { DocStyle } from "../editor/styles";
+import type { OutlinePrint } from "../layout/paginate";
+import { isCenteredText } from "../layout/inline";
 import { numberScenes } from "../layout/sceneNumbers";
 
 export type ScriptDocument = {
@@ -23,6 +28,8 @@ export type ScriptDocument = {
   lines: ScriptLine[];
   /** 첫 씬의 번호 (스크립트 설정). 저장할 때 `#번호#`에 쓴다. 기본 1 */
   sceneStart?: number;
+  /** PDF·Word로 내보낼 때 막·장·씬 요약을 원고에 넣을지 (스크립트 설정). 저장에는 쓰지 않는다. */
+  printOutline?: OutlinePrint;
 };
 
 const SCENE_NUMBER_SUFFIX = /\s*#[\w.\-]+#\s*$/;
@@ -33,7 +40,7 @@ const INTENTIONAL_BLANK = "  ";
 
 // ---------- 저장 (원고 → Fountain) ----------
 
-function isDialogueBlockStyle(style: LineStyle) {
+function isDialogueBlockStyle(style: DocStyle): style is "parenthetical" | "dialogue" {
   return style === "parenthetical" || style === "dialogue";
 }
 
@@ -47,6 +54,10 @@ function isAllCapsLatin(text: string) {
 
 /** 액션 줄이 다른 요소로 잘못 읽힐 수 있으면 앞에 !를 붙인다. */
 function actionNeedsForce(text: string) {
+  // `>가운데 정렬<`은 Fountain에서도 가운데 정렬이므로 그대로 쓴다.
+  if (isCenteredText(text)) return false;
+  // 줄 앞을 들여 쓴 액션은 ! 뒤에 그대로 써서 들여쓰기를 지킨다.
+  if (/^[ \t]/.test(text)) return true;
   return (
     STANDARD_SCENE_PREFIX.test(text) ||
     KOREAN_SCENE_PREFIX.test(text) ||
@@ -65,6 +76,9 @@ function serializeLine(line: ScriptLine, sceneNumber: number): string {
     if (line.style === "scene") return ".";
     if (line.style === "subheader") return "..";
     if (line.style === "transition") return ">";
+    if (line.style === "act") return "#";
+    if (line.style === "chapter") return "##";
+    if (line.style === "synopsis") return "=";
     return INTENTIONAL_BLANK;
   }
   switch (line.style) {
@@ -84,7 +98,25 @@ function serializeLine(line: ScriptLine, sceneNumber: number): string {
       return `..${text}`;
     case "transition":
       return `> ${text.replace(/<\s*$/, "")}`;
+    case "act":
+      return `# ${text}`;
+    case "chapter":
+      return `## ${text}`;
+    case "synopsis":
+      return `= ${text}`;
   }
+}
+
+/**
+ * 저장할 때 줄 글 앞뒤에 붙는 Fountain 기호. (Fountain 보기에서 화면에 겹쳐 보여 준다. 글은 건드리지 않는다)
+ * 예: 씬헤딩 `.` + 글 + ` #1#`, 인물 `@` + 글
+ */
+export function fountainAffixes(line: ScriptLine, sceneNumber: number): { prefix: string; suffix: string } {
+  const out = serializeLine(line, sceneNumber);
+  if (line.text.trim() === "") return { prefix: out === INTENTIONAL_BLANK ? "" : out, suffix: "" };
+  const at = out.indexOf(line.text);
+  if (at < 0) return { prefix: "", suffix: "" };
+  return { prefix: out.slice(0, at), suffix: out.slice(at + line.text.length) };
 }
 
 /** 이전 줄 다음에 빈 줄 없이 바로 이어 쓰는지 */
@@ -94,6 +126,7 @@ function joinsPrevious(prev: ScriptLine | undefined, line: ScriptLine) {
     // 빈 줄 표시("  ")는 앞뒤 액션 문단에 붙여 써야 Fountain에서 유지된다.
     return prev.style === "action" && line.style === "action";
   }
+  if (line.style === "synopsis") return prev.style === "synopsis";
   if (isDialogueBlockStyle(line.style)) {
     return prev.style === "character" || isDialogueBlockStyle(prev.style);
   }
@@ -176,8 +209,22 @@ export function fromFountain(source: string): ScriptDocument {
       continue;
     }
 
+    // `# 막`, `## 장`: # 하나는 막, 둘은 장. 세 개부터와 `#3.`처럼 붙여 쓴 것은 그냥 글로 둔다.
+    const section = /^(#{1,2})(?:\s+(.*))?$/.exec(trimmed);
+    if (section) {
+      lines.push({ style: section[1].length === 1 ? "act" : "chapter", text: (section[2] ?? "").trim() });
+      continue;
+    }
+
+    // `= 요약`: 씬헤딩이나 다른 요약 바로 뒤에서만 요약이다. 그 밖의 `=` 줄은 글로 남긴다.
+    const above = lines[lines.length - 1]?.style;
+    if (/^=(?!=)/.test(trimmed) && (above === "scene" || above === "synopsis")) {
+      lines.push({ style: "synopsis", text: trimmed.slice(1).trim() });
+      continue;
+    }
+
     if (trimmed.startsWith("[[") || /^=(?!=)/.test(trimmed) || /^#/.test(trimmed)) {
-      // 메모, 시놉시스, 섹션은 지금은 액션으로 남긴다.
+      // 메모와 그 밖의 시놉시스·섹션은 지금은 액션으로 남긴다.
       lines.push({ style: "action", text: trimmed });
       continue;
     }
@@ -206,8 +253,8 @@ export function fromFountain(source: string): ScriptDocument {
     }
 
     if (trimmed.startsWith(">") && trimmed.endsWith("<")) {
-      // 가운데 정렬 표시는 아직 지원하지 않으므로 액션으로
-      lines.push({ style: "action", text: trimmed.slice(1, -1).trim() });
+      // 가운데 정렬: 액션 줄로 두고 >…< 기호를 글에 남긴다. (화면과 내보내기가 이 기호로 가운데에 놓는다)
+      lines.push({ style: "action", text: trimmed });
       continue;
     }
 
@@ -238,4 +285,13 @@ export function fromFountain(source: string): ScriptDocument {
   }
 
   return { titlePage, lines: lines.length > 0 ? lines : [{ style: "action", text: "" }] };
+}
+
+/**
+ * 원고 글(Fountain)을 표지와 줄 목록으로. 프로젝트를 열거나 스크립트를 바꿀 때 쓴다.
+ * 막·장·씬 요약 줄도 그대로 둔다. (빼면 다시 열 때 사라지고, 다음 자동 저장 때 파일에서도 지워진다)
+ */
+export function scriptLinesOf(text: string): { titlePage: string | null; lines: ScriptLine[] } {
+  const doc = fromFountain(text);
+  return { titlePage: doc.titlePage, lines: doc.lines };
 }

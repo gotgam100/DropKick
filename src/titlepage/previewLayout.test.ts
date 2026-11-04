@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PAGE } from "../layout/paginate";
-import { coverLines, watermarkMarks } from "./previewLayout";
+import { coverLines, sampleBody, watermarkMarks } from "./previewLayout";
 import { EMPTY_TITLE_PAGE } from "./titlePage";
 
 const fields = { ...EMPTY_TITLE_PAGE, title: "드롭킥", author: "홍길동", draftDate: "1고", contact: "010-0000-0000\nme@example.com" };
@@ -46,5 +46,21 @@ describe("워터마크 미리보기 배치", () => {
     const long = watermarkMarks("홍길동 전용 · 외부 유출 금지 · 무단 복제와 배포를 금합니다");
     expect(short.marks.length).toBeGreaterThan(4);
     expect(long.marks[0].size).toBeLessThan(short.marks[0].size);
+  });
+});
+
+describe("본문 예시 쪽", () => {
+  it("기본은 막·장·요약 없이 씬헤딩(번호 포함), 액션, 인물, 대사만 보인다", () => {
+    const texts = sampleBody().map((l) => l.text);
+    expect(texts[0]).toBe("1 실내. 사무실 - 낮");
+    expect(texts.some((t) => t.includes("1막") || t.includes("시퀀스") || t.includes("요약"))).toBe(false);
+  });
+
+  it("막·장을 넣으면 맨 위에 굵게, 요약을 넣으면 회색으로 보인다", () => {
+    const body = sampleBody({ sections: true, synopsis: true });
+    expect(body[0]).toMatchObject({ text: "1막: 코끼리 우리", bold: true, row: 0 });
+    expect(body[1]).toMatchObject({ text: "시퀀스 A: 조련사의 하루", bold: true });
+    const synopsis = body.find((l) => l.gray);
+    expect(synopsis?.text).toContain("사무실의 대화");
   });
 });

@@ -336,6 +336,25 @@ fn set_view_menu_checks(app: AppHandle, sidebar: bool, stats: bool) -> Result<()
     Ok(())
 }
 
+/// 창 안쪽 크기(width, height)가 지금 화면의 쓸 수 있는 곳(메뉴 막대·Dock 제외)에 들어가도록 줄인다.
+/// 제목 막대 높이와 화면 가장자리 여유를 뺀다. 화면 정보를 못 읽으면 그대로 둔다.
+fn fit_to_screen(app: &AppHandle, width: f64, height: f64) -> (f64, f64) {
+    const TITLE_BAR: f64 = 32.0;
+    const MARGIN: f64 = 16.0;
+    let monitor = app
+        .get_webview_window("main")
+        .and_then(|w| w.current_monitor().ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        return (width, height);
+    };
+    let scale = monitor.scale_factor();
+    let area = monitor.work_area().size;
+    let max_w = area.width as f64 / scale - MARGIN * 2.0;
+    let max_h = area.height as f64 / scale - TITLE_BAR - MARGIN;
+    (width.min(max_w).max(400.0), height.min(max_h).max(300.0))
+}
+
 #[tauri::command]
 fn open_auxiliary_window(app: AppHandle, window_type: String) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(&window_type) {
@@ -344,17 +363,23 @@ fn open_auxiliary_window(app: AppHandle, window_type: String) -> Result<(), Stri
         return Ok(());
     }
 
-    let (title, url, width, height, min_w, min_h) = match window_type.as_str() {
+    let (title, url, width, height, min_w, min_h): (&str, &str, f64, f64, f64, f64) = match window_type.as_str() {
         "settings" => ("설정", "index.html?aux=settings", 780.0, 760.0, 640.0, 480.0),
-        "guide" => ("시나리오 작성 가이드", "index.html?aux=guide", 1120.0, 890.0, 840.0, 560.0),
+        "guide" => ("시나리오 작성 가이드", "index.html?aux=guide", 1120.0, 890.0, 1120.0, 890.0),
         _ => return Err(format!("알 수 없는 창 종류입니다: {window_type}")),
     };
+
+    // 화면이 작아서(13인치 맥북 등) 창이 다 들어가지 않으면, 화면에 들어가는 크기로 줄여서 연다.
+    // (가이드 창은 크기를 바꿀 수 없어서, 줄이지 않으면 아래 버튼이 화면 밖에 남는다)
+    let (width, height) = fit_to_screen(&app, width, height);
+    let (min_w, min_h) = (min_w.min(width), min_h.min(height));
 
     let builder = WebviewWindowBuilder::new(&app, &window_type, WebviewUrl::App(url.into()))
         .title(title)
         .inner_size(width, height)
         .min_inner_size(min_w, min_h)
-        .resizable(true);
+        // 가이드 창은 크기를 바꿀 수 없다 (쪽을 넘겨도 같은 크기)
+        .resizable(window_type != "guide");
 
     builder
         .build()
@@ -451,7 +476,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let style_menu = Submenu::with_id_and_items(
         app,
         "style_menu",
-        "스타일",
+        "요소",
         true,
         &[
             &item("style:scene", "씬헤딩", None)?,
@@ -461,6 +486,9 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item("style:parenthetical", "괄호지문", None)?,
             &item("style:subheader", "서브 헤더", None)?,
             &item("style:transition", "전환", None)?,
+            &PredefinedMenuItem::separator(app)?,
+            // Tab은 메뉴 단축키로 걸면 다른 입력칸의 Tab까지 가로채서, 이름에만 적어 안내한다.
+            &item("style:next", "다음 요소 (Tab)", None)?,
         ],
     )?;
 

@@ -10,6 +10,7 @@ const scene = (line: number, number: number, heading: string): SceneSummary => (
   eighths: 1,
   characters: [],
   speeches: 0,
+  synopsis: [],
   text: "",
 });
 
@@ -97,5 +98,23 @@ describe("장소 수 세기", () => {
 
   it("안팎 표기가 없으면 장소 이름만으로 센다", () => {
     expect(countPlaces([scene(1, 1, "#1. 체육관 - 낮"), scene(4, 2, "#2. 체육관. 탈의실 - 밤")])).toBe(1);
+  });
+});
+
+describe("씬헤딩 모양 확인", () => {
+  it("실내. 장소 - 시간대면 괜찮다", async () => {
+    const { headingProblem } = await import("./places");
+    expect(headingProblem("실내. 거실 - 낮")).toBeNull();
+    expect(headingProblem("내부. 체육관. 관중석 - 밤")).toBeNull();
+  });
+  it("실내·실외 표시나 시간대가 없으면 알린다", async () => {
+    const { headingProblem } = await import("./places");
+    expect(headingProblem("거실 - 낮")).toContain("실내/실외");
+    expect(headingProblem("실내. 거실")).toContain("시간대");
+    expect(headingProblem("실내. 거실 - ")).toContain("시간대");
+  });
+  it("빈 씬헤딩은 알리지 않는다", async () => {
+    const { headingProblem } = await import("./places");
+    expect(headingProblem("")).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
-import { PAGE } from "../layout/paginate";
+import { PAGE, type OutlinePrint } from "../layout/paginate";
 import { WATERMARK } from "../project/scriptSettings";
-import { coverLines, PREVIEW_HEIGHT, PREVIEW_WIDTH, SAMPLE_BODY, watermarkMarks, type PreviewLine } from "./previewLayout";
+import { coverLines, PREVIEW_HEIGHT, PREVIEW_WIDTH, sampleBody, watermarkMarks, type PreviewLine } from "./previewLayout";
 import type { CoverField, TitlePageFields } from "./titlePage";
 
 const LEFT = PAGE.leftMarginIn * 72;
@@ -21,6 +21,7 @@ function Lines({ lines }: { lines: PreviewLine[] }) {
           y={TOP + line.row * LINE + BASELINE}
           fontSize={SIZE * (line.scale ?? 1)}
           fontWeight={line.bold ? 700 : 400}
+          fill={line.gray ? "#8e8e93" : undefined}
           textAnchor={line.align === "center" ? "middle" : line.align === "end" ? "end" : "start"}
         >
           {line.text}
@@ -78,11 +79,14 @@ export function SettingsPreview({
   fields,
   off,
   watermark,
+  print,
 }: {
   tab: "cover" | "script";
   fields: TitlePageFields;
   off: ReadonlySet<CoverField>;
   watermark: string;
+  /** 막·장·요약을 넣기로 했는지 (본문 예시 쪽에 그대로 보인다) */
+  print: OutlinePrint;
 }) {
   const cover = coverLines(fields, off);
   return (
@@ -90,7 +94,7 @@ export function SettingsPreview({
       {tab === "cover" ? (
         <Page label="표지" lines={cover} watermark={watermark} empty={cover.length === 0 ? "표지 없음" : undefined} />
       ) : (
-        <Page label="본문 (예시)" lines={SAMPLE_BODY} watermark={watermark} />
+        <Page label="본문 (예시)" lines={sampleBody(print)} watermark={watermark} />
       )}
     </aside>
   );

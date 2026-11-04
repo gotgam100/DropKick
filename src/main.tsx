@@ -7,6 +7,16 @@ import { installContextMenu } from "./contextMenu";
 
 installContextMenu();
 
+// 개발용 앱에서만: ⌘R로 화면을 새로고침한다. (배포 앱에는 들어가지 않는다)
+if (import.meta.env.DEV) {
+  window.addEventListener("keydown", (e) => {
+    if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === "r") {
+      e.preventDefault();
+      window.location.reload();
+    }
+  });
+}
+
 const params = new URLSearchParams(window.location.search);
 const aux = params.get("aux");
 

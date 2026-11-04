@@ -1,4 +1,4 @@
-import type { LineStyle } from "../editor/styles";
+import type { DocStyle } from "../editor/styles";
 
 export type SceneNumber = { line: number; number: number; manual: boolean };
 
@@ -12,7 +12,7 @@ export const MANUAL_SCENE_NUMBER = /^\s*(?:S\s*#|#)\s*(\d+)/i;
  * 결과는 줄 번호(1부터) → 씬 번호.
  */
 export function numberScenes(
-  styles: readonly LineStyle[],
+  styles: readonly DocStyle[],
   textAt: (lineNumber: number) => string,
   start = 1,
 ): Map<number, SceneNumber> {

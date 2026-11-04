@@ -164,7 +164,7 @@ body {
 
 :root {
   /* 사이드바, 통계 패널 폭. 도구모음 칸 폭과 같아야 한다. */
-  --sidebar-width: 270px;
+  --sidebar-width: 320px;
   --stats-width: 300px;
 }
 
@@ -428,6 +428,86 @@ body {
   padding-right: 1.5in;
 }
 
+/*
+ * 막(#)·장(##)·씬 요약(=): 인쇄되지 않는 줄. 페이지 계산에서 빠지고 PDF에도 나오지 않는다.
+ * 줄바꿈 폭과 글자 크기는 액션과 같게 두어야 화면에서 차지하는 줄 수를 계산할 수 있다. (paginate.ts outlineRows)
+ * 그래서 크기·들여쓰기는 건드리지 않고 색과 왼쪽 표시로만 구분한다.
+ */
+.paper .cm-line.sl-act,
+.paper .cm-line.sl-chapter,
+.paper .cm-line.sl-synopsis {
+  /* 서로 붙어 답답하지 않게 위에 한 줄을 띄운다 (paginate.ts outlineGap) */
+  --gap: var(--line);
+  color: var(--muted);
+}
+
+/* 이어지는 요약 줄은 붙이고, 막 바로 아래의 장은 반 줄만 띄운다 (paginate.ts outlineGap) */
+.paper .cm-line.sl-synopsis.sl-continued {
+  --gap: 0px;
+}
+
+.paper .cm-line.sl-chapter.sl-continued {
+  --gap: calc(var(--line) / 2);
+}
+
+/*
+ * 왼쪽 표시: 막은 주황 세로선, 시퀀스는 그 50% 흐리게, 씬 요약은 회색.
+ * 선은 ::before 하나로 그린다. 커서가 있는 줄에서는 같은 상자가 이름표(씬 요약 등)도 함께 보여 준다.
+ * (::after를 따로 두면 맥의 웹뷰에서 줄바꿈된 둘째 줄이 오른쪽으로 밀리는 일이 있어 쓰지 않는다)
+ */
+.paper .cm-line.sl-act::before,
+.paper .cm-line.sl-chapter::before,
+.paper .cm-line.sl-synopsis::before {
+  content: "";
+  position: absolute;
+  top: var(--gap);
+  bottom: 0;
+  left: -1.4in;
+  /* 오른쪽 끝(선 자리)이 글머리에서 0.14in 왼쪽에 오게 */
+  width: calc(1.26in + 3px);
+  box-sizing: border-box;
+  padding-right: 0.11in;
+  border-right: 3px solid color-mix(in srgb, var(--caret) 50%, transparent);
+  border-radius: 0 2px 2px 0;
+  text-align: right;
+  pointer-events: none;
+}
+
+.paper .cm-line.sl-chapter::before {
+  border-right-color: color-mix(in srgb, var(--caret) 25%, transparent);
+}
+
+.paper .cm-line.sl-synopsis::before {
+  border-right-color: color-mix(in srgb, var(--muted) 60%, transparent);
+}
+
+/* 커서가 있는 줄: 같은 상자에 이름표를 넣는다 */
+.paper .cm-line.sl-current.sl-act::before,
+.paper .cm-line.sl-current.sl-chapter::before,
+.paper .cm-line.sl-current.sl-synopsis::before {
+  content: attr(data-style);
+  width: calc(1.26in + 3px);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: var(--line);
+  color: var(--caret);
+  text-transform: none;
+}
+
+.paper .cm-line.sl-act {
+  font-weight: 700;
+  color: var(--caret);
+}
+
+.paper .cm-line.sl-chapter {
+  font-weight: 700;
+}
+
+.paper .cm-line.sl-synopsis::after {
+  opacity: 0.25;
+}
+
 .paper .cm-line.sl-transition {
   --gap: var(--line);
   text-align: right;
@@ -470,6 +550,14 @@ body {
 
 .app.hide-current-line .paper .cm-line.sl-current::before {
   display: none;
+}
+
+/* 이름표를 숨겨도 막·시퀀스·씬 요약의 왼쪽 선은 남긴다 */
+.app.hide-current-line .paper .cm-line.sl-current.sl-act::before,
+.app.hide-current-line .paper .cm-line.sl-current.sl-chapter::before,
+.app.hide-current-line .paper .cm-line.sl-current.sl-synopsis::before {
+  display: block;
+  content: "";
 }
 
 /* ---------- 페이지 경계 (pageBreaks.ts) ---------- */
@@ -629,4 +717,61 @@ body {
 
 .focus-mode .titlebar {
   opacity: 0.5;
+}
+
+/* 글자 꾸밈(**굵게** *기울임* _밑줄_)과 가운데 정렬(>글<). 기호는 글 속에 남기고 흐리게 보인다. */
+.paper .cm-line.sl-center {
+  text-align: center;
+}
+.paper .cm-line.sl-right {
+  text-align: right;
+}
+.cm-inline-mark {
+  opacity: 0.35;
+}
+.cm-em-b {
+  font-weight: 700;
+}
+.cm-em-i {
+  font-style: italic;
+}
+.cm-em-u {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* 씬헤딩이 "실내. 장소명 - 시간대" 모양이 아닐 때: 물결 밑줄 (마우스를 올리면 이유가 보인다) */
+.cm-heading-warn {
+  text-decoration: underline wavy color-mix(in srgb, var(--caret) 70%, transparent);
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+}
+
+/* ---------- Fountain 보기 ---------- */
+.status-divider {
+  width: 1px;
+  height: 14px;
+  margin: 0 -4px;
+  background: var(--border);
+}
+.status-fountain {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.status-fountain:hover {
+  color: var(--ink);
+}
+.status-fountain.active {
+  border-color: var(--caret);
+  color: var(--caret);
+}
+.cm-fountain-affix {
+  color: var(--caret);
+  font-weight: 700;
+  opacity: 0.85;
 }

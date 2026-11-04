@@ -6,7 +6,7 @@ type Props = {
   onClose: () => void;
 };
 
-/** 새 고로 보관 */
+/** 지금 원고를 수정고로 보관 */
 export function NewRevisionDialog({ defaultName, onCreate, onClose }: Props) {
   const [name, setName] = useState(defaultName);
   const [note, setNote] = useState("");
@@ -24,7 +24,7 @@ export function NewRevisionDialog({ defaultName, onCreate, onClose }: Props) {
       <form
         className="dialog"
         role="dialog"
-        aria-label="새 고로 보관"
+        aria-label="수정고로 보관"
         onMouseDown={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault();
@@ -32,7 +32,7 @@ export function NewRevisionDialog({ defaultName, onCreate, onClose }: Props) {
           onClose();
         }}
       >
-        <h2>새 고로 보관</h2>
+        <h2>수정고로 보관</h2>
         <p className="dialog-hint">
           지금 원고와 설정 문서(개요, 인물 설정)를 이름을 붙여 남겨 둡니다. 나중에 열어 보고, 지금 원고와 비교하고, 되돌릴 수 있습니다.
         </p>

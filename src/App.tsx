@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { fromFountain } from "./fountain/fountain";
 import { Editor, type EditorHandle, type EditorInfo } from "./editor/Editor";
 import { TextEditor, type TextEditorHandle } from "./editor/TextEditor";
-import { LINE_STYLES, STYLE_LABELS, shortcutFor } from "./editor/styles";
+import { LINE_STYLES, STYLE_LABELS, shortcutFor, styleLabel } from "./editor/styles";
 import { formatCombo, shortcutForEvent } from "./settings/appShortcuts";
 import { useProject } from "./project/useProject";
 import { findNode, findParent, folderNamed } from "./project/tree";
@@ -34,6 +34,8 @@ import { ScriptSettingsDialog } from "./titlepage/ScriptSettingsDialog";
 import { ImportQuestionDialog } from "./importer/ImportQuestionDialog";
 import { ImportResultDialog } from "./importer/ImportResultDialog";
 import { RenameCharacterDialog } from "./panels/RenameCharacterDialog";
+import { OrphanSynopsisDialog } from "./editor/OrphanSynopsisDialog";
+import { SidebarResizer, clampSidebar, loadSidebarWidth, saveSidebarWidth } from "./panels/SidebarResizer";
 import { RevisionView, type Snapshot } from "./revisions/RevisionView";
 import { NewRevisionDialog } from "./revisions/NewRevisionDialog";
 import { ExportDialog } from "./export/ExportDialog";
@@ -73,6 +75,7 @@ const numberFormat = new Intl.NumberFormat("ko-KR");
 const EMPTY_ANALYSIS: ScriptAnalysis = {
   pages: 1,
   scenes: [],
+  sections: [],
   characters: [],
   runtimeMinutes: 0,
   dialogueChars: 0,
@@ -197,6 +200,8 @@ function App() {
   const [treeFilter, setTreeFilter] = useState("");
   const [editingTitlePage, setEditingTitlePage] = useState(false);
   const [renamingCharacter, setRenamingCharacter] = useState<string | null>(null);
+  // 씬헤딩이 사라져 속할 씬이 없어진 요약: 앞 씬에 합칠지 묻는다
+  const [orphanSynopsis, setOrphanSynopsis] = useState<{ texts: string[]; target: string } | null>(null);
   const [notice, setNotice] = useState<{ text: string; key: number } | null>(null);
   const [newRevisionOpen, setNewRevisionOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<"pdf" | "docx" | null>(null);
@@ -226,11 +231,28 @@ function App() {
     setPresetModalState(value);
   }, []);
   const [showSidebar, toggleSidebar, setShowSidebar] = usePanelSetting("dropkick.panel.scenes", true);
+  // 사이드바 폭: 경계선을 끌어 바꾸고 기억한다. 도구모음 칸과 같은 값(--sidebar-width)을 쓴다.
+  const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
+  useEffect(() => {
+    document.documentElement.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
+  }, [sidebarWidth]);
+  // 창이 좁아지면 사이드바도 같이 줄인다
+  useEffect(() => {
+    const fit = () => setSidebarWidth((w) => clampSidebar(w, window.innerWidth));
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
   const project = useProject(editorRef, textEditorRef, BLANK_SCRIPT_LINES);
   const scriptName = findNode(project.tree, project.mainScriptId)?.name ?? "스크립트";
 
   // ---------- 화면 나누기 ----------
   const { openDoc, openMainScript, mainScriptId } = project;
+  // Fountain 보기: 원고 화면은 그대로 두고 줄마다 Fountain 기호를 겹쳐 보여 준다
+  const [fountainOn, setFountainOn] = useState(false);
+  const toggleFountain = () => {
+    editorRef.current?.setFountainMode(!fountainOn);
+    setFountainOn(!fountainOn);
+  };
   // 활성 스크립트에서 보이는 문서들 (공통 + 이 스크립트 전용). 스크립트 문서는 뺀다.
   const visibleTree = useMemo(() => visibleTreeFor(project.tree, mainScriptId).tree, [project.tree, mainScriptId]);
   const visibleDocs = useMemo(() => visibleDocsFor(project.tree, mainScriptId), [project.tree, mainScriptId]);
@@ -440,6 +462,19 @@ function App() {
         revealScript(paneRef.current, (t) => t.kind === "doc" && findNode(treeRef.current, t.id)?.type === "structure"),
       );
       if (alreadyVisible) editorRef.current?.goToLine(line);
+    },
+    [applyPanes, setPresetModal],
+  );
+
+  /** 사이드바에서 씬 요약을 만든다: 원고를 띄우고 그 씬헤딩 아래에 새 줄을 넣는다 */
+  const addSynopsis = useCallback(
+    (line: number) => {
+      setPresetModal(null);
+      applyPanes(
+        revealScript(paneRef.current, (t) => t.kind === "doc" && findNode(treeRef.current, t.id)?.type === "structure"),
+      );
+      // 원고 화면이 보인 다음에 넣는다
+      setTimeout(() => editorRef.current?.insertOutline("synopsis", line), 0);
     },
     [applyPanes, setPresetModal],
   );
@@ -975,6 +1010,7 @@ function App() {
           hasProfile={(name) => characterDocs.has(characterKey(name))}
           onOpenProfile={openProfile}
           onRenameCharacter={setRenamingCharacter}
+          chars={info.chars}
         />
       );
     }
@@ -1087,7 +1123,7 @@ function App() {
           </button>
         </div>
 
-        <div className="toolbar-center" aria-label="문장 스타일">
+        <div className="toolbar-center" aria-label="문장 요소">
           {focusedShown.kind === "preset" && presetModal ? (
             <span className="stylebar-doc">
               양식 · {presetModal.initial ? `${presetModal.initial.name} 편집` : "새 양식 만들기"}
@@ -1222,6 +1258,7 @@ function App() {
             dirtyDocIds={project.dirtyDocIds}
             docTexts={project.docTexts}
             scenes={analysis.scenes}
+            sections={analysis.sections}
             currentSceneLine={currentScene?.line ?? null}
             filter={treeFilter}
             onFilterChange={setTreeFilter}
@@ -1237,6 +1274,7 @@ function App() {
             }}
             onSelectScene={goToLine}
             onMoveScene={(fromLine, beforeLine) => editorRef.current?.moveScene(fromLine, beforeLine)}
+            onAddSynopsis={addSynopsis}
             notes={scriptNotes}
             onOpenNote={goToNoteFromList}
             onAdd={(kind, parentId) => {
@@ -1270,6 +1308,7 @@ function App() {
             onNewRevision={() => setNewRevisionOpen(true)}
           />
         )}
+        {showSidebar && <SidebarResizer width={sidebarWidth} onChange={setSidebarWidth} onCommit={saveSidebarWidth} />}
 
         <div className="panes" ref={panesAreaRef}>
           {/* 원고 에디터는 항상 살려 두고(되돌리기 기록, 분석 유지) 화면에 없을 때만 숨긴다. */}
@@ -1292,6 +1331,7 @@ function App() {
                     onAnalysis={setAnalysis}
                     onNotesChange={project.setNotes}
                     onNoteOpen={openNote}
+                    onOrphanSynopsis={setOrphanSynopsis}
                   />
                 </article>
               </main>
@@ -1323,7 +1363,7 @@ function App() {
         {settings.showFooterQuotes && <FooterQuote customQuotes={settings.customQuotes} />}
         {isScript ? (
           <>
-            <span className="status-style">{STYLE_LABELS[info.style]}</span>
+            <span className="status-style">{styleLabel(info.style)}</span>
             {currentScene && (
               <span className="status-scene" title={currentScene.heading}>
                 {currentScene.heading}
@@ -1334,9 +1374,18 @@ function App() {
               {numberFormat.format(info.page)} / {numberFormat.format(info.pages)}페이지
             </span>
             <span>씬 {numberFormat.format(info.scenes)}개</span>
-            <span>인물 {numberFormat.format(info.characters)}명</span>
-            <span>글자 {numberFormat.format(info.chars)}</span>
             <span>장소 {numberFormat.format(placeCount)}개</span>
+            <span className="status-divider" aria-hidden="true" />
+            <button
+              type="button"
+              className={`status-fountain${fountainOn ? " active" : ""}`}
+              aria-pressed={fountainOn}
+              aria-label="Fountain 보기"
+              title={fountainOn ? "Fountain 보기 끄기" : "Fountain 규칙(. @ > # 등)을 원고에 겹쳐 보기"}
+              onClick={toggleFountain}
+            >
+              Fountain
+            </button>
           </>
         ) : focusedDocNode ? (
           <>
@@ -1377,6 +1426,25 @@ function App() {
       {project.importAsk && <ImportQuestionDialog questions={project.importAsk.questions} onAnswer={project.answerImport} />}
 
       {project.importResult && <ImportResultDialog result={project.importResult} onClose={project.dismissImportResult} />}
+
+      {orphanSynopsis && (
+        <OrphanSynopsisDialog
+          texts={orphanSynopsis.texts}
+          target={orphanSynopsis.target}
+          onMerge={() => {
+            editorRef.current?.resolveOrphans("merge");
+            setOrphanSynopsis(null);
+          }}
+          onKeep={() => {
+            editorRef.current?.resolveOrphans("keep");
+            setOrphanSynopsis(null);
+          }}
+          onUndo={() => {
+            editorRef.current?.resolveOrphans("undo");
+            setOrphanSynopsis(null);
+          }}
+        />
+      )}
 
       {renamingCharacter && (
         <RenameCharacterDialog

@@ -1,3 +1,4 @@
+import { strFromU8, unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { buildDocx } from "./buildDocx";
 import { buildExtraSection } from "../export/extras";
@@ -35,5 +36,54 @@ describe("Word (.docx) 내보내기", () => {
     const bytes = await buildDocx(null, extras);
     expect(bytes[0]).toBe(0x50);
     expect(bytes.byteLength).toBeGreaterThan(1000);
+  });
+
+  it("막·장·씬 요약 줄은 Word 원고에 들어가지 않는다", async () => {
+    const doc: ScriptDocument = {
+      titlePage: null,
+      lines: [
+        { style: "act", text: "비밀막이름" },
+        { style: "chapter", text: "비밀장이름" },
+        { style: "scene", text: "내부. 회의실 - 낮" },
+        { style: "synopsis", text: "비밀요약글" },
+        { style: "action", text: "민재가 앉아 있다." },
+      ],
+    };
+    const xml = strFromU8(unzipSync(await buildDocx(doc))["word/document.xml"]);
+    expect(xml).toContain("민재가 앉아 있다.");
+    for (const secret of ["비밀막이름", "비밀장이름", "비밀요약글"]) expect(xml).not.toContain(secret);
+  });
+
+  it("스크립트 설정에서 켜면 막·장·씬 요약이 Word 원고에 들어간다", async () => {
+    const lines: ScriptDocument["lines"] = [
+      { style: "act", text: "비밀막이름" },
+      { style: "chapter", text: "비밀장이름" },
+      { style: "scene", text: "내부. 회의실 - 낮" },
+      { style: "synopsis", text: "비밀요약글" },
+      { style: "action", text: "민재가 앉아 있다." },
+    ];
+    const read = async (printOutline: ScriptDocument["printOutline"]) =>
+      strFromU8(unzipSync(await buildDocx({ titlePage: null, lines, printOutline }))["word/document.xml"]);
+    const onlySections = await read({ sections: true });
+    expect(onlySections).toContain("비밀막이름");
+    expect(onlySections).toContain("비밀장이름");
+    expect(onlySections).not.toContain("비밀요약글");
+    const onlySynopsis = await read({ synopsis: true });
+    expect(onlySynopsis).toContain("비밀요약글");
+    expect(onlySynopsis).not.toContain("비밀막이름");
+  });
+
+  it("글자 꾸밈 기호는 빼고 굵게·기울임·밑줄을 입히고, >끝<은 가운데 정렬한다", async () => {
+    const lines: ScriptDocument["lines"] = [
+      { style: "action", text: "**굵은글** *기운글* _밑줄글_" },
+      { style: "action", text: ">끝<" },
+    ];
+    const xml = strFromU8(unzipSync(await buildDocx({ titlePage: null, lines }))["word/document.xml"]);
+    expect(xml).toContain("굵은글");
+    expect(xml).not.toContain("**");
+    expect(xml).not.toContain("&gt;끝&lt;");
+    expect(xml).toContain("<w:i/>");
+    expect(xml).toContain("<w:u ");
+    expect(xml).toContain('w:val="center"');
   });
 });

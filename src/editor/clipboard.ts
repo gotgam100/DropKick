@@ -1,7 +1,7 @@
 /**
  * 스크립트 에디터 복사·잘라내기·붙여넣기 시 줄 스타일(씬헤딩, 액션, 인물, 괄호지문, 대사, 전환) 유지.
  *
- * - DropKick 안에서 복사한 내용은 각 줄의 LineStyle을 클립보드에 함께 담는다.
+ * - DropKick 안에서 복사한 내용은 각 줄의 스타일을 클립보드에 함께 담는다.
  * - 붙여넣을 때 각 줄의 원래 스타일을 복원하여 적용한다.
  * - ⌘Z(실행 취소) 시 붙여넣은 스타일과 글이 함께 깔끔하게 취소된다.
  * - 외부에서 복사한 일반 텍스트는 기존처럼 기본 동작 또는 Fountain 마커 감지를 따른다.
@@ -9,7 +9,7 @@
 import { EditorState, StateEffect, type Extension, type Text } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { setLineStyleEffect, lineStylesField } from "./lineStyles";
-import { getNextStyleRules, type LineStyle } from "./styles";
+import { nextStyleOnEnter, type DocStyle } from "./styles";
 import { fromFountain } from "../fountain/fountain";
 
 export const DROPKICK_CLIPBOARD_MIME = "application/x-dropkick-script";
@@ -17,7 +17,7 @@ export const DROPKICK_CLIPBOARD_MIME = "application/x-dropkick-script";
 export type ScriptClipboardPayload = {
   version: 1;
   text: string;
-  styles: LineStyle[];
+  styles: DocStyle[];
   isFullLine: boolean;
 };
 
@@ -31,7 +31,7 @@ export function getInMemoryClipboard(): ScriptClipboardPayload | null {
 /** 선택된 구간의 텍스트와 줄별 스타일을 추출한다. */
 export function extractSelectedLines(
   doc: Text,
-  lineStyles: readonly LineStyle[],
+  lineStyles: readonly DocStyle[],
   from: number,
   to: number,
 ): ScriptClipboardPayload | null {
@@ -46,7 +46,7 @@ export function extractSelectedLines(
   }
 
   const text = doc.sliceString(from, to);
-  const styles: LineStyle[] = [];
+  const styles: DocStyle[] = [];
 
   for (let n = startLine.number; n <= endLine.number; n++) {
     styles.push(lineStyles[n - 1] ?? "action");
@@ -312,7 +312,7 @@ export function computePasteEffects(
       // 텍스트 끝에 \n이 있어서 빈 줄이 추가된 경우 (예: "민재\n")
       // 마지막 줄 스타일의 다음 기본 스타일(예: 인물 다음 대사) 적용
       const lastStyle = payload.styles[styleCount - 1] ?? "action";
-      const nextStyle = getNextStyleRules()[lastStyle] ?? "action";
+      const nextStyle = nextStyleOnEnter(lastStyle) ?? "action";
       effects.push(setLineStyleEffect.of({ pos: lineStartPos, style: nextStyle }));
     }
 
