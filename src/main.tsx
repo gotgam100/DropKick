@@ -4,8 +4,10 @@ import App from "./App";
 import { StandaloneSettingsWindow } from "./settings/StandaloneSettingsWindow";
 import { StandaloneGuideWindow } from "./guide/StandaloneGuideWindow";
 import { installContextMenu } from "./contextMenu";
+import { installTapFix } from "./tapFix";
 
 installContextMenu();
+installTapFix();
 
 // 개발용 앱에서만: ⌘R로 화면을 새로고침한다. (배포 앱에는 들어가지 않는다)
 if (import.meta.env.DEV) {

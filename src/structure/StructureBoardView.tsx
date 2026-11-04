@@ -416,6 +416,12 @@ export function StructureBoardView({
     const onMove = (e: PointerEvent) => {
       const press = pressRef.current;
       if (!press) return;
+      // 버튼이 눌려 있지 않으면 손 뗌을 놓친 것(트랙패드 탭): 아무것도 옮기지 않고 끝낸다
+      if ((e.buttons & 1) === 0) {
+        pressRef.current = null;
+        setDrag(null);
+        return;
+      }
       const dist = Math.hypot(e.clientX - press.x, e.clientY - press.y);
       if (!press.moved && dist < 5) return;
       press.moved = true;

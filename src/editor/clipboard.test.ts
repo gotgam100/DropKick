@@ -226,7 +226,7 @@ describe("스크립트 복사 및 붙여넣기 스타일 유지 (clipboard)", ()
     expect(stylesAfter.length).toBe(total);
 
     // 7가지 스타일이 실제 에디터 라인들에 적용되었는지 확인
-    expect(stylesAfter[0]).toBe("scene");         // 실내. 미숙의 집 - 낮
+    expect(stylesAfter[0]).toBe("scene");         // 실내. 미숙의 집 - 오후
     expect(stylesAfter[1]).toBe("action");        // 집안 곳곳을 뒤지고 있는...
     expect(stylesAfter[2]).toBe("character");     // 미숙
     expect(stylesAfter[3]).toBe("parenthetical"); // (중얼)
@@ -234,7 +234,7 @@ describe("스크립트 복사 및 붙여넣기 스타일 유지 (clipboard)", ()
     expect(stylesAfter).toContain("subheader");   // 회상. 단편영화 ...
     expect(stylesAfter).toContain("transition");  // Fade out.
 
-    expect(state.doc.line(1).text).toBe("실내. 미숙의 집 - 낮");
+    expect(state.doc.line(1).text).toBe("실내. 미숙의 집 - 오후");
     expect(state.doc.line(3).text).toBe("미숙");
   });
 

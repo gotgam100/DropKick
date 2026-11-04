@@ -6,7 +6,7 @@ export type PlaceGroup = {
   scenes: { line: number; number: number; heading: string }[];
 };
 
-const NUMBER_PREFIX = /^(?:S\s*#|#)\s*\d+\.?\s*/i;
+const NUMBER_PREFIX = /^\s*(?:(?:S\s*#|#)\s*\d+[A-Z]?\.?|\d+[A-Z]?\.)\s*/i;
 const IN_OUT_PREFIX = /^(?:내부|외부|실내|실외|내|외|INT\.?\s*\/\s*EXT|EXT\.?\s*\/\s*INT|I\s*\/\s*E|INT|EXT)\.?\s+/i;
 
 /** 씬헤딩에서 장소만 뽑는다: "#3. 내부. 체육관 - 밤" → "체육관" */

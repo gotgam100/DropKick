@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ScriptLine } from "../editor/lineStyles";
-import { textColumns, wrapText } from "./metrics";
-import { PAGE, outlineGap, paginate } from "./paginate";
+import { textColumns, wrapChars, wrapText } from "./metrics";
+import { PAGE, outlineGap, outlineRows, paginate } from "./paginate";
 
 describe("글자 폭", () => {
   it("영문 1칸, 한글 11pt ÷ 7.2pt ≈ 1.53칸", () => {
@@ -302,5 +302,32 @@ describe("막·장·요약을 인쇄하기로 했을 때 (PDF·Word 내보내기
     expect(pages.length).toBe(2);
     expect(pageOf("act")).toBe(pageOf("scene"));
     expect(pageOf("act")).toBe(2);
+  });
+});
+
+describe("씬 요약은 글자 단위로 줄을 바꾼다", () => {
+  const W = textColumns("가");
+  const word = (ch: string, cols: number) => ch.repeat(Math.floor(cols / W));
+
+  it("어절을 지키지 않고 줄 끝까지 채운다", () => {
+    const text = `${word("가", 30)} ${word("나", 40)}`;
+    // 어절 단위면 둘째 어절이 통째로 다음 줄로 가지만, 글자 단위면 첫 줄을 끝까지 채운다
+    expect(wrapText(text, 60)[0]).toBe(word("가", 30));
+    const rows = wrapChars(text, 60);
+    expect(rows[0].startsWith(`${word("가", 30)} 나`)).toBe(true);
+    expect(textColumns(rows[0])).toBeGreaterThan(60 - W);
+    expect(rows.every((r) => textColumns(r) <= 60)).toBe(true);
+    expect(rows.join("").replace(/\s/g, "")).toBe(text.replace(/\s/g, ""));
+  });
+
+  it("줄 끝에 걸린 띄어쓰기는 다음 줄 맨 앞으로 가지 않는다", () => {
+    const full = word("가", 60);
+    expect(wrapChars(`${full} 나`, 60)).toEqual([full, "나"]);
+  });
+
+  it("화면 쪽 계산(outlineRows)도 요약만 글자 단위를 쓴다", () => {
+    const text = `${word("가", 20)} ${word("나", 45)} ${word("다", 45)}`;
+    expect(outlineRows(text, "act")).toBe(3);
+    expect(outlineRows(text, "synopsis")).toBe(2);
   });
 });

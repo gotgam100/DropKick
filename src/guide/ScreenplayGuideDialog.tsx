@@ -10,7 +10,7 @@ import {
   type LineStyle,
 } from "../editor/styles";
 import { fromFountain } from "../fountain/fountain";
-import { GuideSymbolsPage } from "./GuideSymbolsPage";
+import { GuideStructurePage } from "./GuideStructurePage";
 import {
   copyScriptPayloadToClipboard,
   type ScriptClipboardPayload,
@@ -22,16 +22,6 @@ type Props = {
   onClose: () => void;
   onLoadSampleProject?: (title: string, fountainText: string) => void;
   isStandalone?: boolean;
-};
-
-const STYLE_EN_NAMES: Record<LineStyle, string> = {
-  scene: "SCENE HEADING",
-  action: "ACTION",
-  character: "CHARACTER",
-  parenthetical: "PARENTHETICAL",
-  dialogue: "DIALOGUE",
-  subheader: "SUBHEADER",
-  transition: "TRANSITION",
 };
 
 interface InfographicLine {
@@ -70,7 +60,7 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
     return localStorage.getItem(GUIDE_SEEN_KEY) === "true";
   });
   const [copied, setCopied] = useState(false);
-  // 가이드는 두 쪽: 1쪽 스타일 7가지, 2쪽 Fountain 변형 양식(기호로 쓰는 것들)
+  // 가이드는 두 쪽: 1쪽 요소 7가지, 2쪽 이야기 구조(막·시퀀스·씬 요약)
   const [page, setPage] = useState<0 | 1>(0);
   const [position, setPosition] = useState({ x: 0, y: 0 });
 
@@ -82,6 +72,22 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
   } | null>(null);
 
   const infographicLines = useMemo(firstSceneLines, []);
+
+  // 요소 카드를 누르면 가운데 예시 원고에서 그 요소가 처음 나오는 줄로 스크롤한다.
+  const paperRef = useRef<HTMLDivElement | null>(null);
+  const scrollToStyle = (style: string) => {
+    const col = paperRef.current;
+    if (!col) return;
+    const line = col.querySelector<HTMLElement>(style === "sceneNum" ? ".sl-scene" : `.sl-${style}`);
+    if (!line) return;
+    if (col.scrollHeight <= col.clientHeight) {
+      // 용지 칸이 스크롤되지 않는 창(따로 띄운 가이드 창 등)에서는 바깥 스크롤을 움직인다.
+      line.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
+    const offset = line.getBoundingClientRect().top - col.getBoundingClientRect().top + col.scrollTop;
+    col.scrollTo({ top: Math.max(0, offset - col.clientHeight / 3), behavior: "smooth" });
+  };
 
   const sampleScriptLines = useMemo(() => {
     return fromFountain(SAMPLE_KOREAN_SCRIPT_FOUNTAIN).lines;
@@ -113,6 +119,11 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       if (!dragRef.current) return;
+      // 손 뗌을 놓쳤으면(트랙패드 탭) 창이 마우스를 따라다니지 않게 끝낸다
+      if ((moveEvent.buttons & 1) === 0) {
+        handlePointerUp();
+        return;
+      }
       const dx = moveEvent.clientX - dragRef.current.startX;
       const dy = moveEvent.clientY - dragRef.current.startY;
       setPosition({
@@ -215,12 +226,12 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
             1. 요소
           </button>
           <button type="button" className={page === 1 ? "active" : ""} aria-current={page === 1} onClick={() => setPage(1)}>
-            2. Fountain 규칙
+            2. 이야기 구조
           </button>
         </nav>
 
         <div className="guide-body">
-          {page === 1 && <GuideSymbolsPage />}
+          {page === 1 && <GuideStructurePage />}
           {page === 0 && (
           <div className="guide-infographic-board">
             {/* 좌측 설명 카드 열 */}
@@ -228,58 +239,58 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
               <div
                 className={`guide-callout-card ${hoveredStyle === "scene" ? "active" : ""}`}
                 onMouseEnter={() => setHoveredStyle("scene")}
+                onClick={() => scrollToStyle("scene")}
                 onMouseLeave={() => setHoveredStyle(null)}
               >
                 <div className="guide-card-head">
                   <span className="guide-ko-title">{STYLE_LABELS.scene}</span>
-                  <span className="guide-en-sub">{STYLE_EN_NAMES.scene}</span>
                   <kbd className="guide-kbd">{shortcutFor("scene")}</kbd>
                 </div>
-                <p className="guide-card-desc">장면의 시작 장소와 시간대 표기.</p>
+                <p className="guide-card-desc">장소와 시간대. 예) 실내. 카페 - 낮</p>
               </div>
 
               <div
                 className={`guide-callout-card ${hoveredStyle === "sceneNum" ? "active" : ""}`}
                 onMouseEnter={() => setHoveredStyle("sceneNum")}
+                onClick={() => scrollToStyle("sceneNum")}
                 onMouseLeave={() => setHoveredStyle(null)}
               >
                 <div className="guide-card-head">
                   <span className="guide-ko-title">씬 번호</span>
-                  <span className="guide-en-sub">SCENE NUMBER</span>
                   <span className="guide-auto-tag">자동</span>
                 </div>
-                <p className="guide-card-desc">할리우드 표준에 따라 씬헤딩의 좌우 양쪽 여백에 일관되게 자동 표시.</p>
+                <p className="guide-card-desc">씬헤딩 양옆에 자동으로 붙어요.</p>
               </div>
 
               <div
                 className={`guide-callout-card ${hoveredStyle === "subheader" ? "active" : ""}`}
                 onMouseEnter={() => setHoveredStyle("subheader")}
+                onClick={() => scrollToStyle("subheader")}
                 onMouseLeave={() => setHoveredStyle(null)}
               >
                 <div className="guide-card-head">
                   <span className="guide-ko-title">{STYLE_LABELS.subheader}</span>
-                  <span className="guide-en-sub">{STYLE_EN_NAMES.subheader}</span>
                   <kbd className="guide-kbd">{shortcutFor("subheader")}</kbd>
                 </div>
-                <p className="guide-card-desc">씬 장소 내 소구역 이동 및 상황 묘사.</p>
+                <p className="guide-card-desc">같은 씬 안의 작은 장소·상황.</p>
               </div>
 
               <div
                 className={`guide-callout-card ${hoveredStyle === "transition" ? "active" : ""}`}
                 onMouseEnter={() => setHoveredStyle("transition")}
+                onClick={() => scrollToStyle("transition")}
                 onMouseLeave={() => setHoveredStyle(null)}
               >
                 <div className="guide-card-head">
                   <span className="guide-ko-title">{STYLE_LABELS.transition}</span>
-                  <span className="guide-en-sub">{STYLE_EN_NAMES.transition}</span>
                   <kbd className="guide-kbd">{shortcutFor("transition")}</kbd>
                 </div>
-                <p className="guide-card-desc">씬과 씬 사이의 화면 전환 지시어 (우측 정렬).</p>
+                <p className="guide-card-desc">다음 씬으로 넘어가는 방식. 오른쪽에 붙어요.</p>
               </div>
             </div>
 
             {/* 중앙: 축소된 실제 예시 스크립트 용지 */}
-            <div className="guide-paper-col">
+            <div className="guide-paper-col" ref={paperRef}>
               <div className="guide-paper-container paper">
                 <div className="guide-paper-content">
                   {infographicLines.map((line) => {
@@ -332,53 +343,53 @@ export function ScreenplayGuideDialog({ onClose, onLoadSampleProject, isStandalo
               <div
                 className={`guide-callout-card ${hoveredStyle === "action" ? "active" : ""}`}
                 onMouseEnter={() => setHoveredStyle("action")}
+                onClick={() => scrollToStyle("action")}
                 onMouseLeave={() => setHoveredStyle(null)}
               >
                 <div className="guide-card-head">
                   <span className="guide-ko-title">{STYLE_LABELS.action}</span>
-                  <span className="guide-en-sub">{STYLE_EN_NAMES.action}</span>
                   <kbd className="guide-kbd">{shortcutFor("action")}</kbd>
                 </div>
-                <p className="guide-card-desc">인물의 행동 및 시각적 장면 묘사.</p>
+                <p className="guide-card-desc">눈에 보이는 행동과 장면.</p>
               </div>
 
               <div
                 className={`guide-callout-card ${hoveredStyle === "character" ? "active" : ""}`}
                 onMouseEnter={() => setHoveredStyle("character")}
+                onClick={() => scrollToStyle("character")}
                 onMouseLeave={() => setHoveredStyle(null)}
               >
                 <div className="guide-card-head">
                   <span className="guide-ko-title">{STYLE_LABELS.character}</span>
-                  <span className="guide-en-sub">{STYLE_EN_NAMES.character}</span>
                   <kbd className="guide-kbd">{shortcutFor("character")}</kbd>
                 </div>
-                <p className="guide-card-desc">대사를 말하는 등장인물의 이름 (중앙 정렬).</p>
+                <p className="guide-card-desc">말하는 사람의 이름.</p>
               </div>
 
               <div
                 className={`guide-callout-card ${hoveredStyle === "dialogue" ? "active" : ""}`}
                 onMouseEnter={() => setHoveredStyle("dialogue")}
+                onClick={() => scrollToStyle("dialogue")}
                 onMouseLeave={() => setHoveredStyle(null)}
               >
                 <div className="guide-card-head">
                   <span className="guide-ko-title">{STYLE_LABELS.dialogue}</span>
-                  <span className="guide-en-sub">{STYLE_EN_NAMES.dialogue}</span>
                   <kbd className="guide-kbd">{shortcutFor("dialogue")}</kbd>
                 </div>
-                <p className="guide-card-desc">등장인물이 말하는 대사 본문 (중앙 블록 정렬).</p>
+                <p className="guide-card-desc">인물이 하는 말.</p>
               </div>
 
               <div
                 className={`guide-callout-card ${hoveredStyle === "parenthetical" ? "active" : ""}`}
                 onMouseEnter={() => setHoveredStyle("parenthetical")}
+                onClick={() => scrollToStyle("parenthetical")}
                 onMouseLeave={() => setHoveredStyle(null)}
               >
                 <div className="guide-card-head">
                   <span className="guide-ko-title">{STYLE_LABELS.parenthetical}</span>
-                  <span className="guide-en-sub">{STYLE_EN_NAMES.parenthetical}</span>
                   <kbd className="guide-kbd">{shortcutFor("parenthetical")}</kbd>
                 </div>
-                <p className="guide-card-desc">배우의 어조, 감정 상태, 소소한 행동 지시.</p>
+                <p className="guide-card-desc">말투·감정·작은 행동. 대사 줄에서 Tab.</p>
               </div>
               <p className="guide-example-credit">
                 예시 스크립트

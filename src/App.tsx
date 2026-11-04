@@ -6,6 +6,7 @@ import { fromFountain } from "./fountain/fountain";
 import { Editor, type EditorHandle, type EditorInfo } from "./editor/Editor";
 import { TextEditor, type TextEditorHandle } from "./editor/TextEditor";
 import { LINE_STYLES, STYLE_LABELS, shortcutFor, styleLabel } from "./editor/styles";
+import { markTipSeen, nextStylesFor, pendingTip, seenTips, type Tip } from "./editor/writingHints";
 import { formatCombo, shortcutForEvent } from "./settings/appShortcuts";
 import { useProject } from "./project/useProject";
 import { findNode, findParent, folderNamed } from "./project/tree";
@@ -268,6 +269,21 @@ function App() {
   const focusedDocNode =
     focusedShown.kind === "doc" ? (findNode(project.tree, focusedShown.id) as DocNode | null) : null;
   const isScript = focusedShown.kind === "script";
+
+  // 쓰기 도움말: 요소를 처음 쓸 때 원고 오른쪽 위에 한 번만 작은 알림을 띄운다 (writingHints.ts)
+  const [tip, setTip] = useState<Tip | null>(null);
+  useEffect(() => {
+    if (!isScript || !settings.showWritingHints) return;
+    const next = pendingTip(info.style, seenTips());
+    if (!next) return;
+    markTipSeen(info.style);
+    setTip(next);
+  }, [info.style, isScript, settings.showWritingHints]);
+  useEffect(() => {
+    if (!tip) return;
+    const timer = window.setTimeout(() => setTip(null), 12000);
+    return () => window.clearTimeout(timer);
+  }, [tip]);
   const isStructure = focusedDocNode?.type === "structure";
   const openRevision = focusedRevision;
   const scriptIndex = scriptPane(paneState);
@@ -1048,7 +1064,7 @@ function App() {
                   씬 <strong>{character.scenes}</strong>개
                 </span>
                 <span>
-                  첫 등장 <strong>#{character.firstScene}</strong>
+                  첫 등장 <strong>{character.firstScene}.</strong>
                 </span>
                 <button type="button" onClick={() => findCharacter(character.name)}>
                   등장 씬 찾기
@@ -1070,7 +1086,7 @@ function App() {
 
   return (
     <div
-      className={`app${focusMode ? " focus-mode" : ""}${!settings.showSceneNumbers ? " hide-scene-numbers" : ""}${!settings.highlightCurrentLine ? " hide-current-line" : ""}`}
+      className={`app${focusMode ? " focus-mode" : ""}${!settings.showSceneNumbers ? " hide-scene-numbers" : ""}${!settings.highlightCurrentLine ? " hide-current-line" : ""}${!settings.showWritingHints ? " hide-writing-hints" : ""}`}
     >
       <header className="titlebar" data-tauri-drag-region>
         <span className="titlebar-path" title={project.path ?? "아직 저장하지 않았습니다"}>
@@ -1320,7 +1336,26 @@ function App() {
             onPointerDownCapture={() => scriptIndex !== null && focusPane(scriptIndex)}
           >
             {split && scriptIndex !== null && renderHeader(scriptIndex)}
-            <div className="pane-body">
+            <div className="pane-body pane-body-script">
+              {tip && settings.showWritingHints && (
+                <div className="writing-tip" role="status">
+                  <div className="writing-tip-body">
+                    <strong>{tip.title}</strong>
+                    <span>{tip.text}</span>
+                    {tip.example && (
+                      <span className="writing-tip-example">
+                        예) <code>{tip.example}</code>
+                      </span>
+                    )}
+                    <span className="writing-tip-keys">
+                      줄 끝에서 <kbd>⏎</kbd> {tip.enter} · <kbd>Tab</kbd> {tip.tab}
+                    </span>
+                  </div>
+                  <button type="button" onClick={() => setTip(null)}>
+                    알겠어요
+                  </button>
+                </div>
+              )}
               <main className="desk">
                 <article className="paper" style={scriptZoomStyle}>
                   <Editor
@@ -1364,9 +1399,10 @@ function App() {
         {isScript ? (
           <>
             <span className="status-style">{styleLabel(info.style)}</span>
-            {currentScene && (
-              <span className="status-scene" title={currentScene.heading}>
-                {currentScene.heading}
+            {settings.showWritingHints && (
+              <span className="status-next" title="줄 끝에서 ⏎를 누르면 다음 줄, Tab을 누르면 이 줄의 요소가 바뀝니다">
+                <kbd>⏎</kbd> {styleLabel(nextStylesFor(info.style).enter)}
+                <kbd>Tab</kbd> {styleLabel(nextStylesFor(info.style).tab)}
               </span>
             )}
             <span className="status-spacer" />

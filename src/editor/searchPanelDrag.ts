@@ -33,6 +33,7 @@ function attach(panel: HTMLElement) {
     const scale = panel.getBoundingClientRect().width / panel.offsetWidth || 1;
     const start = { x: e.clientX, y: e.clientY, ox: saved.x, oy: saved.y };
     const move = (ev: PointerEvent) => {
+      if ((ev.buttons & 1) === 0) return up(); // 손 뗌을 놓쳤으면 끝낸다
       saved = { x: start.ox + (ev.clientX - start.x) / scale, y: start.oy + (ev.clientY - start.y) / scale };
       apply();
     };

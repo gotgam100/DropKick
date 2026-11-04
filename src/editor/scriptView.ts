@@ -189,7 +189,8 @@ const styleDecorations = ViewPlugin.fromClass(
             if (state.doc.length === 0) ranges.push(emptyDocLine.range(line.from));
 
             const width = isOutlineStyle(style) ? OUTLINE_WIDTH : ELEMENTS[style].width;
-            for (const match of line.text.matchAll(WORD)) {
+            // 씬 요약은 글자 단위로 줄을 바꾸므로 어절을 묶지 않는다 (metrics.ts wrapChars)
+            if (style !== "synopsis") for (const match of line.text.matchAll(WORD)) {
               if (match[0].length > 1 && textColumns(match[0]) <= width) {
                 const from = line.from + (match.index ?? 0);
                 ranges.push(noWrapMark.range(from, from + match[0].length));

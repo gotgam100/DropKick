@@ -152,6 +152,9 @@ export function ProjectTree(props: Props) {
     position: DropPosition | null;
   } | null>(null);
   const pressRef = useRef<{ id: string; name: string; x: number; y: number } | null>(null);
+  // 끌기 상태 사본 (씬 끌기와 같은 이유: 다시 그리기 전에 손을 떼도 지난 끌기 상태로 옮기지 않게)
+  const dragRef = useRef<typeof drag>(null);
+  const latestRef = useRef<{ onMove: typeof onMove; expand: (id: string) => void }>({ onMove, expand: () => {} });
   // 씬 끌어서 순서 바꾸기
   const [sceneDrag, setSceneDrag] = useState<{
     line: number;
@@ -162,6 +165,10 @@ export function ProjectTree(props: Props) {
     position: "before" | "after" | null;
   } | null>(null);
   const scenePressRef = useRef<{ line: number; name: string; x: number; y: number } | null>(null);
+  // 끌기 상태를 화면(state)과 별도로 바로 읽기 위한 사본. 화면이 다시 그려지기 전에 손을 떼도
+  // 지난 끌기 상태가 남아 다음 "클릭"에서 씬이 옮겨지는 일이 없게 한다.
+  const sceneDragRef = useRef<typeof sceneDrag>(null);
+  const sceneMovesRef = useRef<{ scenes: typeof shown.scenes; onMoveScene: typeof onMoveScene }>({ scenes: [], onMoveScene });
   const suppressClickRef = useRef(false);
   // 접어 둔 막·장·씬 요약 (막·장은 이름과 몇 번째인지로, 씬은 씬 번호로 구분한다)
   const [folded, setFolded] = useState<Set<string>>(new Set());
@@ -320,23 +327,36 @@ export function ProjectTree(props: Props) {
   const onRowPointerDown = (e: ReactPointerEvent, node: ProjectNode) => {
     if (e.button !== 0 || renaming === node.id) return;
     pressRef.current = { id: node.id, name: node.name, x: e.clientX, y: e.clientY };
+    dragRef.current = null;
   };
 
   useEffect(() => {
     const handleMove = (e: PointerEvent) => {
       const press = pressRef.current;
       if (!press) return;
+      // 버튼이 눌려 있지 않은데 움직임이 오면 손 뗌(pointerup)을 놓친 것이다. (트랙패드 탭에서 생긴다)
+      // 그대로 두면 다음 움직임이 끌기가 되어 순서가 바뀌므로 아무것도 옮기지 않고 끝낸다.
+      if ((e.buttons & 1) === 0) {
+        pressRef.current = null;
+        if (dragRef.current) {
+          dragRef.current = null;
+          setDrag(null);
+        }
+        return;
+      }
       const moved = Math.hypot(e.clientX - press.x, e.clientY - press.y);
-      if (!drag && moved < 5) return;
+      if (!dragRef.current && moved < 8) return;
       const target = dropTargetAt(e.clientX, e.clientY, press.id);
-      setDrag({
+      const next = {
         id: press.id,
         name: press.name,
         x: e.clientX,
         y: e.clientY,
         over: target?.id ?? null,
         position: target?.position ?? null,
-      });
+      };
+      dragRef.current = next;
+      setDrag(next);
       // 목록 위아래 끝 가까이 가면 저절로 스크롤
       const list = listRef.current;
       if (list) {
@@ -347,13 +367,17 @@ export function ProjectTree(props: Props) {
     };
     const handleUp = () => {
       const press = pressRef.current;
+      const drag = dragRef.current;
       pressRef.current = null;
-      if (!press || !drag) return;
+      dragRef.current = null;
+      if (!drag) return;
+      setDrag(null);
+      if (!press || press.id !== drag.id) return;
       if (drag.over && drag.position) {
-        onMove(drag.id, drag.over, drag.position);
+        latestRef.current.onMove(drag.id, drag.over, drag.position);
         if (drag.position === "inside") {
           const target = drag.over;
-          expand(target);
+          latestRef.current.expand(target);
         }
       }
       // 끌기를 마친 마우스 떼기는 "누르기"로 치지 않는다.
@@ -364,19 +388,23 @@ export function ProjectTree(props: Props) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && pressRef.current) {
         pressRef.current = null;
+        dragRef.current = null;
         setDrag(null);
       }
     };
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
       window.removeEventListener("keydown", onKey);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drag, onMove]);
+  }, []);
+  latestRef.current = { onMove, expand };
 
   // 씬을 끌어 순서 바꾸기: 놓을 자리는 눈에 보이는 씬 목록에서 정한다.
   useEffect(() => {
@@ -391,16 +419,28 @@ export function ProjectTree(props: Props) {
     const handleMove = (e: PointerEvent) => {
       const press = scenePressRef.current;
       if (!press) return;
-      if (!sceneDrag && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 5) return;
+      // 버튼이 눌려 있지 않으면 손 뗌을 놓친 것: 끌기를 시작하지 않고 끝낸다 (위 문서 끌기와 같은 이유)
+      if ((e.buttons & 1) === 0) {
+        scenePressRef.current = null;
+        if (sceneDragRef.current) {
+          sceneDragRef.current = null;
+          setSceneDrag(null);
+        }
+        return;
+      }
+      // 손이 조금 흔들린 것(클릭)은 끌기로 보지 않는다.
+      if (!sceneDragRef.current && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 8) return;
       const target = targetAt(e.clientX, e.clientY, press.line);
-      setSceneDrag({
+      const next = {
         line: press.line,
         name: press.name,
         x: e.clientX,
         y: e.clientY,
         over: target?.line ?? null,
         position: target?.position ?? null,
-      });
+      };
+      sceneDragRef.current = next;
+      setSceneDrag(next);
       const list = listRef.current;
       if (list) {
         const rect = list.getBoundingClientRect();
@@ -410,33 +450,40 @@ export function ProjectTree(props: Props) {
     };
     const handleUp = () => {
       const press = scenePressRef.current;
+      const drag = sceneDragRef.current;
       scenePressRef.current = null;
-      if (!press || !sceneDrag) return;
-      if (sceneDrag.over !== null && sceneDrag.position) {
-        const list = shown.scenes;
-        const index = list.findIndex((sc) => sc.line === sceneDrag.over);
-        const before = sceneDrag.position === "before" ? list[index]?.line : list[index + 1]?.line;
-        onMoveScene?.(sceneDrag.line, before ?? null);
+      sceneDragRef.current = null;
+      if (!drag) return;
+      setSceneDrag(null);
+      if (!press || press.line !== drag.line) return;
+      const { scenes, onMoveScene: move } = sceneMovesRef.current;
+      if (drag.over !== null && drag.position) {
+        const index = scenes.findIndex((sc) => sc.line === drag.over);
+        const before = drag.position === "before" ? scenes[index]?.line : scenes[index + 1]?.line;
+        move?.(drag.line, before ?? null);
       }
       suppressClickRef.current = true;
       setTimeout(() => (suppressClickRef.current = false), 0);
-      setSceneDrag(null);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && scenePressRef.current) {
         scenePressRef.current = null;
+        sceneDragRef.current = null;
         setSceneDrag(null);
       }
     };
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
       window.removeEventListener("keydown", onKey);
     };
-  }, [sceneDrag, shown.scenes, onMoveScene]);
+  }, []);
+  sceneMovesRef.current = { scenes: shown.scenes, onMoveScene };
 
   // ---------- 그리기 ----------
 
@@ -559,6 +606,7 @@ export function ProjectTree(props: Props) {
             // 검색으로 걸러진 목록에서는 순서를 바꾸지 않는다. (보이지 않는 씬 사이로 옮기게 되므로)
             if (e.button !== 0 || query !== "" || !onMoveScene || scene.number <= 0) return;
             scenePressRef.current = { line: scene.line, name: scene.heading, x: e.clientX, y: e.clientY };
+            sceneDragRef.current = null;
           }}
           onClick={() => {
             if (suppressClickRef.current) return;
@@ -570,7 +618,7 @@ export function ProjectTree(props: Props) {
             e.stopPropagation();
             setOutlineMenu({ x: e.clientX, y: e.clientY, line: scene.line });
           }}
-          title={`${scene.number}. ${scene.heading.replace(/^(?:S#|#)\s*\d+\.?\s*/i, "")}\n길이 ${formatEighths(scene.eighths)}${scene.characters.length ? ` · ${scene.characters.join(", ")}` : ""}`}
+          title={`${scene.number}. ${scene.heading.replace(/^\s*(?:(?:S\s*#|#)\s*\d+[A-Z]?\.?|\d+[A-Z]?\.)\s*/i, "")}\n길이 ${formatEighths(scene.eighths)}${scene.characters.length ? ` · ${scene.characters.join(", ")}` : ""}`}
         >
           {outline && (
             <span
@@ -587,7 +635,7 @@ export function ProjectTree(props: Props) {
             </span>
           )}
           <span className="scene-number">{scene.number}.</span>
-          <span className="tree-name">{scene.heading.replace(/^(?:S#|#)\s*\d+\.?\s*/i, "")}</span>
+          <span className="tree-name">{scene.heading.replace(/^\s*(?:(?:S\s*#|#)\s*\d+[A-Z]?\.?|\d+[A-Z]?\.)\s*/i, "")}</span>
         </button>,
       );
       if (synopsisOpen) {
@@ -1175,7 +1223,7 @@ export function ProjectTree(props: Props) {
       )}
       {sceneDrag && (
         <div className="tree-drag-ghost" style={{ left: sceneDrag.x + 12, top: sceneDrag.y + 8 }}>
-          {sceneDrag.name.replace(/^(?:S#|#)\s*\d+\.?\s*/i, "")}
+          {sceneDrag.name.replace(/^\s*(?:(?:S\s*#|#)\s*\d+[A-Z]?\.?|\d+[A-Z]?\.)\s*/i, "")}
         </div>
       )}
 

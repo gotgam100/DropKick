@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { limitCustomQuotes } from "../footer/quoteFlow";
+import { resetTips } from "../editor/writingHints";
 import { LINE_STYLES, STYLE_LABELS, type LineStyle } from "../editor/styles";
 import {
   APP_SHORTCUT_IDS,
@@ -37,6 +38,7 @@ export function SettingsDialog({
   onClose,
   isStandalone,
 }: Props) {
+  const [tipsReset, setTipsReset] = useState(false);
   const [tab, setTab] = useState<TabId>("view");
   const [confirmResetAll, setConfirmResetAll] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -72,6 +74,11 @@ export function SettingsDialog({
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       if (!dragRef.current) return;
+      // 손 뗌을 놓쳤으면(트랙패드 탭) 창이 마우스를 따라다니지 않게 끝낸다
+      if ((moveEvent.buttons & 1) === 0) {
+        handlePointerUp();
+        return;
+      }
       const dx = moveEvent.clientX - dragRef.current.startX;
       const dy = moveEvent.clientY - dragRef.current.startY;
       setPosition({
@@ -227,6 +234,31 @@ export function SettingsDialog({
                   onChange={(e) => patch({ highlightCurrentLine: e.target.checked })}
                 />
               </label>
+
+              <div className="settings-toggle-row">
+                <div className="settings-item-label">
+                  <strong>쓰기 도움말</strong>
+                  <span>
+                    아래 상태 막대에 지금 요소와 ⏎·Tab을 누르면 될 요소를 보여 줍니다. 요소마다 처음 쓸 때 한 번만 원고 오른쪽 위에 작은 알림도 띄웁니다.{" "}
+                    <button
+                      type="button"
+                      className="settings-inline-link"
+                      onClick={() => {
+                        resetTips();
+                        setTipsReset(true);
+                      }}
+                    >
+                      {tipsReset ? "✓ 처음 알림이 다시 보여요" : "처음 알림 다시 보기"}
+                    </button>
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  aria-label="쓰기 도움말"
+                  checked={settings.showWritingHints}
+                  onChange={(e) => patch({ showWritingHints: e.target.checked })}
+                />
+              </div>
 
               <div className="settings-item">
                 <div className="settings-item-label">

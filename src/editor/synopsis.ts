@@ -79,7 +79,7 @@ export function orphanInfo(
   let target: string | null = null;
   if (scene !== null) {
     const heading = state.doc.line(scene).text;
-    target = sceneHeadingText(heading, state.field(sceneNumbersField).get(scene)).replace(/^#/, "").trim() || "(장소 없음)";
+    target = sceneHeadingText(heading, state.field(sceneNumbersField).get(scene)).trim() || "(장소 없음)";
   }
   return { chains, texts, target };
 }

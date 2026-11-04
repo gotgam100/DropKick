@@ -17,6 +17,7 @@ const scene = (line: number, number: number, heading: string): SceneSummary => (
 describe("장소 뽑기", () => {
   it("내부·외부와 시간대를 뗀다", () => {
     expect(placeOf("#3. 내부. 체육관 - 밤")).toBe("체육관");
+    expect(placeOf("3. 내부. 체육관 - 밤")).toBe("체육관");
     expect(placeOf("S#2. 외부. 골목 - 낮")).toBe("골목");
     expect(placeOf("INT. GYM - NIGHT")).toBe("GYM");
     expect(placeOf("체육관")).toBe("체육관");

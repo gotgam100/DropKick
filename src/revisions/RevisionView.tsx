@@ -139,13 +139,13 @@ function Comparison({
     );
   };
   const cleanHeading = (h: string) =>
-    h.replace(/^\s*(?:S\s*#|#)\s*\d+[A-Z]?\.?\s*/i, "").trim() || "(첫 씬 앞)";
+    h.replace(/^\s*(?:(?:S\s*#|#)\s*\d+[A-Z]?\.?|\d+[A-Z]?\.)\s*/i, "").trim() || "(첫 씬 앞)";
   const sceneTitle = (s: (typeof barScenes)[number]) => {
     const k = barKind(s);
     const num = s.number > 0 ? `${s.number}. · ` : "";
     const delNote =
       s.deletedScenes.length > 0
-        ? ` (앞에서 지운 씬 ${s.deletedScenes.map((d) => `옛 #${d.number}.`).join(", ")})`
+        ? ` (앞에서 지운 씬 ${s.deletedScenes.map((d) => `옛 ${d.number}.`).join(", ")})`
         : "";
     const counts = s.added || s.removed ? ` (+${s.added} −${s.removed})` : "";
     return `${num}${cleanHeading(s.heading)} — ${label[k]}${counts}${delNote}`;

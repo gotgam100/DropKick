@@ -127,6 +127,30 @@ export function wrapText(text: string, width: number): string[] {
   return lines;
 }
 
+/**
+ * 글자 단위 줄바꿈 (씬 요약): 어절을 지키지 않고 줄 끝까지 채운 뒤 다음 글자에서 바꾼다.
+ * 화면 CSS(word-break: break-all, white-space: pre-wrap)와 같게, 띄어쓰기는 줄 끝에 걸려도 줄을 바꾸지 않는다.
+ */
+export function wrapChars(text: string, width: number): string[] {
+  const clean = text.replace(/\t/g, "    ");
+  if (clean.trim() === "") return [""];
+  const lines: string[] = [];
+  let line = "";
+  let lineWidth = 0;
+  for (const ch of clean) {
+    const w = charColumns(ch);
+    if (!/\s/.test(ch) && lineWidth + w > width + EPSILON && line !== "") {
+      lines.push(line.replace(/\s+$/, ""));
+      line = "";
+      lineWidth = 0;
+    }
+    line += ch;
+    lineWidth += w;
+  }
+  lines.push(line.replace(/\s+$/, ""));
+  return lines;
+}
+
 /** 씬헤딩, 인물, 전환은 영문을 대문자로 찍는다. (한글은 영향 없음) */
 export function toUpperLatin(text: string): string {
   return text.replace(/[a-zà-þ]/g, (c) => c.toUpperCase());

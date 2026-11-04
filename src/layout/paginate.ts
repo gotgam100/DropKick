@@ -27,7 +27,7 @@
 import type { ScriptLine } from "../editor/lineStyles";
 import { isOutlineStyle, type DocStyle, type LineStyle, type OutlineStyle } from "../editor/styles";
 import { actionIndent, alignOf, hasInline, leadingIndent, plainText, rowSpans, spansColumns, stripMarks, supportsInline, type Align, type Span } from "./inline";
-import { textColumns, toUpperLatin, wrapText } from "./metrics";
+import { textColumns, toUpperLatin, wrapChars, wrapText } from "./metrics";
 import { numberScenes } from "./sceneNumbers";
 
 /**
@@ -55,9 +55,9 @@ export const PAGE = {
 /** 막·장·요약 줄이 화면에서 줄을 바꾸는 폭 (액션과 같다) */
 export const OUTLINE_WIDTH = 60;
 
-/** 막·장·요약 줄의 글이 화면에서 차지하는 줄 수 */
-export function outlineRows(text: string): number {
-  return wrapText(text, OUTLINE_WIDTH).length;
+/** 막·장·요약 줄의 글이 화면에서 차지하는 줄 수. 씬 요약은 글자 단위로 줄을 바꾼다 (줄 끝까지 채움) */
+export function outlineRows(text: string, style: OutlineStyle = "act"): number {
+  return (style === "synopsis" ? wrapChars : wrapText)(text, OUTLINE_WIDTH).length;
 }
 
 /**
@@ -76,7 +76,7 @@ export function outlineGap(lines: readonly ScriptLine[], i: number): number {
 
 /** i번째 막·장·요약 줄이 화면에서 차지하는 줄 수 (위 빈 줄 포함) */
 export function outlineLineRows(lines: readonly ScriptLine[], i: number): number {
-  return outlineRows(lines[i].text) + outlineGap(lines, i);
+  return outlineRows(lines[i].text, lines[i].style as OutlineStyle) + outlineGap(lines, i);
 }
 
 type ElementSpec = { indent: number; width: number; before: number; upper: boolean; bold: boolean };
@@ -183,7 +183,7 @@ function elementRows(style: LineStyle | OutlineStyle, text: string, source: numb
   }
   // 꾸밈을 쓰지 않는 줄에 남은 꾸밈 기호(*, _)는 보이지 않게 뺀다.
   if (!supportsInline(style)) shown = stripMarks(shown);
-  const rows = wrapText(shown, spec.width - indent);
+  const rows = (style === "synopsis" ? wrapChars : wrapText)(shown, spec.width - indent);
   return rows.map((t) => ({ text: t, style, source, ...(indent ? { indent } : {}) }));
 }
 

@@ -200,7 +200,7 @@ export type StructureBoardData = {
 
 /** "S#1. 내부. 체육관 - 밤" 또는 "#1. 내부. 체육관 - 밤" → "내부. 체육관 - 밤" */
 export function cleanSceneHeading(heading: string): string {
-  return heading.replace(/^(?:S\s*#|#)\s*\d+\.?\s*/i, "").trim();
+  return heading.replace(/^\s*(?:(?:S\s*#|#)\s*\d+[A-Z]?\.?|\d+[A-Z]?\.)\s*/i, "").trim();
 }
 
 function snippetOf(text: string): string {

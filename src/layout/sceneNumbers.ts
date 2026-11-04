@@ -30,10 +30,10 @@ export function numberScenes(
 
 /**
  * 씬리스트, 3막 구조, 통계 등 목록 표시에 쓰는 씬헤딩 글자.
- * 요청에 따라 'S#1.' 대신 '#1.' 형태로 표기한다.
+ * 'S#1.'이나 '#1.' 대신 '1.' 형태로 표기한다. ('#'은 막 기호라 헷갈린다)
  */
 export function sceneHeadingText(text: string, scene: SceneNumber | undefined): string {
   if (!scene) return text;
   const clean = text.replace(/^(?:S\s*#|#)\s*\d+\.?\s*/i, "").trim();
-  return `#${scene.number}. ${clean}`;
+  return `${scene.number}. ${clean}`;
 }

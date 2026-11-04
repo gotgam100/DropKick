@@ -33,10 +33,12 @@ const setPagination = StateEffect.define<PageInfo>();
 
 /**
  * 앞 페이지에 쓰인 줄 수만큼 빼고 남은 높이 (본문 나머지 + 아래 여백 1인치).
- * 화면에만 있는 막·장·요약 줄이 차지한 줄 수(outline)도 빼서, 종이 한 장 높이는 그대로 둔다.
+ * 화면에만 있는 막·장·요약 줄이 차지한 줄 수(outline)도 빼서 되도록 종이 한 장 높이를 지키되,
+ * 아래 여백 1인치(쪽 번호 자리)는 늘 남긴다. 막·장·요약이 많아 넘치면 화면의 그 쪽만 그만큼 길어진다.
+ * (인쇄되는 줄은 그대로라 PDF와 쪽 나눔은 같다)
  */
 function remainingHeight(usedRows: number, outline: number) {
-  return `max(0px, calc(10in - var(--line) * ${usedRows + outline}))`;
+  return `max(1in, calc(10in - var(--line) * ${usedRows + outline}))`;
 }
 
 /** 화면에서 한 줄의 높이 (App.css의 --line과 같은 값) */
@@ -49,7 +51,7 @@ const INCH_PX = 96;
  * 페이지 경계 하나는 한 장(약 1000px)이라 짐작이 크게 틀려, 글이 길어질수록 위치 계산이 어긋나기 때문이다.
  */
 function remainingPx(usedRows: number, outline: number) {
-  return Math.max(0, 10 * INCH_PX - LINE_PX * (usedRows + outline));
+  return Math.max(INCH_PX, 10 * INCH_PX - LINE_PX * (usedRows + outline));
 }
 
 function row(className: string, text: string) {

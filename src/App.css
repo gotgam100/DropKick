@@ -441,6 +441,12 @@ body {
   color: var(--muted);
 }
 
+/* 씬 요약은 어절을 지키지 않고 줄 끝까지 채운 뒤 글자 단위로 줄을 바꾼다 (metrics.ts wrapChars) */
+.paper .cm-line.sl-synopsis {
+  word-break: break-all;
+  line-break: anywhere;
+}
+
 /* 이어지는 요약 줄은 붙이고, 막 바로 아래의 장은 반 줄만 띄운다 (paginate.ts outlineGap) */
 .paper .cm-line.sl-synopsis.sl-continued {
   --gap: 0px;
@@ -665,6 +671,95 @@ body {
 .status-style {
   color: var(--ink);
   font-weight: 600;
+}
+
+/* 쓰기 도움말: 지금 요소 옆에 ⏎·Tab을 누르면 될 요소 */
+.status-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.status-next kbd {
+  margin-left: 4px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+/* 쓰기 도움말: 처음 한 번만 알림. 원고 칸 오른쪽 위에 떠 있고 페이지 배치에는 끼어들지 않는다 */
+.pane-body-script {
+  position: relative;
+}
+.writing-tip {
+  position: absolute;
+  top: 14px;
+  right: 22px;
+  z-index: 30;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 320px;
+  padding: 11px 14px;
+  border: 1px solid var(--caret);
+  border-radius: 10px;
+  background: var(--chrome);
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.5;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  animation: writing-tip-in 0.2s ease-out;
+}
+.writing-tip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.writing-tip-body strong {
+  color: var(--caret);
+}
+.writing-tip-example code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  font-family: var(--font-script);
+  font-size: 12px;
+}
+.writing-tip-keys {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.writing-tip-keys kbd {
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  color: var(--ink);
+}
+.writing-tip button {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.writing-tip button:hover {
+  border-color: var(--caret);
+}
+@keyframes writing-tip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
 }
 
 .status-page {

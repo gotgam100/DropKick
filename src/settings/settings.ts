@@ -57,6 +57,8 @@ export type AppSettings = {
   highlightCurrentLine: boolean;
   /** 하단 푸터 가운데에 가끔 한국 영화 명대사를 보여 준다 */
   showFooterQuotes: boolean;
+  /** 쓰기 도움말: 상태 막대의 다음 요소, 요소마다 처음 한 번만 알림 */
+  showWritingHints: boolean;
   /** 나만의 명대사: 최대 두 줄, 한 줄에 하나. 기본 명대사에 섞여 나온다 */
   customQuotes: string;
   /** 표지 기본 작가 이름 */
@@ -90,6 +92,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   zoom: 100,
   highlightCurrentLine: true,
   showFooterQuotes: true,
+  showWritingHints: true,
   customQuotes: "",
   defaultAuthor: "",
   defaultContact: "",
@@ -151,6 +154,7 @@ export function loadSettings(): AppSettings {
       highlightCurrentLine:
         typeof p.highlightCurrentLine === "boolean" ? p.highlightCurrentLine : true,
       showFooterQuotes: typeof p.showFooterQuotes === "boolean" ? p.showFooterQuotes : true,
+      showWritingHints: typeof p.showWritingHints === "boolean" ? p.showWritingHints : true,
       customQuotes: typeof p.customQuotes === "string" ? limitCustomQuotes(p.customQuotes) : "",
       defaultAuthor: typeof p.defaultAuthor === "string" ? p.defaultAuthor : "",
       defaultContact: typeof p.defaultContact === "string" ? p.defaultContact : "",
