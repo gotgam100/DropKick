@@ -277,6 +277,20 @@ function exitOutline(view: EditorView): boolean {
   return true;
 }
 
+/**
+ * 막·장·요약으로 바꾼 시각. 한글 입력기에서는 띄어쓰기 글자가 키 누름보다 늦게 들어와서,
+ * 키 누름으로 먼저 `#`를 막으로 바꾼 뒤 그 띄어쓰기가 "빈 막 줄에서 띄어쓰기 = 액션으로 돌아가기"로
+ * 한 번 더 처리되어 바로 액션으로 돌아갔다. 바꾼 직후에 들어온 띄어쓰기는 같은 키로 보고 버린다.
+ */
+const convertedAt = new WeakMap<EditorView, number>();
+const SAME_KEY_MS = 600;
+function markConverted(view: EditorView) {
+  convertedAt.set(view, Date.now());
+}
+function justConverted(view: EditorView): boolean {
+  return Date.now() - (convertedAt.get(view) ?? 0) < SAME_KEY_MS;
+}
+
 /** Enter·Backspace: 빈 막·장·요약 줄에서는 줄을 나누거나 합치지 않고 액션으로 돌아간다. */
 const exitEmptyOutline = (view: EditorView): boolean => {
   const { state } = view;
@@ -305,9 +319,11 @@ const outlineInput = EditorView.inputHandler.of((view, from, to, text) => {
   if (text !== " " || from !== to || view.state.selection.ranges.length > 1) return false;
   const line = view.state.doc.lineAt(from);
   // 아무것도 안 쓴 막·장·요약 줄에서 띄어쓰기를 한 번 더 치면 처음 모양(액션)으로 돌아간다.
-  if (isEmptyOutlineLine(view.state, line.number)) return exitOutline(view);
+  // 막 바꾼 직후에 늦게 들어온 띄어쓰기(같은 키)는 버린다.
+  if (isEmptyOutlineLine(view.state, line.number)) return justConverted(view) ? true : exitOutline(view);
   const style = outlineStyleFor(view.state, line.number, view.state.sliceDoc(line.from, from));
   if (!style) return false;
+  markConverted(view);
   view.dispatch({
     changes: { from: line.from, to: from },
     selection: EditorSelection.cursor(line.from),
@@ -344,6 +360,7 @@ function convertOutlineMarker(view: EditorView, tries = 10) {
   if (view.composing && tries > 0) return void setTimeout(() => convertOutlineMarker(view, tries - 1), 40);
   const marker = outlineMarkerAt(view.state, true);
   if (!marker) return;
+  markConverted(view);
   view.dispatch({
     changes: { from: marker.from, to: marker.to },
     selection: EditorSelection.cursor(marker.from),
@@ -379,8 +396,16 @@ const outlineWatcher = ViewPlugin.fromClass(
       const check = (tries: number) => {
         if (view.composing && tries > 0) return void setTimeout(() => check(tries - 1), 40);
         this.waiting = false;
+        // 막 바꾼 막·장·요약 줄에 늦게 들어온 띄어쓰기가 글로 남았으면 지운다 (위 justConverted와 같은 경우)
+        const head = view.state.selection.main.head;
+        const cur = view.state.doc.lineAt(head);
+        if (justConverted(view) && isOutlineStyle(styleAtLine(view.state, cur.number)) && cur.text !== "" && cur.text.trim() === "") {
+          view.dispatch({ changes: { from: cur.from, to: cur.to }, selection: EditorSelection.cursor(cur.from), userEvent: "input.type" });
+          return;
+        }
         const marker = outlineMarkerAt(view.state);
         if (!marker) return;
+        markConverted(view);
         view.dispatch({
           changes: { from: marker.from, to: marker.to },
           selection: EditorSelection.cursor(marker.from),
