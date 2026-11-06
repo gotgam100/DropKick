@@ -5,7 +5,7 @@
   
   <p>
     <a href="https://github.com/gotgam100/DropKick/releases/latest">
-      <img src="https://img.shields.io/badge/다운로드-최신_버전_(.dmg)-d4472b?style=for-the-badge&logo=apple&logoColor=white" alt="Download DropKick">
+      <img src="docs/download-badge.svg" height="28" alt="최신 버전 받기 (.dmg)">
     </a>
   </p>
 
